@@ -6,7 +6,7 @@ BASE_MODEL = {
         "S2": "huggyllama/llama-7b",
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
-        "Real": "huggyllama/llama-7b",
+        "Real": "/home/hzheng/models/llama-7b",
 }
 
 LORA_DIR = {
@@ -16,7 +16,7 @@ LORA_DIR = {
         "S3": ["dummy-lora-13b-rank-16"],
         "S4": ["dummy-lora-13b-rank-64",
                "dummy-lora-13b-rank-32", "dummy-lora-13b-rank-16",],
-        "Real": ["tloen/alpaca-lora-7b", "MBZUAI/bactrian-x-llama-7b-lora"],
+        "Real": ["/home/hzheng/models/alpaca-lora-7b", "/home/hzheng/models/bactrian-x-llama-7b-lora"],
 }
 
 BenchmarkConfig = namedtuple(
@@ -261,11 +261,11 @@ debug_suite = {
     "default": BenchmarkConfig(
         num_adapters = [100],
         alpha = [1],
-        req_rate = [2],
+        req_rate = [15],
         cv = [1],
         duration = [60],
-        input_range = [[8, 512]],
-        output_range = [[8, 512]],
+        input_range = [[8,512]],
+        output_range = [[8,128]],
     ),
 
     "debug": BenchmarkConfig(
@@ -274,8 +274,8 @@ debug_suite = {
         req_rate = [4],
         cv = [1],
         duration = [60],
-        input_range = [[8, 512]],
-        output_range = [[8, 512]],
+        input_range = [[8, 64]],
+        output_range = [[16, 64]],
     ),
 
     "no-swap": BenchmarkConfig(
@@ -335,8 +335,8 @@ debug_suite = {
         req_rate = [2],
         cv = [1],
         duration = [30],
-        input_range = [[8, 512]],
-        output_range = [[8, 512]],
+        input_range = [[8, 64]],
+        output_range = [[16, 64]],
     ),
 }
 
