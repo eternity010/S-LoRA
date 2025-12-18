@@ -261,11 +261,11 @@ debug_suite = {
     "default": BenchmarkConfig(
         num_adapters = [100],
         alpha = [1],
-        req_rate = [15],
+        req_rate = [10],
         cv = [1],
         duration = [60],
         input_range = [[8,512]],
-        output_range = [[8,128]],
+        output_range = [[8,64]],
     ),
 
     "debug": BenchmarkConfig(
