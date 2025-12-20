@@ -264,8 +264,8 @@ debug_suite = {
         req_rate = [10],
         cv = [1],
         duration = [60],
-        input_range = [[8,512]],
-        output_range = [[8,64]],
+        input_range = [[8,258]],
+        output_range = [[8,512]],
     ),
 
     "debug": BenchmarkConfig(

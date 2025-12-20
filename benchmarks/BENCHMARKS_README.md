@@ -1,6 +1,3 @@
-{"config": {"num_adapters": 100, "alpha": 1, "req_rate": 10, "cv": 1, "duration": 60, "input_range": [8, 512], "output_range": [8, 64]}, "result": {"total_time": 62.401503562927246, "gpu_peak_mem": 0, "num_abort": 0, "throughput": 9.615152932892792, "strip_throughput": 9.43362773460068, "avg_latency": 2.2998752029736838, "avg_per_token_latency": 0.011686934039283961, "avg_per_output_token_latency": 0.07032705316033748, "avg_first_token_latency": 0.7361556688944498, "avg_satisfaction": 0.9801219151881159, "avg_attainment": 1.0}}
-
-
 # Benchmarks 目录说明
 
 本目录包含 S-LoRA 的基准测试工具和实验脚本。

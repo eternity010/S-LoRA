@@ -66,10 +66,21 @@ class ReqDetokenizationState:
 
 class Batch:
     def __init__(self, batch_id, reqs: List[Req]):
+        """
+        初始化批次
+        
+        批次包含多个请求，每个请求可能使用不同的 LoRA 适配器。
+        adapter_dirs 集合记录了当前批次中所有请求使用的适配器目录。
+        这个集合在适配器淘汰时作为保留列表使用。
+        """
         self.batch_id = batch_id
         self.reqs = reqs
         self.id_to_reqs = {req.request_id: req for req in reqs}
 
+        # 收集批次中所有请求使用的适配器目录（去重）
+        # 这个集合用于：
+        # 1. 确定需要加载哪些适配器
+        # 2. 在请求完成时，确定需要保留哪些适配器（淘汰策略）
         self.adapter_dirs = set()
         for req in reqs:
             self.adapter_dirs.add(req.adapter_dir)
@@ -107,13 +118,29 @@ class Batch:
         return has_new_finish
 
     def filter_finished(self):
+        """
+        过滤掉已完成的请求，只保留未完成的请求
+        
+        这个方法在请求完成时被调用，用于：
+        1. 从批次中移除已完成的请求
+        2. 更新 adapter_dirs 集合，只包含未完成请求使用的适配器
+        3. 更新后的 adapter_dirs 会作为适配器淘汰的保留列表
+        
+        注意：这个方法会更新 adapter_dirs，影响后续的适配器淘汰决策
+        """
+        # 筛选出未完成的请求
         unfinished_req = []
         for req in self.reqs:
             if not req.has_generate_finished:
                 unfinished_req.append(req)
+        
+        # 更新请求列表和索引映射
         self.reqs = unfinished_req
         self.id_to_reqs = {req.request_id: req for req in self.reqs}
 
+        # 重新计算 adapter_dirs，只包含未完成请求使用的适配器
+        # 这个更新后的集合会被传递给 offload_adapters() 作为保留列表
+        # 因此，只有未完成请求使用的适配器会被保留，其他适配器会被淘汰
         self.adapter_dirs = set()
         for req in self.reqs:
             self.adapter_dirs.add(req.adapter_dir)

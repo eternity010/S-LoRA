@@ -275,6 +275,15 @@ class RouterManager:
 
     async def _decode_batch(self, batch:Batch):
         self.req_queue.update_counter(batch)
+        
+        # 更新适配器使用统计信息（在推理前）
+        if not self.input_params.no_lora:
+            adapter_dirs_list = list(batch.adapter_dirs)
+            ret = []
+            for tp_rank in range(self.world_size):
+                ret.append(self.model_rpcs[tp_rank].update_adapter_stats(adapter_dirs_list))
+            await asyncio.gather(*ret)
+        
         rets = [self.model_rpcs[tp_rank].decode_batch(batch.batch_id) for tp_rank in range(self.world_size)]
         ans = await asyncio.gather(*rets)
         if self.world_size != 1:
@@ -304,37 +313,88 @@ class RouterManager:
         return
 
     async def _handle_finish_req(self, batch: Batch, has_new_finished_req, minibatch=False):
+        """
+        处理批次中已完成请求的逻辑
+        
+        当批次中有请求完成时：
+        1. 过滤掉已完成的请求，更新批次状态
+        2. 如果是 PEFT 调度器且批次已清空，则取消合并适配器
+        3. 淘汰不在当前批次中的 LoRA 适配器（释放显存）
+        4. 如果批次完全清空，则移除批次；否则过滤批次
+        
+        参数:
+            batch: 当前运行的批次
+            has_new_finished_req: 是否有新完成的请求
+            minibatch: 是否为小批次（小批次不触发适配器淘汰，避免频繁操作）
+        """
         if has_new_finished_req:
+            # 记录完成的请求使用的适配器（在 filter_finished 之前）
+            finished_adapter_dirs = []
+            if not self.input_params.no_lora:
+                for req in batch.reqs:
+                    if req.has_generate_finished:
+                        finished_adapter_dirs.append(req.adapter_dir)
+            
+            # 过滤掉已完成的请求，只保留未完成的请求
+            # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
             batch.filter_finished()
+            
+            # 减少完成请求的适配器的当前请求计数
+            if finished_adapter_dirs and not self.input_params.no_lora:
+                ret = []
+                for tp_rank in range(self.world_size):
+                    ret.append(self.model_rpcs[tp_rank].decrease_request_counts(finished_adapter_dirs))
+                await asyncio.gather(*ret)
 
-            # unmerge adapter from base model
+            # PEFT 调度器特殊处理：当批次完全清空时，需要取消合并适配器
+            # PEFT 模式下适配器会合并到基础模型中，清空时需要恢复
             if self.input_params.scheduler == "peft" and batch.is_clear():
                 ret = []
                 for tp_rank in range(self.world_size):
                     ret.append(self.model_rpcs[tp_rank].unmerge_adapter())
                 await asyncio.gather(*ret)
 
+            # 淘汰不在当前批次中的 LoRA 适配器
+            # 策略：只保留当前批次中未完成请求使用的适配器，淘汰其他所有适配器
+            # 注意：minibatch 时不淘汰，避免频繁的加载/卸载操作
             if not minibatch and not self.input_params.no_lora:
                 ret = []
                 for tp_rank in range(self.world_size):
+                    # 传入 batch.adapter_dirs 作为保留列表
+                    # offload_adapters 会保留这些适配器，淘汰其他适配器
                     ret.append(self.model_rpcs[tp_rank].offload_adapters(batch.adapter_dirs))
                 await asyncio.gather(*ret)
 
+            # 根据批次状态决定后续操作
             if batch.is_clear():
+                # 批次完全清空，移除批次
                 await self._remove_batch(batch)
             else:
+                # 批次还有未完成的请求，过滤批次（移除已完成的请求）
                 await self._filter_batch(batch)
         return
 
     async def _filter_runing_batch(self):
+        """
+        检查并清理运行中的批次
+        
+        当运行批次完全清空时（所有请求都已完成）：
+        1. 卸载所有 LoRA 适配器（释放显存）
+        2. 清空运行批次引用
+        
+        这个函数在每次推理步骤后都会被调用，用于及时清理已完成的批次
+        """
         if self.running_batch is not None and self.running_batch.is_clear():
+            # 批次完全清空，卸载所有适配器
+            # 传入空列表表示不保留任何适配器，全部卸载
             if not self.input_params.no_lora:
-                # offload model and adapters
                 ret = []
                 for tp_rank in range(self.world_size):
+                    # 不传入参数（或传入空列表），卸载所有适配器
                     ret.append(self.model_rpcs[tp_rank].offload_adapters())
                 await asyncio.gather(*ret)
 
+            # 清空运行批次引用，允许调度器生成新的批次
             self.running_batch = None
             return
     

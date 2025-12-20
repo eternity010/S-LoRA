@@ -136,6 +136,36 @@ class ModelRpcServer(rpyc.Service):
                 if adapter_dir is not None and adapter_dir not in reserve_dirs:
                     self.adapters[id].offload_from_gpu()
 
+    @torch.no_grad()
+    def exposed_update_adapter_stats(self, adapter_dirs):
+        """
+        更新适配器使用统计信息
+        
+        参数:
+            adapter_dirs: 当前批次中使用的适配器目录列表
+        """
+        if self.world_size != 1:
+            adapter_dirs = obtain(adapter_dirs)
+        if not self.input_params.bmm and not self.input_params.no_mem_pool:
+            self.infer_adapter.update_adapter_stats_batch(adapter_dirs)
+
+    @torch.no_grad()
+    def exposed_decrease_request_counts(self, adapter_dirs):
+        """
+        减少适配器的当前请求计数（请求完成时调用）
+        
+        参数:
+            adapter_dirs: 完成请求使用的适配器目录列表
+        """
+        if self.world_size != 1:
+            adapter_dirs = obtain(adapter_dirs)
+        if not self.input_params.bmm and not self.input_params.no_mem_pool:
+            # 统计每个适配器的请求数
+            from collections import Counter
+            adapter_counts = Counter(adapter_dirs)
+            for adapter_dir, count in adapter_counts.items():
+                self.infer_adapter.decrease_request_count(adapter_dir, count)
+
 
     # @calculate_time(show=True, min_cost_ms=0.1)
     def exposed_add_batch(self, batch_id, reqs, dtype):
@@ -393,6 +423,8 @@ class ModelRpcClient:
             self._init_model = async_wrap(self.model.init_model)
             self._load_adapters = rpyc.async_(self.model.load_adapters)
             self._offload_adapters = rpyc.async_(self.model.offload_adapters)
+            self._update_adapter_stats = rpyc.async_(self.model.update_adapter_stats)
+            self._decrease_request_counts = rpyc.async_(self.model.decrease_request_counts)
             self._unmerge_adapter = rpyc.async_(self.model.unmerge_adapter)
             self._merge_adapter = rpyc.async_(self.model.merge_adapter)
             self._add_batch = async_wrap(self.model.add_batch)
@@ -406,6 +438,8 @@ class ModelRpcClient:
             self._init_model = self.model.exposed_init_model
             self._load_adapters = self.model.exposed_load_adapters
             self._offload_adapters = self.model.exposed_offload_adapters
+            self._update_adapter_stats = self.model.exposed_update_adapter_stats
+            self._decrease_request_counts = self.model.exposed_decrease_request_counts
             self._merge_adapter = self.model.exposed_merge_adapter
             self._unmerge_adapter = self.model.exposed_unmerge_adapter
             self._add_batch = self.model.exposed_add_batch
@@ -436,6 +470,14 @@ class ModelRpcClient:
 
     async def offload_adapters(self, reserved_reqs=None, prefetch=False):
         self._offload_adapters(reserved_reqs, prefetch=prefetch)
+    
+    async def update_adapter_stats(self, adapter_dirs):
+        """更新适配器使用统计信息"""
+        self._update_adapter_stats(adapter_dirs)
+    
+    async def decrease_request_counts(self, adapter_dirs):
+        """减少适配器的当前请求计数"""
+        self._decrease_request_counts(adapter_dirs)
     
     async def unmerge_adapter(self):
         self._unmerge_adapter()
