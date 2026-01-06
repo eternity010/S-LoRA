@@ -252,6 +252,65 @@ class InferAdapter:
             'adapter_cells': adapter_cells
         }
 
+    def select_eviction_candidates(self, 
+                                    evict_ratio: float = 0.2,
+                                    preserve_adapters: set = None) -> List[str]:
+        """
+        选择要淘汰的适配器候选者
+        
+        参数:
+            evict_ratio: 淘汰的比例（0-1），默认 0.2 (20%)
+            preserve_adapters: 必须保留的适配器集合（当前批次使用的）
+        
+        返回:
+            要淘汰的适配器目录列表
+        """
+        # 边界情况：没有适配器
+        if len(self.adapter_dirs) == 0:
+            return []
+        
+        # 边界情况：evict_ratio 为 0
+        if evict_ratio <= 0:
+            return []
+        
+        # 确保 evict_ratio 在有效范围内
+        evict_ratio = min(evict_ratio, 1.0)
+        
+        # 初始化保护集合
+        if preserve_adapters is None:
+            preserve_adapters = set()
+        
+        # 获取所有适配器的分数（升序排列，分数低的在前）
+        scored_adapters = self.get_adapters_by_score(ascending=True)
+        
+        # 过滤掉保护列表中的适配器
+        evictable_adapters = []
+        for adapter_dir, score in scored_adapters:
+            if adapter_dir not in preserve_adapters:
+                evictable_adapters.append((adapter_dir, score))
+        
+        # 边界情况：没有可淘汰的适配器
+        if len(evictable_adapters) == 0:
+            return []
+        
+        # 计算要淘汰的数量
+        num_to_evict = int(len(evictable_adapters) * evict_ratio)
+        
+        # 确保至少淘汰 1 个（如果有可淘汰的且 evict_ratio > 0）
+        if num_to_evict == 0 and evict_ratio > 0:
+            num_to_evict = 1
+        
+        # 确保不超过可淘汰的总数
+        num_to_evict = min(num_to_evict, len(evictable_adapters))
+        
+        # 选择低分适配器（已经按升序排列）
+        candidates_to_evict = evictable_adapters[:num_to_evict]
+        
+        # 返回适配器目录列表
+        eviction_list = [adapter_dir for adapter_dir, score in candidates_to_evict]
+        
+        return eviction_list
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
