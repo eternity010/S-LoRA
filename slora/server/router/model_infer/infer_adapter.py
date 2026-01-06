@@ -508,6 +508,52 @@ class InferAdapter:
         
         return result
 
+    def log_eviction_summary(self, evict_result: dict):
+        """
+        打印详细的淘汰统计信息
+        
+        参数:
+            evict_result: check_and_evict_by_threshold 返回的结果字典
+        """
+        if not evict_result['triggered']:
+            return
+        
+        print(f"\n{'='*80}")
+        print(f"LoRA 阈值淘汰统计")
+        print(f"{'='*80}")
+        
+        before = evict_result['before_usage']
+        print(f"淘汰前状态:")
+        print(f"  - 内存使用: {before['used_cells']}/{before['total_cells']} cells "
+              f"({before['usage_ratio']:.1%})")
+        print(f"  - 适配器数: {before['num_adapters']}")
+        print(f"  - 可用空间: {before['available_cells']} cells")
+        
+        if evict_result['evicted']:
+            after = evict_result['after_usage']
+            print(f"\n淘汰操作:")
+            print(f"  - 淘汰数量: {evict_result['evicted_count']}")
+            print(f"  - 释放空间: {evict_result['cells_freed']} cells")
+            
+            if evict_result['evicted_adapters']:
+                print(f"  - 淘汰列表（前5个）:")
+                for adapter_dir in evict_result['evicted_adapters'][:5]:
+                    adapter_name = adapter_dir.split('/')[-1]
+                    score = self.adapter_scores.get(adapter_dir, 0.0)
+                    print(f"      · {adapter_name} (分数: {score:.4f})")
+            
+            print(f"\n淘汰后状态:")
+            print(f"  - 内存使用: {after['used_cells']}/{after['total_cells']} cells "
+                  f"({after['usage_ratio']:.1%})")
+            print(f"  - 适配器数: {after['num_adapters']}")
+            print(f"  - 可用空间: {after['available_cells']} cells")
+            print(f"  - 使用率变化: {before['usage_ratio']:.1%} → {after['usage_ratio']:.1%}")
+        else:
+            print(f"\n淘汰结果: 未执行淘汰")
+            print(f"  - 原因: {evict_result['reason']}")
+        
+        print(f"{'='*80}\n")
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
@@ -559,7 +605,20 @@ class InferAdapter:
             adapter.layers[i].offload_from_gpu()
 
     # @calculate_time(show=True, min_cost_ms=0)
-    def load_adapters(self, adapters, prefetch=False):
+    def load_adapters(self, adapters, prefetch=False,
+                      enable_threshold_eviction=True,
+                      threshold=0.9,
+                      evict_ratio=0.2):
+        """
+        加载 LoRA 适配器到 GPU 内存
+        
+        参数:
+            adapters: 要加载的适配器列表
+            prefetch: 是否为预取模式
+            enable_threshold_eviction: 是否启用阈值淘汰（默认 True）
+            threshold: 淘汰阈值（0-1），默认 0.9 (90%)
+            evict_ratio: 淘汰比例（0-1），默认 0.2 (20%)
+        """
         # func_name = "realload" if not prefetch else "prefetch"
         # mark_start(func_name)
         if len(adapters) == 0:
@@ -592,6 +651,31 @@ class InferAdapter:
                     tot_size += adapter.r * 4
             # mark_end("load scan")
             print(f"load {len(new_adapters)} adapters, {len(self.adapter_dirs) + len(new_adapters)} in total")
+
+        # ===== 新增：加载前阈值检查 =====
+        if not prefetch and enable_threshold_eviction and len(new_adapters) > 0:
+            # 收集即将加载的适配器作为保护对象
+            preserve_dirs = set()
+            for adapter in new_adapters:
+                if adapter is not None:
+                    preserve_dirs.add(adapter.lora_dir)
+            
+            # 也保护当前预取标记中的适配器
+            for adapter_dir in self.adapter_dirs:
+                if adapter_dir in self.prefetch_tag and self.prefetch_tag[adapter_dir] == self.cur_tag:
+                    preserve_dirs.add(adapter_dir)
+            
+            # 执行阈值检查和可能的淘汰
+            evict_result = self.check_and_evict_by_threshold(
+                threshold=threshold,
+                evict_ratio=evict_ratio,
+                preserve_adapters=preserve_dirs
+            )
+            
+            # 淘汰后可选的日志输出（调试用）
+            # if evict_result['evicted']:
+            #     print(f"   阈值淘汰后剩余空间: {evict_result['after_usage']['available_cells']} cells")
+        # ===== 新增结束 =====
 
         new_loc = self.mem_manager.alloc(tot_size)
         # assert len(new_loc) == tot_size
