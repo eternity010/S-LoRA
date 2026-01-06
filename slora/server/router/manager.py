@@ -354,15 +354,23 @@ class RouterManager:
                     ret.append(self.model_rpcs[tp_rank].unmerge_adapter())
                 await asyncio.gather(*ret)
 
-            # 淘汰不在当前批次中的 LoRA 适配器
-            # 策略：只保留当前批次中未完成请求使用的适配器，淘汰其他所有适配器
-            # 注意：minibatch 时不淘汰，避免频繁的加载/卸载操作
+            # ===== 新的智能淘汰策略 =====
+            # 策略：基于阈值触发淘汰，而非立即淘汰所有不在批次中的适配器
+            # 优点：
+            #   1. 保留热门适配器，减少重复加载
+            #   2. 只在内存压力大时才淘汰
+            #   3. 基于分数智能选择淘汰对象
+            # 注意：minibatch 时不淘汰，避免频繁操作
             if not minibatch and not self.input_params.no_lora:
                 ret = []
                 for tp_rank in range(self.world_size):
-                    # 传入 batch.adapter_dirs 作为保留列表
-                    # offload_adapters 会保留这些适配器，淘汰其他适配器
-                    ret.append(self.model_rpcs[tp_rank].offload_adapters(batch.adapter_dirs))
+                    # 使用阈值触发淘汰，保护当前批次使用的适配器
+                    # 阈值和淘汰比例可通过命令行参数配置
+                    ret.append(self.model_rpcs[tp_rank].trigger_threshold_eviction(
+                        preserve_dirs=batch.adapter_dirs,
+                        threshold=self.input_params.evict_interval_threshold,
+                        evict_ratio=self.input_params.evict_interval_ratio
+                    ))
                 await asyncio.gather(*ret)
 
             # 根据批次状态决定后续操作
@@ -379,19 +387,31 @@ class RouterManager:
         检查并清理运行中的批次
         
         当运行批次完全清空时（所有请求都已完成）：
-        1. 卸载所有 LoRA 适配器（释放显存）
+        1. 触发阈值淘汰检查（而非立即全部卸载）
         2. 清空运行批次引用
         
         这个函数在每次推理步骤后都会被调用，用于及时清理已完成的批次
+        
+        优化说明：
+        - 旧策略：批次清空时立即卸载所有适配器
+        - 新策略：只在内存压力大时才淘汰，保留热门适配器
+        - 优点：减少重复加载，提高吞吐量
         """
         if self.running_batch is not None and self.running_batch.is_clear():
-            # 批次完全清空，卸载所有适配器
-            # 传入空列表表示不保留任何适配器，全部卸载
+            # 批次完全清空，但不立即卸载所有适配器
+            # 使用阈值淘汰机制，只在内存使用率较高时才清理
             if not self.input_params.no_lora:
                 ret = []
                 for tp_rank in range(self.world_size):
-                    # 不传入参数（或传入空列表），卸载所有适配器
-                    ret.append(self.model_rpcs[tp_rank].offload_adapters())
+                    # 使用更高的阈值，只在接近满载时才淘汰
+                    # 不保护任何适配器（preserve_dirs=None）
+                    # 淘汰比例较大，释放更多空间
+                    # 阈值和淘汰比例可通过命令行参数配置
+                    ret.append(self.model_rpcs[tp_rank].trigger_threshold_eviction(
+                        preserve_dirs=None,
+                        threshold=self.input_params.evict_idle_threshold,
+                        evict_ratio=self.input_params.evict_idle_ratio
+                    ))
                 await asyncio.gather(*ret)
 
             # 清空运行批次引用，允许调度器生成新的批次

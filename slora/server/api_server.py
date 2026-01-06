@@ -368,6 +368,16 @@ def main():
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--batch-num-adapters", type=int, default=None)
     parser.add_argument("--enable-abort", action="store_true")
+    
+    # 阈值淘汰相关参数
+    parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
+                        help="请求完成时触发淘汰的内存使用率阈值 (0-1)，默认 0.85 (85%%)")
+    parser.add_argument("--evict-interval-ratio", type=float, default=0.3,
+                        help="请求完成时的淘汰比例 (0-1)，默认 0.3 (30%%)")
+    parser.add_argument("--evict-idle-threshold", type=float, default=0.95,
+                        help="批次空闲时触发淘汰的内存使用率阈值 (0-1)，默认 0.95 (95%%)")
+    parser.add_argument("--evict-idle-ratio", type=float, default=0.5,
+                        help="批次空闲时的淘汰比例 (0-1)，默认 0.5 (50%%)")
 
     # debug parameters
     # do not use no-lora-swap, does not rule out the swap over MemAllocator
