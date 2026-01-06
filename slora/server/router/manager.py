@@ -338,7 +338,7 @@ class RouterManager:
             # 过滤掉已完成的请求，只保留未完成的请求
             # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
             batch.filter_finished()
-            
+
             # 减少完成请求的适配器的当前请求计数
             if finished_adapter_dirs and not self.input_params.no_lora:
                 ret = []

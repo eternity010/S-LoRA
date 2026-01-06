@@ -214,6 +214,44 @@ class InferAdapter:
         
         print(f"{'='*80}\n")
 
+    def get_lora_memory_usage(self) -> dict:
+        """
+        获取 LoRA 专用空间的使用情况
+        
+        返回:
+            {
+                'total_cells': 总内存空间（cells），包括 KV cache 和 LoRA 空间,
+                'lora_cells': LoRA 专用空间大小（cells），0 表示与 KV cache 共享,
+                'used_cells': 已使用空间（cells）,
+                'available_cells': 可用空间（cells）,
+                'usage_ratio': 使用率（0-1）,
+                'num_adapters': 当前加载的适配器数量,
+                'adapter_cells': 各适配器占用的 cells 列表
+            }
+        """
+        # 从 MemoryAllocator 获取基础数据
+        total_cells = self.mem_manager.tot_size
+        lora_cells = total_cells - self.mem_manager.cache_size
+        available_cells = self.mem_manager.can_use_mem_size
+        used_cells = total_cells - available_cells
+        
+        # 计算使用率
+        usage_ratio = used_cells / total_cells if total_cells > 0 else 0.0
+        
+        # 获取适配器信息
+        num_adapters = len(self.adapter_dirs)
+        adapter_cells = self.a_len.cpu().tolist() if num_adapters > 0 else []
+        
+        return {
+            'total_cells': total_cells,
+            'lora_cells': lora_cells,
+            'used_cells': used_cells,
+            'available_cells': available_cells,
+            'usage_ratio': float(usage_ratio),
+            'num_adapters': num_adapters,
+            'adapter_cells': adapter_cells
+        }
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
