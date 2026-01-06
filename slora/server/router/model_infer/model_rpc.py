@@ -166,6 +166,45 @@ class ModelRpcServer(rpyc.Service):
             for adapter_dir, count in adapter_counts.items():
                 self.infer_adapter.decrease_request_count(adapter_dir, count)
 
+    @torch.no_grad()
+    def exposed_check_lora_memory(self):
+        """
+        查询 LoRA 内存使用情况
+        
+        返回:
+            内存使用情况字典，包含 total_cells, used_cells, usage_ratio 等信息
+            如果未使用内存池，返回 None
+        """
+        if not self.input_params.bmm and not self.input_params.no_mem_pool:
+            return self.infer_adapter.get_lora_memory_usage()
+        return None
+
+    @torch.no_grad()
+    def exposed_trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2):
+        """
+        手动触发阈值淘汰
+        
+        参数:
+            preserve_dirs: 需要保留的适配器目录列表
+            threshold: 淘汰阈值（0-1），默认 0.9 (90%)
+            evict_ratio: 淘汰比例（0-1），默认 0.2 (20%)
+        
+        返回:
+            淘汰结果字典，包含 evicted, evicted_count, cells_freed 等信息
+            如果未使用内存池，返回 None
+        """
+        if self.world_size != 1:
+            preserve_dirs = obtain(preserve_dirs) if preserve_dirs is not None else None
+        
+        if not self.input_params.bmm and not self.input_params.no_mem_pool:
+            preserve_set = set(preserve_dirs) if preserve_dirs else None
+            return self.infer_adapter.check_and_evict_by_threshold(
+                threshold=threshold,
+                evict_ratio=evict_ratio,
+                preserve_adapters=preserve_set
+            )
+        return None
+
 
     # @calculate_time(show=True, min_cost_ms=0.1)
     def exposed_add_batch(self, batch_id, reqs, dtype):
@@ -425,6 +464,8 @@ class ModelRpcClient:
             self._offload_adapters = rpyc.async_(self.model.offload_adapters)
             self._update_adapter_stats = rpyc.async_(self.model.update_adapter_stats)
             self._decrease_request_counts = rpyc.async_(self.model.decrease_request_counts)
+            self._check_lora_memory = rpyc.async_(self.model.check_lora_memory)
+            self._trigger_threshold_eviction = rpyc.async_(self.model.trigger_threshold_eviction)
             self._unmerge_adapter = rpyc.async_(self.model.unmerge_adapter)
             self._merge_adapter = rpyc.async_(self.model.merge_adapter)
             self._add_batch = async_wrap(self.model.add_batch)
@@ -440,6 +481,8 @@ class ModelRpcClient:
             self._offload_adapters = self.model.exposed_offload_adapters
             self._update_adapter_stats = self.model.exposed_update_adapter_stats
             self._decrease_request_counts = self.model.exposed_decrease_request_counts
+            self._check_lora_memory = self.model.exposed_check_lora_memory
+            self._trigger_threshold_eviction = self.model.exposed_trigger_threshold_eviction
             self._merge_adapter = self.model.exposed_merge_adapter
             self._unmerge_adapter = self.model.exposed_unmerge_adapter
             self._add_batch = self.model.exposed_add_batch
@@ -478,6 +521,24 @@ class ModelRpcClient:
     async def decrease_request_counts(self, adapter_dirs):
         """减少适配器的当前请求计数"""
         self._decrease_request_counts(adapter_dirs)
+    
+    async def check_lora_memory(self):
+        """查询 LoRA 内存使用情况"""
+        ans = self._check_lora_memory()
+        if self.use_rpc:
+            await asyncio.to_thread(ans.wait)
+            return ans.value
+        else:
+            return ans
+    
+    async def trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2):
+        """手动触发阈值淘汰"""
+        ans = self._trigger_threshold_eviction(preserve_dirs, threshold, evict_ratio)
+        if self.use_rpc:
+            await asyncio.to_thread(ans.wait)
+            return ans.value
+        else:
+            return ans
     
     async def unmerge_adapter(self):
         self._unmerge_adapter()
