@@ -422,6 +422,92 @@ class InferAdapter:
         
         return result
 
+    def check_and_evict_by_threshold(self, 
+                                      threshold: float = 0.9,
+                                      evict_ratio: float = 0.2,
+                                      preserve_adapters: set = None) -> dict:
+        """
+        检查空间使用率，超过阈值时淘汰低分适配器
+        
+        这是阈值淘汰的主入口方法，协调各子步骤完成完整的淘汰流程。
+        
+        参数:
+            threshold: 触发淘汰的阈值（0-1），默认 0.9 (90%)
+            evict_ratio: 淘汰的比例（0-1），默认 0.2 (20%)
+            preserve_adapters: 必须保留的适配器集合（当前批次使用的）
+        
+        返回:
+            {
+                'triggered': 是否触发了淘汰检查,
+                'evicted': 是否实际执行了淘汰,
+                'reason': 未淘汰的原因（如果未淘汰）,
+                'before_usage': 检查前的内存使用情况,
+                'after_usage': 淘汰后的内存使用情况（如果淘汰了）,
+                'evicted_adapters': 被淘汰的适配器列表,
+                'evicted_count': 淘汰的适配器数量,
+                'cells_freed': 释放的空间大小
+            }
+        """
+        # 步骤 1：检查是否超过阈值
+        check_result = self.check_memory_threshold(threshold)
+        
+        # 初始化返回结果
+        result = {
+            'triggered': True,
+            'evicted': False,
+            'reason': None,
+            'before_usage': check_result['usage_info'],
+            'after_usage': None,
+            'evicted_adapters': [],
+            'evicted_count': 0,
+            'cells_freed': 0
+        }
+        
+        # 步骤 2：判断是否超过阈值
+        if not check_result['over_threshold']:
+            # 未超过阈值，无需淘汰
+            result['triggered'] = False
+            result['reason'] = 'below_threshold'
+            result['after_usage'] = check_result['usage_info']
+            return result
+        
+        # 超过阈值，打印警告信息
+        print(f"\n⚠️  LoRA 内存使用率 {check_result['current_ratio']:.1%} 超过阈值 {threshold:.1%}，触发淘汰")
+        
+        # 检查是否有适配器可以淘汰
+        num_adapters = check_result['usage_info']['num_adapters']
+        if num_adapters == 0:
+            print("   没有加载任何适配器，无需淘汰")
+            result['reason'] = 'no_adapters'
+            result['after_usage'] = check_result['usage_info']
+            return result
+        
+        # 步骤 3：选择淘汰候选者
+        candidates = self.select_eviction_candidates(
+            evict_ratio=evict_ratio,
+            preserve_adapters=preserve_adapters
+        )
+        
+        # 检查是否有候选者
+        if len(candidates) == 0:
+            print(f"   所有 {num_adapters} 个适配器都在使用中或受保护，无法淘汰")
+            result['reason'] = 'no_candidates'
+            result['after_usage'] = check_result['usage_info']
+            return result
+        
+        # 步骤 4：执行淘汰
+        eviction_result = self.execute_eviction(candidates)
+        
+        # 更新返回结果
+        result['evicted'] = True
+        result['reason'] = None
+        result['after_usage'] = eviction_result['after_usage']
+        result['evicted_adapters'] = eviction_result['evicted_adapters']
+        result['evicted_count'] = eviction_result['evicted_count']
+        result['cells_freed'] = eviction_result['cells_freed']
+        
+        return result
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
