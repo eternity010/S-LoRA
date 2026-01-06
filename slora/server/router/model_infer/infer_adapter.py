@@ -311,6 +311,44 @@ class InferAdapter:
         
         return eviction_list
 
+    def check_memory_threshold(self, threshold: float = 0.9) -> dict:
+        """
+        检查内存使用率是否超过阈值
+        
+        参数:
+            threshold: 触发淘汰的阈值（0-1），默认 0.9 (90%)
+        
+        返回:
+            {
+                'over_threshold': 是否超过阈值 (bool),
+                'current_ratio': 当前使用率 (float),
+                'threshold': 设置的阈值 (float),
+                'usage_info': 内存使用详情 (dict)
+            }
+        """
+        # 参数验证：确保 threshold 在有效范围内
+        if threshold < 0 or threshold > 1:
+            raise ValueError(f"threshold 必须在 [0, 1] 范围内，当前值: {threshold}")
+        
+        # 获取当前内存使用情况
+        usage_info = self.get_lora_memory_usage()
+        
+        # 提取当前使用率
+        current_ratio = usage_info['usage_ratio']
+        
+        # 判断是否超过阈值
+        over_threshold = current_ratio >= threshold
+        
+        # 构建返回结果
+        result = {
+            'over_threshold': over_threshold,
+            'current_ratio': current_ratio,
+            'threshold': threshold,
+            'usage_info': usage_info
+        }
+        
+        return result
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
