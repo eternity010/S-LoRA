@@ -349,6 +349,79 @@ class InferAdapter:
         
         return result
 
+    def execute_eviction(self, adapters_to_evict: List[str]) -> dict:
+        """
+        执行适配器淘汰并记录结果
+        
+        参数:
+            adapters_to_evict: 要淘汰的适配器目录列表
+        
+        返回:
+            {
+                'before_usage': 淘汰前的内存使用情况,
+                'after_usage': 淘汰后的内存使用情况,
+                'evicted_adapters': 实际淘汰的适配器列表,
+                'evicted_count': 淘汰的适配器数量,
+                'cells_freed': 释放的 cells 数量
+            }
+        """
+        # 记录淘汰前的内存使用情况
+        before_usage = self.get_lora_memory_usage()
+        
+        # 初始化返回结果
+        result = {
+            'before_usage': before_usage,
+            'after_usage': None,
+            'evicted_adapters': [],
+            'evicted_count': 0,
+            'cells_freed': 0
+        }
+        
+        # 边界情况：没有要淘汰的适配器
+        if not adapters_to_evict or len(adapters_to_evict) == 0:
+            result['after_usage'] = before_usage
+            return result
+        
+        # 构建保留列表（当前所有适配器 - 要淘汰的）
+        adapters_to_evict_set = set(adapters_to_evict)
+        reserve_dirs = [d for d in self.adapter_dirs if d not in adapters_to_evict_set]
+        
+        # 记录实际要淘汰的适配器（只统计确实存在的）
+        actual_evicted = [d for d in adapters_to_evict if d in self.adapter_dirs]
+        
+        # 如果没有实际要淘汰的适配器
+        if len(actual_evicted) == 0:
+            result['after_usage'] = before_usage
+            return result
+        
+        # 打印淘汰信息
+        print(f"\n   执行淘汰: 淘汰 {len(actual_evicted)} 个适配器")
+        if len(actual_evicted) <= 5:
+            print(f"   淘汰列表: {[d.split('/')[-1] for d in actual_evicted]}")
+        else:
+            print(f"   淘汰列表（前5个）: {[d.split('/')[-1] for d in actual_evicted[:5]]}...")
+        
+        # 调用 offload_adapters 执行淘汰
+        self.offload_adapters(reserve_dirs)
+        
+        # 记录淘汰后的内存使用情况
+        after_usage = self.get_lora_memory_usage()
+        
+        # 计算释放的空间
+        cells_freed = before_usage['used_cells'] - after_usage['used_cells']
+        
+        # 更新返回结果
+        result['after_usage'] = after_usage
+        result['evicted_adapters'] = actual_evicted
+        result['evicted_count'] = len(actual_evicted)
+        result['cells_freed'] = cells_freed
+        
+        # 打印淘汰结果
+        print(f"   淘汰完成: 使用率 {before_usage['usage_ratio']:.1%} → {after_usage['usage_ratio']:.1%}")
+        print(f"   释放空间: {cells_freed} cells, 剩余 {after_usage['num_adapters']} 个适配器\n")
+        
+        return result
+
 
     # @calculate_time(show=True, min_cost_ms=0)
     def load_lora_A(self, adapter, loc, prefetch=False):
