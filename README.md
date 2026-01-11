@@ -1,4 +1,4 @@
-# S-LoRA: Serving Thousands of Concurrent LoRA Adapters [[paper](https://arxiv.org/abs/2311.03285)]
+# S-LoRA-Custom: Serving Thousands of Concurrent LoRA Adapters (Modified Version) [[original paper](https://arxiv.org/abs/2311.03285)]
 
 <p align="center">
 <img src="figures/serving_perf.png" alt="perf" width="700"/>

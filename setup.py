@@ -34,14 +34,14 @@ ext_modules.append(
     ))
 
 setup(
-    name="slora",
+    name="slora-custom",
     version="1.0.0",
     packages=find_packages(
-        exclude=("build", "include", "csrc", "test", "dist", "docs", "benchmarks", "slora.egg-info")
+        exclude=("build", "include", "csrc", "test", "dist", "docs", "benchmarks", "slora.egg-info", "slora_custom.egg-info")
     ),
     author="model toolchain",
     author_email="",
-    description="slora for inference LLM",
+    description="S-LoRA Custom: Modified version of S-LoRA for inference LLM",
     long_description="",
     long_description_content_type="text/markdown",
     url="",

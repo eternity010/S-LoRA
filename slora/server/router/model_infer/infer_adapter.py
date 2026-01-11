@@ -254,13 +254,15 @@ class InferAdapter:
 
     def select_eviction_candidates(self, 
                                     evict_ratio: float = 0.2,
-                                    preserve_adapters: set = None) -> List[str]:
+                                    preserve_adapters: set = None,
+                                    max_lora_ratio: float = None) -> List[str]:
         """
         选择要淘汰的适配器候选者
         
         参数:
             evict_ratio: 淘汰的比例（0-1），默认 0.2 (20%)
             preserve_adapters: 必须保留的适配器集合（当前批次使用的）
+            max_lora_ratio: LoRA 最大占用比例（0-1），如果设置，会确保 LoRA 不超过这个比例
         
         返回:
             要淘汰的适配器目录列表
@@ -293,12 +295,47 @@ class InferAdapter:
         if len(evictable_adapters) == 0:
             return []
         
-        # 计算要淘汰的数量
+        # 计算要淘汰的数量（基于比例）
         num_to_evict = int(len(evictable_adapters) * evict_ratio)
         
         # 确保至少淘汰 1 个（如果有可淘汰的且 evict_ratio > 0）
         if num_to_evict == 0 and evict_ratio > 0:
             num_to_evict = 1
+        
+        # 如果设置了 max_lora_ratio，基于固定空间上限计算需要淘汰的数量
+        if max_lora_ratio is not None and 0 < max_lora_ratio < 1:
+            total_cells = self.mem_manager.tot_size
+            max_lora_cells = int(total_cells * max_lora_ratio)
+            
+            # 计算当前 LoRA 实际占用（所有适配器的总和）
+            adapter_cells_list = self.a_len.cpu().tolist() if len(self.adapter_dirs) > 0 else []
+            current_lora_cells = sum(adapter_cells_list)
+            
+            # 计算需要释放的 cells
+            cells_to_free = current_lora_cells - max_lora_cells
+            
+            if cells_to_free > 0:
+                # 建立适配器到索引的映射
+                adapter_indices = {}
+                for i, dir_name in enumerate(self.adapter_dirs):
+                    if dir_name not in adapter_indices:
+                        adapter_indices[dir_name] = i
+                
+                # 累计淘汰适配器直到释放足够空间
+                accumulated_cells = 0
+                num_by_target = 0
+                for adapter_dir, score in evictable_adapters:
+                    if adapter_dir in adapter_indices:
+                        idx = adapter_indices[adapter_dir]
+                        adapter_cells = self.a_len[idx].item()
+                        accumulated_cells += adapter_cells
+                        num_by_target += 1
+                        
+                        if accumulated_cells >= cells_to_free:
+                            break
+                
+                # 使用两种方法中的较大值，确保释放足够空间
+                num_to_evict = max(num_to_evict, num_by_target)
         
         # 确保不超过可淘汰的总数
         num_to_evict = min(num_to_evict, len(evictable_adapters))
@@ -425,7 +462,8 @@ class InferAdapter:
     def check_and_evict_by_threshold(self, 
                                       threshold: float = 0.9,
                                       evict_ratio: float = 0.2,
-                                      preserve_adapters: set = None) -> dict:
+                                      preserve_adapters: set = None,
+                                      max_lora_ratio: float = None) -> dict:
         """
         检查空间使用率，超过阈值时淘汰低分适配器
         
@@ -435,6 +473,7 @@ class InferAdapter:
             threshold: 触发淘汰的阈值（0-1），默认 0.9 (90%)
             evict_ratio: 淘汰的比例（0-1），默认 0.2 (20%)
             preserve_adapters: 必须保留的适配器集合（当前批次使用的）
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于固定 LoRA 的空间上限
         
         返回:
             {
@@ -474,6 +513,17 @@ class InferAdapter:
         # 超过阈值，打印警告信息
         print(f"\n⚠️  LoRA 内存使用率 {check_result['current_ratio']:.1%} 超过阈值 {threshold:.1%}，触发淘汰")
         
+        # 如果设置了 max_lora_ratio，显示 LoRA 占用信息
+        if max_lora_ratio is not None:
+            usage_info = check_result['usage_info']
+            adapter_cells_list = usage_info.get('adapter_cells', [])
+            current_lora_cells = sum(adapter_cells_list)
+            lora_ratio = current_lora_cells / usage_info['total_cells'] if usage_info['total_cells'] > 0 else 0
+            max_lora_cells = int(usage_info['total_cells'] * max_lora_ratio)
+            print(f"   LoRA 当前占用: {current_lora_cells}/{usage_info['total_cells']} cells ({lora_ratio:.1%})")
+            print(f"   LoRA 上限设置: {max_lora_cells} cells ({max_lora_ratio:.1%})")
+            print(f"   需释放空间: {max(0, current_lora_cells - max_lora_cells)} cells")
+        
         # 检查是否有适配器可以淘汰
         num_adapters = check_result['usage_info']['num_adapters']
         if num_adapters == 0:
@@ -485,7 +535,8 @@ class InferAdapter:
         # 步骤 3：选择淘汰候选者
         candidates = self.select_eviction_candidates(
             evict_ratio=evict_ratio,
-            preserve_adapters=preserve_adapters
+            preserve_adapters=preserve_adapters,
+            max_lora_ratio=max_lora_ratio
         )
         
         # 检查是否有候选者
@@ -608,7 +659,9 @@ class InferAdapter:
     def load_adapters(self, adapters, prefetch=False,
                       enable_threshold_eviction=True,
                       threshold=0.9,
-                      evict_ratio=0.2):
+                      evict_ratio=0.2,
+                      max_lora_ratio=None,
+                      active_batch_adapters=None):
         """
         加载 LoRA 适配器到 GPU 内存
         
@@ -618,6 +671,8 @@ class InferAdapter:
             enable_threshold_eviction: 是否启用阈值淘汰（默认 True）
             threshold: 淘汰阈值（0-1），默认 0.9 (90%)
             evict_ratio: 淘汰比例（0-1），默认 0.2 (20%)
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于固定 LoRA 的空间上限
+            active_batch_adapters: 当前活跃批次使用的适配器集合，用于保护
         """
         # func_name = "realload" if not prefetch else "prefetch"
         # mark_start(func_name)
@@ -665,11 +720,18 @@ class InferAdapter:
                 if adapter_dir in self.prefetch_tag and self.prefetch_tag[adapter_dir] == self.cur_tag:
                     preserve_dirs.add(adapter_dir)
             
+            # **关键**：保护当前活跃批次使用的适配器
+            # 避免在加载新 adapters 时淘汰正在使用的 adapters
+            if active_batch_adapters:
+                preserve_dirs.update(active_batch_adapters)
+                print(f"   [加载时] 保护活跃批次的 {len(active_batch_adapters)} 个适配器")
+            
             # 执行阈值检查和可能的淘汰
             evict_result = self.check_and_evict_by_threshold(
                 threshold=threshold,
                 evict_ratio=evict_ratio,
-                preserve_adapters=preserve_dirs
+                preserve_adapters=preserve_dirs,
+                max_lora_ratio=max_lora_ratio
             )
             
             # 淘汰后可选的日志输出（调试用）

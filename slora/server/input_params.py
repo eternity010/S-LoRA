@@ -49,6 +49,12 @@ class InputParams:
         no_lora,
         # fairness
         fair_weights,
+        # eviction parameters
+        evict_interval_threshold,
+        evict_interval_ratio,
+        evict_idle_threshold,
+        evict_idle_ratio,
+        max_lora_ratio,
     ) -> None:
         self.max_req_total_len = max_req_total_len
         self.max_total_token_num = max_total_token_num
@@ -77,5 +83,12 @@ class InputParams:
         self.no_lora = no_lora
         
         self.fair_weights = fair_weights
+        
+        # eviction parameters
+        self.evict_interval_threshold = evict_interval_threshold
+        self.evict_interval_ratio = evict_interval_ratio
+        self.evict_idle_threshold = evict_idle_threshold
+        self.evict_idle_ratio = evict_idle_ratio
+        self.max_lora_ratio = max_lora_ratio
         return
  

@@ -19,7 +19,7 @@ class ReqQueue:
         self.waiting_req_list.append(req)
         return
     
-    def _init_cache_list(self, current_batch:Batch, lora_ranks):
+    def _init_cache_list(self, current_batch:Batch, lora_ranks, actual_adapter_size=0):
         if current_batch is not None:
             self.cache_len_list = []
             self.adapters = set()
@@ -34,6 +34,10 @@ class ReqQueue:
             self.cache_len_list = []
             self.adapters = set()
             self.adapter_size = 0
+        
+        # 新增：使用实际占用而非预估占用
+        # actual_adapter_size 是显存中所有 adapters 的实际占用
+        self.actual_total_adapter_size = actual_adapter_size
     
     # @calculate_time(show=True, min_cost_ms=0.1)
     def _can_add_new_req(self, req, lora_ranks):
@@ -50,20 +54,35 @@ class ReqQueue:
         size_array = np.arange(1, len(self.cache_len_list) + 1, 1)
         
         need_max_token_num = (left_out_len_array * size_array + cum_run_len_array).max()
-        if (need_max_token_num < self.max_total_tokens - self.adapter_size and
+        
+        # 关键修改：使用实际占用
+        # self.adapter_size 是当前批次新增的 adapter 占用
+        # self.actual_total_adapter_size 是显存中所有 adapters 的实际占用
+        total_adapter_occupation = self.actual_total_adapter_size + self.adapter_size
+        
+        if (need_max_token_num < self.max_total_tokens - total_adapter_occupation and
             len(self.cache_len_list) <= self.running_max_req_size):
             return True
         else:
+            # 新增：调试日志
+            if need_max_token_num >= self.max_total_tokens - total_adapter_occupation:
+                print(f"[并发控制] 无法添加请求：")
+                print(f"  需要空间: {need_max_token_num} cells")
+                print(f"  总空间: {self.max_total_tokens} cells")
+                print(f"  实际 adapter 占用: {self.actual_total_adapter_size} cells")
+                print(f"  当前批次 adapter: {self.adapter_size} cells")
+                print(f"  可用空间: {self.max_total_tokens - total_adapter_occupation} cells")
             return False
     
     def update_counter(self, req):
         pass 
 
-    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int]):
+    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int], actual_adapter_size=0):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
         
-        self._init_cache_list(current_batch, lora_ranks)
+        # 传递实际占用
+        self._init_cache_list(current_batch, lora_ranks, actual_adapter_size)
         can_run_list = []
         new_batch_total_tokens = 0
         aborted_count = 0

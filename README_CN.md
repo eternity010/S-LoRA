@@ -1,4 +1,4 @@
-# S-LoRA: 服务数千个并发 LoRA 适配器 [[论文](https://arxiv.org/abs/2311.03285)]
+# S-LoRA-Custom: 服务数千个并发 LoRA 适配器（修改版）[[原版论文](https://arxiv.org/abs/2311.03285)]
 
 <p align="center">
 <img src="figures/serving_perf.png" alt="perf" width="700"/>

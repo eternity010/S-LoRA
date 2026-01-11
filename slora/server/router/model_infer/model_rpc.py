@@ -113,7 +113,19 @@ class ModelRpcServer(rpyc.Service):
             for adapter_dir in adapter_dirs:
                 if adapter_dir is not None:
                     adapters.append(self.adapters[self.adapter_id[adapter_dir]])
-            self.infer_adapter.load_adapters(adapters, prefetch=prefetch)
+            
+            # 收集当前所有活跃批次使用的 adapters，作为保护列表
+            # 这样在加载新 adapters 触发淘汰时，不会淘汰正在使用的 adapters
+            active_adapters = set()
+            for batch in self.cache.values():
+                if hasattr(batch, 'adapter_dirs'):
+                    active_adapters.update(batch.adapter_dirs)
+            
+            self.infer_adapter.load_adapters(
+                adapters, 
+                prefetch=prefetch,
+                active_batch_adapters=active_adapters if not prefetch else None
+            )
         else:
             for adapter_dir in adapter_dirs:
                 if adapter_dir is not None:
@@ -180,7 +192,7 @@ class ModelRpcServer(rpyc.Service):
         return None
 
     @torch.no_grad()
-    def exposed_trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2):
+    def exposed_trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None):
         """
         手动触发阈值淘汰
         
@@ -188,6 +200,7 @@ class ModelRpcServer(rpyc.Service):
             preserve_dirs: 需要保留的适配器目录列表
             threshold: 淘汰阈值（0-1），默认 0.9 (90%)
             evict_ratio: 淘汰比例（0-1），默认 0.2 (20%)
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于固定 LoRA 的空间上限
         
         返回:
             淘汰结果字典，包含 evicted, evicted_count, cells_freed 等信息
@@ -198,10 +211,18 @@ class ModelRpcServer(rpyc.Service):
         
         if not self.input_params.bmm and not self.input_params.no_mem_pool:
             preserve_set = set(preserve_dirs) if preserve_dirs else None
+            
+            # 调试日志：打印 RPC 端接收到的保护列表
+            if preserve_set:
+                print(f"   [RPC] 接收到保护列表: {len(preserve_set)} 个适配器")
+            else:
+                print(f"   [RPC] 警告：preserve_set 为空或 None")
+            
             return self.infer_adapter.check_and_evict_by_threshold(
                 threshold=threshold,
                 evict_ratio=evict_ratio,
-                preserve_adapters=preserve_set
+                preserve_adapters=preserve_set,
+                max_lora_ratio=max_lora_ratio
             )
         return None
 
@@ -531,9 +552,9 @@ class ModelRpcClient:
         else:
             return ans
     
-    async def trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2):
+    async def trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None):
         """手动触发阈值淘汰"""
-        ans = self._trigger_threshold_eviction(preserve_dirs, threshold, evict_ratio)
+        ans = self._trigger_threshold_eviction(preserve_dirs, threshold, evict_ratio, max_lora_ratio)
         if self.use_rpc:
             await asyncio.to_thread(ans.wait)
             return ans.value

@@ -83,6 +83,10 @@ class RouterManager:
         self.has_wait_tokens = 0
         self.max_wait_tokens = 10
         
+        # 缓存实际的 adapter 内存占用（单位：cells）
+        # 在淘汰/加载后更新，用于并发控制的准确判断
+        self.actual_adapter_memory_usage = 0
+        
         context = zmq.asyncio.Context(2)
         self.recv_from_httpserver = context.socket(zmq.PULL)
         self.recv_from_httpserver.bind(f"tcp://127.0.0.1:{router_port}")
@@ -93,6 +97,31 @@ class RouterManager:
 
         self.stats_tool = Stats(log_stats, log_stats_interval)
 
+    async def _update_actual_adapter_usage(self):
+        """
+        查询并更新实际的 adapter 内存占用
+        
+        通过 RPC 查询 LoRA 内存使用情况，提取 adapter 实际占用的 cells 数。
+        用于并发控制的准确判断。
+        """
+        if self.input_params.no_lora:
+            self.actual_adapter_memory_usage = 0
+            return
+        
+        try:
+            # 查询第一个 RPC 节点（所有节点的 adapter 占用应该相同）
+            memory_info = await self.model_rpcs[0].check_lora_memory()
+            
+            if memory_info:
+                # 计算实际的 adapter 占用：所有已加载 adapters 的总和
+                adapter_cells_list = memory_info.get('adapter_cells', [])
+                self.actual_adapter_memory_usage = sum(adapter_cells_list)
+            else:
+                # 查询失败，使用保守估计（当前值不变）
+                pass
+        except Exception as e:
+            # 查询出错，使用保守估计
+            print(f"警告：无法查询实际 adapter 占用: {e}")
 
     async def wait_to_model_ready(self):
         self.model_rpcs: List[ModelRpcClient] = []
@@ -116,6 +145,9 @@ class RouterManager:
                 ))
 
         await asyncio.gather(*init_model_ret)
+        
+        # 新增：初始化后查询一次实际 adapter 占用
+        await self._update_actual_adapter_usage()
         return
     
     async def profile_prefill(self):
@@ -180,7 +212,11 @@ class RouterManager:
         """
         # 删除所有已经 finished 的 req
         if self.running_batch is None:
-            new_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+            new_batch = self.req_queue.generate_new_batch(
+                self.running_batch, 
+                self.lora_ranks,
+                actual_adapter_size=self.actual_adapter_memory_usage  # 新增
+            )
             if self.input_params.enable_abort and len(self.req_queue.abort_req_list) > 0:
                 self.send_to_detokenization.send_pyobj(BatchAbortReq(self.req_queue.abort_req_list))
                 self.req_queue.reset_abort_list()
@@ -194,6 +230,9 @@ class RouterManager:
                     for tp_rank in range(self.world_size):
                         ret.append(self.model_rpcs[tp_rank].load_adapters(new_batch.adapter_dirs))
                     await asyncio.gather(*ret)
+                    
+                    # 新增：加载后更新实际占用
+                    await self._update_actual_adapter_usage()
 
                 
                 # merge adapter to base model
@@ -229,7 +268,11 @@ class RouterManager:
             self.has_wait_tokens += 1
             return
         else:
-            new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+            new_mini_batch = self.req_queue.generate_new_batch(
+                self.running_batch, 
+                self.lora_ranks,
+                actual_adapter_size=self.actual_adapter_memory_usage  # 新增
+            )
             if self.input_params.enable_abort and len(self.req_queue.abort_req_list) > 0:
                 self.send_to_detokenization.send_pyobj(BatchAbortReq(self.req_queue.abort_req_list))
                 self.req_queue.reset_abort_list()
@@ -241,6 +284,9 @@ class RouterManager:
                     for tp_rank in range(self.world_size):
                         ret.append(self.model_rpcs[tp_rank].load_adapters(new_mini_batch.adapter_dirs))
                     await asyncio.gather(*ret)
+                    
+                    # 新增：加载后更新实际占用
+                    await self._update_actual_adapter_usage()
 
                 await self._prefill_batch(new_mini_batch, minibatch=True)
                 if not new_mini_batch.is_clear():
@@ -335,6 +381,11 @@ class RouterManager:
                     if req.has_generate_finished:
                         finished_adapter_dirs.append(req.adapter_dir)
             
+            # 保存批次的原始 adapter_dirs（在 filter_finished 之前）
+            # 这些是批次当前正在使用的所有 adapters，包括已完成请求的
+            # 必须保护它们，因为 RPC 端的 batch 对象还持有对它们的引用
+            original_adapter_dirs = batch.adapter_dirs.copy() if not self.input_params.no_lora else None
+            
             # 过滤掉已完成的请求，只保留未完成的请求
             # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
             batch.filter_finished()
@@ -362,16 +413,37 @@ class RouterManager:
             #   3. 基于分数智能选择淘汰对象
             # 注意：minibatch 时不淘汰，避免频繁操作
             if not minibatch and not self.input_params.no_lora:
+                # 输出淘汰前的状态
+                await self._print_lora_status("请求完成时")
+                
+                # 调试日志：打印保护列表
+                if original_adapter_dirs:
+                    print(f"   🔒 保护的适配器 ({len(original_adapter_dirs)} 个): {[d.split('/')[-1] for d in list(original_adapter_dirs)[:10]]}")
+                else:
+                    print(f"   ⚠️  警告：original_adapter_dirs 为空或 None")
+                
                 ret = []
                 for tp_rank in range(self.world_size):
-                    # 使用阈值触发淘汰，保护当前批次使用的适配器
+                    # 使用阈值触发淘汰，保护批次的原始 adapter_dirs
+                    # 重要：必须使用 original_adapter_dirs（filter_finished 之前的）
+                    # 因为 RPC 端的 batch 对象还持有对这些 adapters 的引用
+                    # 直到 filter_batch RPC 调用同步 RPC 端的状态
                     # 阈值和淘汰比例可通过命令行参数配置
                     ret.append(self.model_rpcs[tp_rank].trigger_threshold_eviction(
-                        preserve_dirs=batch.adapter_dirs,
+                        preserve_dirs=original_adapter_dirs,
                         threshold=self.input_params.evict_interval_threshold,
-                        evict_ratio=self.input_params.evict_interval_ratio
+                        evict_ratio=self.input_params.evict_interval_ratio,
+                        max_lora_ratio=self.input_params.max_lora_ratio
                     ))
-                await asyncio.gather(*ret)
+                evict_results = await asyncio.gather(*ret)
+
+                # 输出淘汰结果摘要
+                if evict_results and evict_results[0]:
+                    self._print_eviction_summary(evict_results[0], "请求完成时")
+                    
+                    # 新增：如果执行了淘汰，更新实际占用
+                    if evict_results[0].get('evicted'):
+                        await self._update_actual_adapter_usage()
 
             # 根据批次状态决定后续操作
             if batch.is_clear():
@@ -401,6 +473,9 @@ class RouterManager:
             # 批次完全清空，但不立即卸载所有适配器
             # 使用阈值淘汰机制，只在内存使用率较高时才清理
             if not self.input_params.no_lora:
+                # 输出淘汰前的状态
+                await self._print_lora_status("批次空闲时")
+                
                 ret = []
                 for tp_rank in range(self.world_size):
                     # 使用更高的阈值，只在接近满载时才淘汰
@@ -410,13 +485,87 @@ class RouterManager:
                     ret.append(self.model_rpcs[tp_rank].trigger_threshold_eviction(
                         preserve_dirs=None,
                         threshold=self.input_params.evict_idle_threshold,
-                        evict_ratio=self.input_params.evict_idle_ratio
+                        evict_ratio=self.input_params.evict_idle_ratio,
+                        max_lora_ratio=self.input_params.max_lora_ratio
                     ))
-                await asyncio.gather(*ret)
+                evict_results = await asyncio.gather(*ret)
+
+                # 输出淘汰结果摘要
+                if evict_results and evict_results[0]:
+                    self._print_eviction_summary(evict_results[0], "批次空闲时")
+                    
+                    # 新增：如果执行了淘汰，更新实际占用
+                    if evict_results[0].get('evicted'):
+                        await self._update_actual_adapter_usage()
 
             # 清空运行批次引用，允许调度器生成新的批次
             self.running_batch = None
             return
+    
+    async def _print_lora_status(self, context: str = ""):
+        """
+        输出 LoRA 内存使用状态
+        
+        参数:
+            context: 上下文信息（如"请求完成时"、"批次空闲时"等）
+        """
+        if self.input_params.no_lora:
+            return
+        
+        try:
+            # 查询第一个 GPU 的内存状态（多卡时通常状态相似）
+            usage = await self.model_rpcs[0].check_lora_memory()
+            if usage is None:
+                return
+            
+            # 计算 LoRA 和 KV cache 的各自占用
+            lora_occupied = sum(usage['adapter_cells']) if usage['adapter_cells'] else 0
+            kv_occupied = usage['used_cells'] - lora_occupied
+            
+            context_str = f"[{context}] " if context else ""
+            print(f"\n📊 {context_str}内存池状态:")
+            print(f"   总使用率: {usage['usage_ratio']:.1%} "
+                  f"({usage['used_cells']}/{usage['total_cells']} cells)")
+            print(f"   ├─ LoRA 占用: {lora_occupied} cells ({lora_occupied/usage['total_cells']:.1%})")
+            print(f"   └─ KV Cache 占用: {kv_occupied} cells ({kv_occupied/usage['total_cells']:.1%})")
+            print(f"   已加载适配器: {usage['num_adapters']} 个")
+            print(f"   可用空间: {usage['available_cells']} cells")
+            if usage['lora_cells'] > 0:
+                print(f"   LoRA 上限空间: {usage['lora_cells']} cells")
+        except Exception as e:
+            # 静默失败，不影响主流程
+            pass
+    
+    def _print_eviction_summary(self, evict_result: dict, context: str = ""):
+        """
+        输出淘汰结果摘要
+        
+        参数:
+            evict_result: trigger_threshold_eviction 返回的结果字典
+            context: 上下文信息（如"请求完成时"、"批次空闲时"等）
+        """
+        if not evict_result or not evict_result.get('triggered'):
+            return
+        
+        context_str = f"[{context}] " if context else ""
+        
+        if evict_result.get('evicted'):
+            before = evict_result.get('before_usage', {})
+            after = evict_result.get('after_usage', {})
+            print(f"\n✅ {context_str}阈值淘汰完成:")
+            print(f"   淘汰数量: {evict_result.get('evicted_count', 0)} 个适配器")
+            print(f"   释放空间: {evict_result.get('cells_freed', 0)} cells")
+            if before and after:
+                print(f"   使用率变化: {before.get('usage_ratio', 0):.1%} → {after.get('usage_ratio', 0):.1%}")
+        else:
+            reason = evict_result.get('reason', 'unknown')
+            reason_map = {
+                'below_threshold': '内存使用率未超过阈值',
+                'no_adapters': '没有加载任何适配器',
+                'no_candidates': '所有适配器都在使用中或受保护'
+            }
+            reason_str = reason_map.get(reason, reason)
+            print(f"\n⏭️  {context_str}未执行淘汰: {reason_str}")
     
     def _add_token_id_to_req(self, batch: Batch, req_ans):
         for req_id, (new_token_id, new_gen_metadata) in req_ans.items():
@@ -480,6 +629,12 @@ def start_router_process(args, router_port, detokenization_port, model_rpc_ports
                                bmm=args.bmm,
                                no_lora=args.no_lora,
                                fair_weights=args.fair_weights,
+                               # eviction parameters
+                               evict_interval_threshold=args.evict_interval_threshold,
+                               evict_interval_ratio=args.evict_interval_ratio,
+                               evict_idle_threshold=args.evict_idle_threshold,
+                               evict_idle_ratio=args.evict_idle_ratio,
+                               max_lora_ratio=args.max_lora_ratio,
                               )
 
     try:

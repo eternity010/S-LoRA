@@ -19,7 +19,7 @@ class PETSReqQueue(ReqQueue):
         self.waiting_req_list.append(req)
         return
     
-    def _init_cache_list(self, current_batch:Batch, lora_ranks):
+    def _init_cache_list(self, current_batch:Batch, lora_ranks, actual_adapter_size=0):
         if current_batch is not None:
             self.cache_len_list = []
             self.adapters = set()
@@ -34,6 +34,9 @@ class PETSReqQueue(ReqQueue):
             self.cache_len_list = []
             self.adapters = set()
             self.adapter_size = 0
+        
+        # 新增：使用实际占用而非预估占用
+        self.actual_total_adapter_size = actual_adapter_size
     
     def intra_task_batching(self, lora_ranks):
         ## Preprocessing: gather the queries with the same adapter.
@@ -158,7 +161,7 @@ class PETSReqQueue(ReqQueue):
         else:
             return False
 
-    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int]):
+    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int], actual_adapter_size=0):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
         
@@ -172,7 +175,8 @@ class PETSReqQueue(ReqQueue):
             reqs = [req for minibatch in macro_batch for req in minibatch[0]]
             
         
-        self._init_cache_list(current_batch, lora_ranks)
+        # 传递实际占用
+        self._init_cache_list(current_batch, lora_ranks, actual_adapter_size)
         can_run_list = []
         abort_list = []
         new_batch_total_tokens = 0

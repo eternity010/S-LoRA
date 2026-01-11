@@ -30,11 +30,12 @@ class AbortReqQueue(ReqQueue):
     def reset_abort_list(self):
         self.abort_req_list = []
 
-    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int]):
+    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int], actual_adapter_size=0):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
         
-        self._init_cache_list(current_batch, lora_ranks)
+        # 传递实际占用
+        self._init_cache_list(current_batch, lora_ranks, actual_adapter_size)
         can_run_list = []
         abort_list = []
         new_batch_total_tokens = 0

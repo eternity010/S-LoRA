@@ -24,6 +24,19 @@ if __name__ == "__main__":
     parser.add_argument("--batch-num-adapters", type=int, default=None)
     parser.add_argument("--enable-abort", action="store_true")
     parser.add_argument("--vllm-mem-ratio", type=float, default=0.95)
+    
+    # 阈值淘汰相关参数
+    parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
+                        help="请求完成时触发淘汰的内存使用率阈值 (0-1)")
+    parser.add_argument("--evict-interval-ratio", type=float, default=0.3,
+                        help="请求完成时的淘汰比例 (0-1)")
+    parser.add_argument("--evict-idle-threshold", type=float, default=0.95,
+                        help="批次空闲时触发淘汰的内存使用率阈值 (0-1)")
+    parser.add_argument("--evict-idle-ratio", type=float, default=0.5,
+                        help="批次空闲时的淘汰比例 (0-1)")
+    parser.add_argument("--max-lora-ratio", type=float, default=0.4,
+                        help="LoRA 占用总内存的最大比例 (0-1)")
+    
     args = parser.parse_args()
 
     base_model = BASE_MODEL[args.model_setting]
@@ -71,6 +84,13 @@ if __name__ == "__main__":
         # cmd += " --no-kernel"
         if args.bmm:
             cmd += " --bmm"
+        
+        # 添加阈值淘汰参数
+        cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"
+        cmd += f" --evict-interval-ratio {args.evict_interval_ratio}"
+        cmd += f" --evict-idle-threshold {args.evict_idle_threshold}"
+        cmd += f" --evict-idle-ratio {args.evict_idle_ratio}"
+        cmd += f" --max-lora-ratio {args.max_lora_ratio}"
 
     elif args.backend == "lightllm":
         cmd = f"python -m lightllm.server.api_server" \
