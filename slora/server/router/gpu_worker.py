@@ -19,6 +19,7 @@ from slora.utils.model_utils import get_model_config
 from slora.server.router.req_queue import ReqQueue
 from slora.server.io_struct import Req, Batch
 from slora.server.sampling_params import SamplingParams
+from slora.models.peft.lora_adapter import get_lora_config
 
 
 class GPUWorker:
@@ -57,11 +58,14 @@ class GPUWorker:
         self.model = None
         self.adapter_cache = {}
         
+        # Adapter 管理（借鉴 manager.py）
+        self.lora_ranks = {}  # adapter_dir -> rank 映射，用于 ReqQueue 显存管理
+        self.actual_adapter_size = 0  # 实际 adapter 占用的显存大小（cells）
+        self.actual_adapter_memory_usage = 0  # 缓存实际的 adapter 内存占用（单位：cells）
+        
         # 请求队列管理（复用 ReqQueue）
         self.req_queue = None  # 将在 _setup_request_queue() 中初始化
         self.current_batch = None
-        self.lora_ranks = {'base': 0}  # LoRA rank 信息，用于显存管理（base 模型 rank 为 0）
-        self.actual_adapter_size = 0  # 实际 adapter 占用的显存大小
         
         # ZMQ 通信相关（待后续任务实现）
         self.context = None
@@ -70,6 +74,9 @@ class GPUWorker:
         
         # 设置 GPU 环境
         self._setup_gpu()
+        
+        # 初始化 Adapter rank 配置（Phase 1 必需）
+        self._setup_adapter_config()
     
     def _setup_gpu(self) -> None:
         """
@@ -95,6 +102,132 @@ class GPUWorker:
                   f"CUDA_VISIBLE_DEVICES={self.gpu_id}, torch device=cuda:0")
         else:
             raise RuntimeError(f"[Worker {self.worker_id}] CUDA is not available on GPU {self.gpu_id}")
+    
+    def _setup_adapter_config(self) -> None:
+        """
+        初始化 Adapter 配置（借鉴 manager.py）
+        
+        读取所有 adapter 的 rank 配置，用于 ReqQueue 计算显存占用。
+        这是 Phase 1 必需的功能，确保 ReqQueue 能够正确计算批次大小。
+        
+        Requirements:
+            - 3.4: 使用现有的模型推理逻辑处理请求
+        
+        Note:
+            - 借鉴 manager.py 的 lora_ranks 初始化逻辑
+            - lora_ranks 字典用于 ReqQueue.generate_new_batch() 计算显存占用
+            - None 键表示无 adapter 的情况（base 模型），rank 为 0
+        """
+        self.lora_ranks = {}
+        
+        # 检查是否有 lora_dirs 参数
+        if hasattr(self.args, 'lora_dirs') and self.args.lora_dirs:
+            # 遍历所有 adapter 目录，读取配置并存储 rank
+            for lora_dir in self.args.lora_dirs:
+                try:
+                    config, _ = get_lora_config(lora_dir, getattr(self.args, 'dummy', False))
+                    self.lora_ranks[lora_dir] = config["r"]
+                    print(f"[Worker {self.worker_id}] Loaded adapter config: {lora_dir}, rank={config['r']}")
+                except Exception as e:
+                    print(f"[Worker {self.worker_id}] Warning: Failed to load adapter config from {lora_dir}: {e}")
+                    # 如果加载失败，使用默认 rank
+                    self.lora_ranks[lora_dir] = 8  # 默认 rank 值
+        
+        # 添加 None 键处理无 adapter 情况（base 模型）
+        self.lora_ranks[None] = 0
+        
+        print(f"[Worker {self.worker_id}] Adapter rank configuration initialized: {len(self.lora_ranks)} adapters")
+    
+    async def _update_actual_adapter_usage(self) -> None:
+        """
+        查询并更新实际的 adapter 内存占用（借鉴 manager.py）
+        
+        通过 RPC 查询 LoRA 内存使用情况，提取 adapter 实际占用的 cells 数。
+        用于并发控制的准确判断。
+        
+        Requirements:
+            - 3.4: 使用现有的模型推理逻辑处理请求
+        
+        Note:
+            - 借鉴 manager.py 的 _update_actual_adapter_usage() 方法
+            - 在 adapter 加载/卸载后调用，更新实际占用
+            - 如果查询失败，保持当前值不变（保守估计）
+        """
+        # 检查是否启用了 LoRA
+        if getattr(self.args, 'no_lora', False):
+            self.actual_adapter_memory_usage = 0
+            return
+        
+        # 检查是否有 model_rpc（需要在模型加载后才能查询）
+        if not hasattr(self, 'model_rpc') or self.model_rpc is None:
+            # 模型尚未加载，无法查询
+            return
+        
+        try:
+            # 查询 RPC 节点的 LoRA 内存使用情况
+            memory_info = await self.model_rpc.check_lora_memory()
+            
+            if memory_info:
+                # 计算实际的 adapter 占用：所有已加载 adapters 的总和
+                adapter_cells_list = memory_info.get('adapter_cells', [])
+                self.actual_adapter_memory_usage = sum(adapter_cells_list)
+                
+                # 同步更新 actual_adapter_size（用于 ReqQueue）
+                self.actual_adapter_size = self.actual_adapter_memory_usage
+                
+                print(f"[Worker {self.worker_id}] Updated actual adapter usage: {self.actual_adapter_memory_usage} cells")
+            else:
+                # 查询失败，使用保守估计（当前值不变）
+                print(f"[Worker {self.worker_id}] Warning: check_lora_memory() returned None")
+        except Exception as e:
+            # 查询出错，使用保守估计
+            print(f"[Worker {self.worker_id}] Warning: Failed to query actual adapter usage: {e}")
+    
+    async def _load_adapters(self, adapter_dirs: set) -> None:
+        """
+        加载 Adapters（借鉴 manager.py）
+        
+        调用 RPC 的 load_adapters() 方法加载指定的 adapters。
+        加载后调用 _update_actual_adapter_usage() 更新实际占用。
+        
+        Args:
+            adapter_dirs: 需要加载的 adapter 目录集合
+        
+        Requirements:
+            - 3.3: 根据请求中的 adapter_dir 加载对应的 Adapter
+        
+        Note:
+            - 借鉴 manager.py 的 adapter 加载逻辑
+            - 在批次生成后加载所需的 adapters
+            - 加载后更新实际内存占用
+            - Phase 1 简化实现：假设 model_rpc 已经初始化
+        """
+        # 检查是否启用了 LoRA
+        if getattr(self.args, 'no_lora', False):
+            return
+        
+        # 检查是否有 model_rpc（需要在模型加载后才能加载 adapter）
+        if not hasattr(self, 'model_rpc') or self.model_rpc is None:
+            print(f"[Worker {self.worker_id}] Warning: model_rpc not initialized, cannot load adapters")
+            return
+        
+        # 如果没有需要加载的 adapter，直接返回
+        if not adapter_dirs:
+            return
+        
+        try:
+            # 调用 RPC 加载 adapters
+            await self.model_rpc.load_adapters(adapter_dirs)
+            
+            print(f"[Worker {self.worker_id}] Loaded {len(adapter_dirs)} adapters: "
+                  f"{[d.split('/')[-1] for d in list(adapter_dirs)[:5]]}")
+            
+            # 加载后更新实际占用
+            await self._update_actual_adapter_usage()
+            
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Error loading adapters: {e}")
+            # 加载失败不应该终止服务，继续运行
     
     def _setup_zmq(self, request_port: int, response_port: int) -> None:
         """
@@ -377,13 +510,18 @@ class GPUWorker:
         """
         try:
             # 使用 ReqQueue 生成新批次
+            # 传递 lora_ranks 和 actual_adapter_size 用于显存管理
             new_batch = self.req_queue.generate_new_batch(
                 self.current_batch,
                 self.lora_ranks,
-                self.actual_adapter_size
+                actual_adapter_size=self.actual_adapter_memory_usage
             )
             
             if new_batch is not None:
+                # 加载批次所需的 adapters（借鉴 manager.py）
+                if not getattr(self.args, 'no_lora', False) and new_batch.adapter_dirs:
+                    await self._load_adapters(new_batch.adapter_dirs)
+                
                 # 合并到当前批次
                 if self.current_batch is None:
                     self.current_batch = new_batch

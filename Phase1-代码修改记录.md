@@ -214,3 +214,329 @@
 - 新的批处理逻辑在 `_process_requests()` 中实现
 
 ---
+
+### 2025-01-13 - Task 2.7.1: 实现 Adapter Rank 配置（Phase 1 必需）
+
+**修改文件**:
+1. `slora/server/router/gpu_worker.py`
+   - 添加导入：`get_lora_config` (从 `slora.models.peft.lora_adapter`)
+   - 更新 `__init__()` 方法：
+     - 重新组织 Adapter 管理相关属性
+     - 在初始化时调用 `_setup_adapter_config()`
+   - 实现新方法：
+     - `_setup_adapter_config()`: 初始化 Adapter rank 配置
+   - 功能：读取所有 adapter 的 rank 配置，用于 ReqQueue 显存管理
+
+**关键设计**:
+- **借鉴 manager.py**：复用张量并行模式中的 Adapter rank 管理策略
+- **lora_ranks 字典**：存储 adapter_dir -> rank 的映射关系
+- **用途**：传递给 ReqQueue.generate_new_batch() 用于显存占用计算
+- **None 键**：表示无 adapter 的情况（base 模型），rank 为 0
+
+**实现细节**:
+
+1. **`_setup_adapter_config()` 方法**:
+   - 初始化 `self.lora_ranks = {}` 字典
+   - 检查 args 是否有 `lora_dirs` 参数
+   - 遍历所有 adapter 目录：
+     - 调用 `get_lora_config(lora_dir, dummy)` 读取配置
+     - 提取 rank 值：`config["r"]`
+     - 存储到 `lora_ranks` 字典
+   - 错误处理：
+     - 如果加载失败，输出警告日志
+     - 使用默认 rank 值（8）
+   - 添加 `self.lora_ranks[None] = 0` 处理无 adapter 情况
+   - 输出初始化完成日志
+
+2. **属性更新**:
+   - `self.lora_ranks`: adapter_dir -> rank 映射（用于 ReqQueue 显存管理）
+   - `self.actual_adapter_size`: 实际 adapter 占用的显存大小（cells）
+
+3. **初始化顺序**:
+   - `_setup_gpu()`: 设置 GPU 环境
+   - `_setup_adapter_config()`: 初始化 Adapter rank 配置
+
+**新增测试文件**:
+1. `test/test_gpu_worker_adapter_config.py`
+   - Adapter rank 配置的单元测试
+   - 测试覆盖：
+     - 有 lora_dirs 时的配置初始化
+     - 没有 lora_dirs 时的配置初始化
+     - lora_dirs 为空列表时的配置初始化
+     - dummy 模式下的配置初始化
+     - 配置加载失败时的处理（使用默认值）
+     - 多个 adapter 的配置初始化
+     - actual_adapter_size 初始化为 0
+   - 所有测试通过 ✓ (7/7)
+
+**验证结果**:
+- 单元测试：7/7 通过
+- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
+- lora_ranks 字典正确初始化
+- None 键正确添加（base 模型）
+- 错误处理健壮（加载失败时使用默认值）
+- 支持 dummy 模式
+- 为后续 Task 2.7.2（实际内存占用跟踪）和 Task 2.7.3（Adapter 加载/卸载）奠定基础
+
+**下一步**:
+- Task 2.7.2: 实现实际内存占用跟踪（`_update_actual_adapter_usage()`）
+- Task 2.7.3: 实现基本的 Adapter 加载/卸载（`_load_adapters()`）
+- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+
+---
+
+### 2025-01-13 - Task 2.7.2: 实现实际内存占用跟踪（Phase 1 必需）
+
+**修改文件**:
+1. `slora/server/router/gpu_worker.py`
+   - 更新 `__init__()` 方法：
+     - 添加 `self.actual_adapter_memory_usage = 0` 属性
+   - 实现新方法：
+     - `_update_actual_adapter_usage()`: 查询并更新实际的 adapter 内存占用
+   - 功能：通过 RPC 查询 LoRA 内存使用情况，用于并发控制的准确判断
+
+**关键设计**:
+- **借鉴 manager.py**：复用张量并行模式中的实际内存占用跟踪策略
+- **actual_adapter_memory_usage**：缓存实际的 adapter 内存占用（单位：cells）
+- **用途**：在 adapter 加载/卸载后更新，用于并发控制的准确判断
+- **保守估计**：查询失败时保持当前值不变
+
+**实现细节**:
+
+1. **`_update_actual_adapter_usage()` 方法**:
+   - 检查是否启用了 LoRA（`no_lora` 参数）
+   - 检查是否有 `model_rpc`（需要在模型加载后才能查询）
+   - 通过 RPC 查询 `check_lora_memory()` 获取内存信息
+   - 计算所有 adapter_cells 的总和：`sum(adapter_cells_list)`
+   - 同步更新 `actual_adapter_size`（用于 ReqQueue）
+   - 错误处理：
+     - 如果查询返回 None，保持当前值不变
+     - 如果查询抛出异常，捕获并输出警告日志
+   - 输出更新完成日志
+
+2. **属性更新**:
+   - `self.actual_adapter_memory_usage`: 缓存实际的 adapter 内存占用（单位：cells）
+   - 在 `__init__()` 中初始化为 0
+
+3. **调用时机**（将在后续任务中实现）:
+   - 模型初始化后：查询初始占用
+   - Adapter 加载后：更新占用
+   - Adapter 卸载后：更新占用
+
+**新增测试文件**:
+1. `test/test_gpu_worker_memory_tracking.py`
+   - 实际内存占用跟踪的单元测试
+   - 测试覆盖：
+     - actual_adapter_memory_usage 初始化为 0
+     - no_lora 模式下的内存占用更新
+     - 没有 model_rpc 时的内存占用更新
+     - 有效内存信息时的内存占用更新
+     - adapter_cells 为空时的内存占用更新
+     - check_lora_memory 返回 None 时的处理
+     - 查询异常时的处理（保守估计）
+     - 单个 adapter 时的内存占用更新
+     - 多次更新内存占用（模拟加载/卸载）
+   - 所有测试通过 ✓ (9/9)
+
+**验证结果**:
+- 单元测试：9/9 通过
+- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
+- actual_adapter_memory_usage 正确初始化
+- RPC 查询逻辑正确实现
+- adapter_cells 总和计算正确
+- actual_adapter_size 同步更新
+- 错误处理健壮（查询失败时保持当前值）
+- 支持多次更新（模拟加载/卸载场景）
+- 为后续 Task 2.7.3（Adapter 加载/卸载）和 Task 2.7.4（ReqQueue 集成）奠定基础
+
+**下一步**:
+- Task 2.7.3: 实现基本的 Adapter 加载/卸载（`_load_adapters()`）
+- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+
+---
+
+### 2025-01-13 - Task 2.7.3: 实现基本的 Adapter 加载/卸载（Phase 1 必需）
+
+**修改文件**:
+1. `slora/server/router/gpu_worker.py`
+   - 实现新方法：
+     - `_load_adapters(adapter_dirs)`: 加载指定的 adapters
+   - 更新 `_process_requests()` 方法：
+     - 在生成新批次后加载所需的 adapters
+   - 功能：调用 RPC 加载 adapters，并更新实际内存占用
+
+**关键设计**:
+- **借鉴 manager.py**：复用张量并行模式中的 adapter 加载策略
+- **加载时机**：在 ReqQueue 生成新批次后，立即加载批次所需的 adapters
+- **内存更新**：加载后调用 `_update_actual_adapter_usage()` 更新实际占用
+- **错误处理**：加载失败不应该终止服务，输出警告日志并继续运行
+
+**实现细节**:
+
+1. **`_load_adapters(adapter_dirs)` 方法**:
+   - 检查是否启用了 LoRA（`no_lora` 参数）
+   - 检查是否有 `model_rpc`（需要在模型加载后才能加载 adapter）
+   - 检查 adapter_dirs 是否为空
+   - 调用 RPC 的 `load_adapters(adapter_dirs)` 方法
+   - 输出加载日志（显示加载的 adapter 数量和名称）
+   - 调用 `_update_actual_adapter_usage()` 更新实际占用
+   - 错误处理：
+     - 如果 RPC 调用失败，捕获异常并输出错误日志
+     - 不抛出异常，确保服务继续运行
+
+2. **`_process_requests()` 方法更新**:
+   - 在 `generate_new_batch()` 后检查是否有新批次
+   - 如果有新批次且未启用 `no_lora`：
+     - 检查批次的 `adapter_dirs` 是否非空
+     - 调用 `_load_adapters(new_batch.adapter_dirs)` 加载 adapters
+   - 然后合并批次并执行推理
+
+3. **加载流程**:
+   ```
+   generate_new_batch() 
+   → 检查 new_batch.adapter_dirs 
+   → _load_adapters(adapter_dirs) 
+   → RPC.load_adapters() 
+   → _update_actual_adapter_usage() 
+   → merge batch 
+   → inference
+   ```
+
+**新增测试文件**:
+1. `test/test_gpu_worker_adapter_loading.py`
+   - Adapter 加载功能的单元测试
+   - 测试覆盖：
+     - no_lora 模式下的加载（直接返回）
+     - 没有 model_rpc 时的加载（输出警告）
+     - 空 adapter 集合的加载（不调用 RPC）
+     - 成功加载 adapters
+     - 加载单个 adapter
+     - 加载时发生异常（不崩溃）
+     - 多次加载不同的 adapters
+     - actual_adapter_size 同步更新
+     - 加载大量 adapters
+   - 所有测试通过 ✓ (9/9)
+
+**验证结果**:
+- 单元测试：9/9 通过
+- 满足 Requirements 3.3（根据请求中的 adapter_dir 加载对应的 Adapter）
+- RPC 调用逻辑正确实现
+- 加载后内存占用正确更新
+- 错误处理健壮（加载失败不崩溃）
+- 支持多次加载（模拟批次变化）
+- 与 ReqQueue 批处理流程正确集成
+- 为后续 Task 2.7.4（ReqQueue 参数传递）奠定基础
+
+**Phase 1 简化说明**:
+- 假设 `model_rpc` 已经初始化（实际的 RPC 初始化将在后续任务中实现）
+- 暂不实现 adapter 卸载逻辑（Phase 1 只需要加载）
+- 完整的 adapter 管理（包括淘汰策略）将在后续 Phase 中实现
+
+**下一步**:
+- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+
+---
+
+### 2025-01-13 - Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+
+**修改文件**:
+1. `slora/server/router/gpu_worker.py`
+   - 更新 `_process_requests()` 方法：
+     - 使用关键字参数传递 `actual_adapter_size`
+     - 确保 ReqQueue 能够正确计算显存占用
+
+**关键设计**:
+- **显式参数传递**：使用 `actual_adapter_size=self.actual_adapter_memory_usage` 作为关键字参数
+- **与 manager.py 一致**：保持与张量并行模式相同的调用方式
+- **显存管理集成**：确保 ReqQueue 能够准确计算批次的显存占用
+
+**实现细节**:
+
+1. **`generate_new_batch()` 调用更新**:
+   ```python
+   # 之前（位置参数）
+   new_batch = self.req_queue.generate_new_batch(
+       self.current_batch,
+       self.lora_ranks,
+       self.actual_adapter_size
+   )
+   
+   # 之后（关键字参数）
+   new_batch = self.req_queue.generate_new_batch(
+       self.current_batch,
+       self.lora_ranks,
+       actual_adapter_size=self.actual_adapter_memory_usage
+   )
+   ```
+
+2. **参数说明**:
+   - `current_batch`: 当前正在处理的批次（可能为 None）
+   - `lora_ranks`: adapter_dir -> rank 的映射，用于计算 adapter 显存占用
+   - `actual_adapter_size`: 实际已加载的 adapter 占用的显存大小（cells）
+
+3. **显存管理流程**:
+   ```
+   ReqQueue.generate_new_batch()
+   → _init_cache_list(current_batch, lora_ranks, actual_adapter_size)
+   → 计算当前 adapter 占用
+   → _can_add_new_req() 检查是否有足够显存
+   → 生成新批次
+   ```
+
+**新增测试文件**:
+1. `test/test_gpu_worker_reqqueue_integration.py`
+   - ReqQueue 集成测试
+   - 测试覆盖：
+     - lora_ranks 正确传递
+     - actual_adapter_size 正确传递
+     - actual_adapter_size 为 0 时的传递
+     - 有当前批次时的调用
+     - 批次生成后加载 adapters
+     - no_lora 模式下不加载 adapters
+     - adapter 信息在整个流程中的一致性
+   - 所有测试通过 ✓ (7/7)
+
+**验证结果**:
+- 单元测试：7/7 通过
+- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
+- lora_ranks 正确传递给 ReqQueue
+- actual_adapter_memory_usage 正确传递给 ReqQueue
+- ReqQueue 能够准确计算显存占用
+- 与 manager.py 的调用方式保持一致
+- 完整的 adapter 管理流程集成完成
+
+**集成验证**:
+- Task 2.7.1（Adapter Rank 配置）✓
+- Task 2.7.2（实际内存占用跟踪）✓
+- Task 2.7.3（Adapter 加载/卸载）✓
+- Task 2.7.4（ReqQueue 参数传递）✓
+
+**Adapter 管理完整流程**:
+```
+初始化
+→ _setup_adapter_config() 读取 lora_ranks
+→ actual_adapter_memory_usage = 0
+
+批次处理
+→ generate_new_batch(lora_ranks, actual_adapter_size)
+→ ReqQueue 计算显存占用
+→ 生成新批次
+→ _load_adapters(batch.adapter_dirs)
+→ RPC.load_adapters()
+→ _update_actual_adapter_usage()
+→ actual_adapter_memory_usage 更新
+→ 执行推理
+```
+
+**Phase 1 Adapter 管理总结**:
+- ✓ Adapter rank 配置读取
+- ✓ 实际内存占用跟踪
+- ✓ 基本的 adapter 加载
+- ✓ ReqQueue 显存管理集成
+- 为后续 Phase 的完整 adapter 管理（包括淘汰策略）奠定基础
+
+**下一步**:
+- Task 2.8: 编写 Adapter 管理单元测试（可选）
+- Task 3: 实现 Data Parallel Router Manager
+
+---

@@ -73,7 +73,46 @@
   - 测试消息接收和发送
   - 测试请求处理流程
 
-- [ ] 3. 实现 Data Parallel Router Manager
+- [ ] 2.7 实现 Adapter 管理（借鉴 manager.py）
+  - **设计理念**：复用张量并行的 Adapter 管理策略
+  
+  - [x] 2.7.1 实现 Adapter Rank 配置（Phase 1 必需）
+    - 导入 `get_lora_config` 函数
+    - 在 `__init__` 中初始化 `self.lora_ranks` 字典
+    - 遍历所有 adapter 目录，读取配置并存储 rank
+    - 添加 `self.lora_ranks[None] = 0` 处理无 adapter 情况
+    - _借鉴_: `manager.py` 的 lora_ranks 初始化逻辑
+    - _Requirements: 3.4_
+  
+  - [x] 2.7.2 实现实际内存占用跟踪（Phase 1 必需）
+    - 在 `__init__` 中初始化 `self.actual_adapter_memory_usage = 0`
+    - 实现 `_update_actual_adapter_usage()` 方法
+    - 通过 RPC 查询 `check_lora_memory()` 获取实际占用
+    - 计算所有 adapter_cells 的总和
+    - _借鉴_: `manager.py` 的 `_update_actual_adapter_usage()` 方法
+    - _Requirements: 3.4_
+  
+  - [x] 2.7.3 实现基本的 Adapter 加载/卸载（Phase 1 必需）
+    - 实现 `_load_adapters(adapter_dirs)` 方法
+    - 调用 RPC 的 `load_adapters()` 加载 adapters
+    - 加载后调用 `_update_actual_adapter_usage()` 更新占用
+    - 在批次生成后加载所需的 adapters
+    - _借鉴_: `manager.py` 的 adapter 加载逻辑
+    - _Requirements: 3.3_
+  
+  - [x] 2.7.4 更新 ReqQueue 调用传递 Adapter 信息
+    - 在 `generate_new_batch()` 调用中传递 `lora_ranks` 参数
+    - 在 `generate_new_batch()` 调用中传递 `actual_adapter_size` 参数
+    - 确保 ReqQueue 能够正确计算显存占用
+    - _Requirements: 3.4_
+
+- [ ]* 2.8 编写 Adapter 管理单元测试
+  - 测试 lora_ranks 初始化
+  - 测试实际内存占用查询
+  - 测试 adapter 加载流程
+  - 测试 ReqQueue 与 adapter 信息的集成
+
+- [ ] 3.  
   - [ ] 3.1 创建 DataParallelRouterManager 类框架
     - 创建 `slora/server/router/dp_manager.py` 文件
     - 实现 `__init__` 方法

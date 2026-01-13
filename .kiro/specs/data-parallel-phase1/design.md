@@ -144,11 +144,18 @@ class GPUWorker:
         
         # 模型相关
         self.model = None
-        self.adapter_cache = {}
+        self.model_rpc = None  # RPC 客户端（用于与模型进程通信）
+        
+        # Adapter 管理（借鉴 manager.py）
+        self.lora_ranks = {}  # adapter_dir -> rank 映射
+        self.actual_adapter_memory_usage = 0  # 实际 adapter 显存占用（cells）
         
         # 请求队列管理（复用 ReqQueue）
         self.req_queue = None  # 将在 _setup_request_queue() 中初始化
         self.current_batch = None
+        
+        # EOS token ID
+        self.eos_id = args.eos_id
     
     def _setup_gpu(self) -> None:
         """设置 GPU 环境"""
@@ -171,6 +178,55 @@ class GPUWorker:
         """加载基座模型（复用现有代码）"""
         # 复用 slora/common/basemodel/ 中的模型加载逻辑
         pass
+    
+    def _setup_adapter_config(self) -> None:
+        """
+        初始化 Adapter 配置（借鉴 manager.py）
+        
+        读取所有 adapter 的 rank 配置，用于 ReqQueue 计算显存占用
+        """
+        from slora.models.peft.lora_adapter import get_lora_config
+        
+        self.lora_ranks = {}
+        for lora_dir in self.args.lora_dirs:
+            config, _ = get_lora_config(lora_dir, self.args.dummy)
+            self.lora_ranks[lora_dir] = config["r"]
+        self.lora_ranks[None] = 0  # 无 adapter 的情况
+    
+    async def _update_actual_adapter_usage(self) -> None:
+        """
+        查询并更新实际的 adapter 内存占用（借鉴 manager.py）
+        
+        通过 RPC 查询 LoRA 内存使用情况，提取 adapter 实际占用的 cells 数。
+        用于 ReqQueue 的精确并发控制。
+        """
+        if self.args.no_lora:
+            self.actual_adapter_memory_usage = 0
+            return
+        
+        try:
+            memory_info = await self.model_rpc.check_lora_memory()
+            if memory_info:
+                adapter_cells_list = memory_info.get('adapter_cells', [])
+                self.actual_adapter_memory_usage = sum(adapter_cells_list)
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] 警告：无法查询 adapter 占用: {e}")
+    
+    async def _load_adapters(self, adapter_dirs: set) -> None:
+        """
+        加载 adapters（借鉴 manager.py）
+        
+        Args:
+            adapter_dirs: 需要加载的 adapter 目录集合
+        """
+        if self.args.no_lora or not adapter_dirs:
+            return
+        
+        # 加载 adapters
+        await self.model_rpc.load_adapters(list(adapter_dirs))
+        
+        # 更新实际占用
+        await self._update_actual_adapter_usage()
     
     def _setup_request_queue(self) -> None:
         """
@@ -201,14 +257,17 @@ class GPUWorker:
         Returns:
             响应列表
         """
-        # 使用 ReqQueue 生成新批次
+        # 使用 ReqQueue 生成新批次（传递 lora_ranks 和实际占用）
         new_batch = self.req_queue.generate_new_batch(
             self.current_batch,
-            self.lora_ranks,
-            self.actual_adapter_size
+            self.lora_ranks,  # Adapter rank 配置
+            actual_adapter_size=self.actual_adapter_memory_usage  # 实际显存占用
         )
         
         if new_batch is not None:
+            # 加载批次需要的 adapters
+            await self._load_adapters(new_batch.adapter_dirs)
+            
             # 合并到当前批次
             if self.current_batch is None:
                 self.current_batch = new_batch
@@ -231,8 +290,12 @@ class GPUWorker:
                     'error': None
                 })
             
-            # 更新批次状态
-            self._update_batch_state()
+            # 标记完成的请求
+            has_new_finished_req = self.current_batch.mark_finished_req(self.eos_id)
+            
+            # 处理完成的请求（包括 adapter 淘汰）
+            if has_new_finished_req:
+                await self._handle_finish_req(self.current_batch, has_new_finished_req)
             
             return responses
         
@@ -241,6 +304,35 @@ class GPUWorker:
     async def _send_response(self, response: dict) -> None:
         """发送响应"""
         await self.response_sender.send_json(response)
+    
+    async def _handle_finish_req(self, batch: Batch, has_new_finished_req: bool) -> None:
+        """
+        处理完成的请求（借鉴 manager.py）
+        
+        当批次中有请求完成时：
+        1. 过滤掉已完成的请求
+        2. 更新批次状态
+        3. （Phase 2）触发 adapter 淘汰
+        
+        Args:
+            batch: 当前运行的批次
+            has_new_finished_req: 是否有新完成的请求
+        """
+        if not has_new_finished_req:
+            return
+        
+        # 过滤已完成的请求
+        batch.filter_finished()
+        
+        # 更新批次状态
+        if batch.is_clear():
+            # 批次完全清空
+            self.current_batch = None
+        
+        # Phase 2 将添加：
+        # - 记录完成请求的 adapters
+        # - 减少请求计数
+        # - 触发智能淘汰策略
     
     async def run(self) -> None:
         """主循环"""
@@ -269,8 +361,12 @@ class GPUWorker:
 **Key Methods**:
 - `_setup_gpu()`: 设置 CUDA_VISIBLE_DEVICES
 - `_load_model()`: 加载基座模型
+- `_setup_adapter_config()`: 初始化 Adapter rank 配置（Phase 1）
+- `_update_actual_adapter_usage()`: 查询实际 adapter 显存占用（Phase 1）
+- `_load_adapters()`: 加载 adapters（Phase 1）
 - `_setup_request_queue()`: 初始化 ReqQueue（复用张量并行逻辑）
 - `_process_requests()`: 使用 ReqQueue 管理批处理
+- `_handle_finish_req()`: 处理完成的请求（Phase 1 基础版，Phase 2 添加淘汰）
 - `run()`: 主循环，持续接收和处理请求
 
 **复用的 ReqQueue 功能**:
@@ -278,6 +374,12 @@ class GPUWorker:
 - `generate_new_batch()`: 根据显存和批次大小生成新批次
 - `_can_add_new_req()`: 检查是否可以添加新请求（显存管理）
 - `_init_cache_list()`: 初始化缓存列表（Adapter 调度）
+
+**借鉴 manager.py 的 Adapter 管理**:
+- Adapter rank 配置管理（`lora_ranks` 字典）
+- 实际内存占用跟踪（`actual_adapter_memory_usage`）
+- Adapter 加载时机（批次生成后）
+- 加载后更新内存占用统计
 
 ### Component 2: Data Parallel Router Manager
 
