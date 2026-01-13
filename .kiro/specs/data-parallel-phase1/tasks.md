@@ -4,6 +4,16 @@
 
 本实施计划将 Phase 1 的设计转换为具体的编码任务。任务按照依赖关系组织，确保每个任务都可以在前置任务完成后独立执行。
 
+**当前进度**：
+- ✅ Round Robin Router 已完成
+- ✅ GPU Worker 基础框架已完成（包括 ZMQ 通信、ReqQueue 集成、Adapter 管理）
+- ✅ DataParallelRouterManager 已完成（包括 Worker 管理、请求路由）
+- ⏳ GPU Worker 推理逻辑需要完善（模型 RPC 初始化和实际推理）
+- ⏳ Response Merger 待实现
+- ⏳ API Server 集成待实现
+- ⏳ 错误处理和监控需要完善
+- ⏳ 集成测试和性能测试待实现
+
 ## 实施规范
 
 **开发环境**：
@@ -73,7 +83,7 @@
   - 测试消息接收和发送
   - 测试请求处理流程
 
-- [ ] 2.7 实现 Adapter 管理（借鉴 manager.py）
+- [x] 2.7 实现 Adapter 管理（借鉴 manager.py）
   - **设计理念**：复用张量并行的 Adapter 管理策略
   
   - [x] 2.7.1 实现 Adapter Rank 配置（Phase 1 必需）
@@ -106,14 +116,38 @@
     - 确保 ReqQueue 能够正确计算显存占用
     - _Requirements: 3.4_
 
-- [ ]* 2.8 编写 Adapter 管理单元测试
+- [ ] 2.9 完善 GPU Worker 推理逻辑
+  - [x] 2.9.1 实现模型 RPC 初始化
+    - 添加 `_init_model_rpc()` 方法
+    - 创建 ModelRpcClient 连接到模型进程
+    - 在 Worker 启动时初始化 RPC 连接
+    - _Requirements: 1.4, 3.4_
+  
+  - [ ] 2.9.2 实现实际推理逻辑
+    - 实现 `_infer_batch()` 方法
+    - 调用 model_rpc 执行实际推理
+    - 处理推理结果并更新批次状态
+    - _Requirements: 3.4, 3.5_
+  
+  - [ ] 2.9.3 集成完整的批次管理
+    - 实现 `_handle_finish_req()` 方法（完整版）
+    - 处理 EOS token 检测
+    - 更新批次状态和 adapter 使用统计
+    - _Requirements: 3.5_
+
+- [ ]* 2.10 编写 GPU Worker 推理测试
+  - 测试模型 RPC 初始化
+  - 测试实际推理流程
+  - 测试批次管理逻辑
+
+- [ ]* 2.11 编写 Adapter 管理单元测试
   - 测试 lora_ranks 初始化
   - 测试实际内存占用查询
   - 测试 adapter 加载流程
   - 测试 ReqQueue 与 adapter 信息的集成
 
-- [ ] 3.  
-  - [ ] 3.1 创建 DataParallelRouterManager 类框架
+- [x] 3.  DataParallelRouterManager
+  - [x] 3.1 创建 DataParallelRouterManager 类框架
     - 创建 `slora/server/router/dp_manager.py` 文件
     - 实现 `__init__` 方法
     - 实现 GPU 检测逻辑 `_detect_gpus()`
@@ -121,26 +155,26 @@
     - 实现端口分配 `_allocate_ports()`
     - _Requirements: 1.1, 5.2, 5.3, 5.4, 5.5_
   
-  - [ ] 3.2 实现 Worker 进程管理
+  - [x] 3.2 实现 Worker 进程管理
     - 实现 `_start_worker()` 方法（启动单个 Worker 进程）
     - 实现 `start_workers()` 方法（启动所有 Worker）
     - 为每个 Worker 分配唯一的端口
     - 等待所有 Worker 就绪
     - _Requirements: 1.1, 1.2, 1.5_
   
-  - [ ] 3.3 实现 ZMQ 通信设置
+  - [x] 3.3 实现 ZMQ 通信设置
     - 实现 `_setup_zmq()` 方法
     - 创建 PULL socket 接收来自 API Server 的请求
     - 为每个 Worker 创建 PUSH socket
     - _Requirements: 2.3_
   
-  - [ ] 3.4 实现请求路由逻辑
+  - [x] 3.4 实现请求路由逻辑
     - 集成 Round Robin Router
     - 实现 `route_request()` 方法
     - 根据路由器选择 Worker 并发送请求
     - _Requirements: 2.1, 2.2, 2.3_
   
-  - [ ] 3.5 实现主循环
+  - [x] 3.5 实现主循环
     - 实现 `run()` 方法
     - 持续接收来自 API Server 的请求
     - 调用路由器选择 Worker
@@ -191,38 +225,50 @@
     - 输出 Worker 数量和 GPU 列表
     - _Requirements: 6.5, 8.1_
 
-- [ ] 6. 实现错误处理
+- [ ] 6. 完善错误处理
   - [ ] 6.1 Worker 启动失败处理
-    - 捕获模型加载异常
-    - 记录详细错误日志
-    - 通知 Router Manager
+    - 在 `run_gpu_worker_process()` 中捕获模型加载异常
+    - 记录详细错误日志和堆栈跟踪
+    - 通过退出码通知 Router Manager
     - _Requirements: 7.1, 7.2_
   
-  - [ ] 6.2 推理异常处理
-    - 在 Worker 中捕获推理异常
-    - 返回错误响应
+  - [ ] 6.2 推理异常处理（已部分实现）
+    - 验证 Worker 中的推理异常捕获
+    - 确保返回错误响应格式正确
+    - 添加更详细的错误日志
     - _Requirements: 7.3_
   
   - [ ] 6.3 ZMQ 通信超时处理
-    - 设置 socket 超时
-    - 实现重试逻辑
+    - 在 Router Manager 中设置 socket 超时
+    - 在 Worker 中设置 socket 超时
+    - 实现重试逻辑（最多 3 次）
+    - 记录超时错误日志
     - _Requirements: 7.4_
+  
+  - [ ] 6.4 Worker 进程监控
+    - 在 Router Manager 中实现进程状态检查
+    - 检测 Worker 进程意外退出
+    - 记录进程退出日志
+    - _Requirements: 7.5_
 
-- [ ] 7. 添加基础监控
-  - [ ] 7.1 实现启动日志
-    - Worker 就绪日志
-    - Router Manager 启动日志
+- [ ] 7. 完善基础监控（部分已实现）
+  - [ ] 7.1 验证启动日志
+    - 确认 Worker 就绪日志已输出（已实现）
+    - 确认 Router Manager 启动日志已输出（已实现）
+    - 添加更详细的启动信息（GPU 型号、内存等）
     - _Requirements: 8.1, 8.3_
   
   - [ ] 7.2 实现请求统计
-    - 统计总请求数
-    - 统计成功/失败数
+    - 在 Router Manager 中添加统计计数器
+    - 统计总请求数、成功数、失败数
     - 每 10 秒输出统计信息
+    - 添加每个 Worker 的请求分布统计
     - _Requirements: 8.2_
   
-  - [ ] 7.3 添加调试日志
-    - 路由决策日志（DEBUG 级别）
-    - 响应返回日志（DEBUG 级别）
+  - [ ] 7.3 验证调试日志
+    - 确认路由决策日志已输出（已实现）
+    - 添加响应返回日志（DEBUG 级别）
+    - 添加批次处理日志（DEBUG 级别）
     - _Requirements: 8.4, 8.5_
 
 - [ ] 8. Checkpoint - 基础功能验证

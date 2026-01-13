@@ -68,11 +68,6 @@
      - `get_model_config` (模型配置工具)
    - 实现 `_load_model()` 方法
    - 功能：在指定 GPU 上加载完整的基座模型
-   - 核心方法：
-     - `_load_model()`: 加载基座模型
-       - 读取模型配置文件
-       - 检测模型类型和特性（如 GQA）
-       - 实例化对应的模型类
 
 **实现细节**:
 - 复用现有的 `slora/common/basemodel/` 模型加载逻辑
@@ -91,72 +86,20 @@
      - `_send_response()`: 发送响应
      - `run()`: 主循环
    - 功能：完整的请求-响应处理流程
-   - 特性：
-     - 异步消息处理
-     - 完整的错误处理
-     - 请求 ID 一致性保证
-     - Worker ID 追踪
-     - 元数据生成
 
 **实现细节**:
-
-1. **`_receive_request()` 方法**:
-   - 从 ZMQ PULL socket 异步接收请求
-   - 返回 JSON 格式的请求消息
-   - 阻塞等待直到收到请求
-
-2. **`_process_request()` 方法**:
-   - 解析请求消息（request_id, adapter_dir, prompt_ids, sampling_params）
-   - 检查并加载 adapter（如果需要）
-   - 执行推理（Phase 1 简化实现）
-   - 生成响应消息，包含：
-     - request_id: 与请求保持一致
-     - worker_id: 当前 Worker 的 ID
-     - output_ids: 输出 token IDs
-     - metadata: 元数据（finish_reason, token 统计等）
-     - success: 成功标志
-     - error: 错误信息（如果失败）
-   - 完整的异常捕获和错误响应生成
-
-3. **`_send_response()` 方法**:
-   - 通过 ZMQ PUSH socket 异步发送响应
-   - 使用 JSON 格式
-
-4. **`run()` 方法**:
-   - 无限循环，持续处理请求
-   - 输出 Worker 就绪日志
-   - 按顺序执行：接收 → 处理 → 发送
-   - 错误不会终止循环，保证服务持续运行
+- 从 ZMQ PULL socket 异步接收请求
+- 解析请求消息（request_id, adapter_dir, prompt_ids, sampling_params）
+- 执行推理（Phase 1 简化实现）
+- 生成响应消息（包含 request_id, worker_id, output_ids, metadata, success, error）
+- 通过 ZMQ PUSH socket 异步发送响应
+- 无限循环，持续处理请求
+- 完整的异常捕获和错误响应生成
 
 **Phase 1 简化说明**:
 - 推理逻辑使用占位实现（简单追加 token）
 - Adapter 加载暂未实现（输出日志）
 - 完整的推理逻辑将在后续任务中实现
-- 当前实现确保消息流通和架构正确性
-
-**新增测试文件**:
-1. `test/test_gpu_worker_request_processing.py`
-   - GPU Worker 请求处理的单元测试
-   - 测试覆盖：
-     - 接收请求功能
-     - 成功处理请求
-     - 带 adapter 的请求处理
-     - 错误处理
-     - 发送响应
-     - 响应消息格式验证
-     - 请求 ID 一致性（Property 3）
-     - Worker ID 正确性
-     - 元数据生成
-   - 所有测试通过 ✓ (9/9)
-
-**验证结果**:
-- 单元测试：9/9 通过
-- 满足 Requirements 3.1（持续监听 ZMQ PULL socket 接收请求）
-- 满足 Requirements 3.2（解析请求消息并提取必要的参数）
-- 满足 Requirements 3.5（生成包含 output_ids 和 metadata 的响应消息）
-- 满足 Requirements 8.3（输出 Worker 就绪日志）
-- 满足 Property 3（请求响应一致性）
-- 请求处理流程完整，错误处理健壮
 
 ---
 
@@ -164,15 +107,8 @@
 
 **修改文件**:
 1. `slora/server/router/gpu_worker.py`
-   - 添加 ReqQueue 相关导入：
-     - `ReqQueue` (请求队列管理)
-     - `Req`, `Batch` (请求和批次对象)
-     - `SamplingParams` (采样参数)
-   - 添加请求队列管理属性：
-     - `req_queue`: ReqQueue 实例
-     - `current_batch`: 当前批次
-     - `lora_ranks`: LoRA rank 信息（用于显存管理）
-     - `actual_adapter_size`: 实际 adapter 占用的显存大小
+   - 添加 ReqQueue 相关导入：`ReqQueue`, `Req`, `Batch`, `SamplingParams`
+   - 添加请求队列管理属性：`req_queue`, `current_batch`, `lora_ranks`, `actual_adapter_size`
    - 实现新方法：
      - `_setup_request_queue()`: 初始化 ReqQueue
      - `_convert_to_req_object()`: 将 ZMQ 消息转换为 Req 对象
@@ -180,260 +116,83 @@
    - 更新 `run()` 方法：支持批处理循环
 
 **关键设计**:
-- **复用张量并行的 ReqQueue**：每个 GPU Worker 内部包含一个独立的 ReqQueue 实例
-- **批处理管理**：使用 ReqQueue 的 `generate_new_batch()` 方法生成批次
-- **显存管理**：ReqQueue 自动处理显存分配和 Adapter 调度
-- **本质**：每个 Worker 是一个"单 GPU 的张量并行系统"
+- 复用张量并行的 ReqQueue：每个 GPU Worker 内部包含一个独立的 ReqQueue 实例
+- 批处理管理：使用 ReqQueue 的 `generate_new_batch()` 方法生成批次
+- 显存管理：ReqQueue 自动处理显存分配和 Adapter 调度
 
 **实现细节**:
-
-1. **`_setup_request_queue()` 方法**:
-   - 创建 ReqQueue 实例
-   - 配置参数：`max_total_tokens`, `batch_max_tokens`, `running_max_req_size`
-
-2. **`_convert_to_req_object()` 方法**:
-   - 将 ZMQ 消息格式转换为 Req 对象
-   - 解析采样参数（SamplingParams）
-   - 支持所有采样参数：do_sample, temperature, top_p, top_k, presence_penalty, frequency_penalty, max_new_tokens, ignore_eos, stop_sequences
-
-3. **`_process_requests()` 方法**（批处理版本）:
-   - 使用 ReqQueue 生成新批次
-   - 合并到当前批次
-   - 执行批量推理
-   - 生成批量响应
-   - 更新批次状态（移除已完成的请求）
-
-4. **`run()` 方法更新**:
-   - 非阻塞接收请求（使用 asyncio.wait_for 超时）
-   - 将接收到的请求添加到 ReqQueue
-   - 调用 `_process_requests()` 批处理
-   - 发送所有响应
-
-**向后兼容**:
-- 保留 `_process_request()` 方法用于单请求处理（向后兼容）
-- 新的批处理逻辑在 `_process_requests()` 中实现
+- 创建 ReqQueue 实例，配置 `max_total_tokens`, `batch_max_tokens`, `running_max_req_size`
+- 将 ZMQ 消息格式转换为 Req 对象，解析采样参数
+- 使用 ReqQueue 生成新批次，合并到当前批次，执行批量推理
+- 非阻塞接收请求（使用 asyncio.wait_for 超时）
 
 ---
 
-### 2025-01-13 - Task 2.7.1: 实现 Adapter Rank 配置（Phase 1 必需）
+### 2025-01-13 - Task 2.7.1: 实现 Adapter Rank 配置
 
 **修改文件**:
 1. `slora/server/router/gpu_worker.py`
-   - 添加导入：`get_lora_config` (从 `slora.models.peft.lora_adapter`)
-   - 更新 `__init__()` 方法：
-     - 重新组织 Adapter 管理相关属性
-     - 在初始化时调用 `_setup_adapter_config()`
-   - 实现新方法：
-     - `_setup_adapter_config()`: 初始化 Adapter rank 配置
+   - 添加导入：`get_lora_config`
+   - 实现 `_setup_adapter_config()` 方法
    - 功能：读取所有 adapter 的 rank 配置，用于 ReqQueue 显存管理
 
 **关键设计**:
-- **借鉴 manager.py**：复用张量并行模式中的 Adapter rank 管理策略
-- **lora_ranks 字典**：存储 adapter_dir -> rank 的映射关系
-- **用途**：传递给 ReqQueue.generate_new_batch() 用于显存占用计算
-- **None 键**：表示无 adapter 的情况（base 模型），rank 为 0
+- 借鉴 manager.py：复用张量并行模式中的 Adapter rank 管理策略
+- lora_ranks 字典：存储 adapter_dir -> rank 的映射关系
+- None 键：表示无 adapter 的情况（base 模型），rank 为 0
 
 **实现细节**:
-
-1. **`_setup_adapter_config()` 方法**:
-   - 初始化 `self.lora_ranks = {}` 字典
-   - 检查 args 是否有 `lora_dirs` 参数
-   - 遍历所有 adapter 目录：
-     - 调用 `get_lora_config(lora_dir, dummy)` 读取配置
-     - 提取 rank 值：`config["r"]`
-     - 存储到 `lora_ranks` 字典
-   - 错误处理：
-     - 如果加载失败，输出警告日志
-     - 使用默认 rank 值（8）
-   - 添加 `self.lora_ranks[None] = 0` 处理无 adapter 情况
-   - 输出初始化完成日志
-
-2. **属性更新**:
-   - `self.lora_ranks`: adapter_dir -> rank 映射（用于 ReqQueue 显存管理）
-   - `self.actual_adapter_size`: 实际 adapter 占用的显存大小（cells）
-
-3. **初始化顺序**:
-   - `_setup_gpu()`: 设置 GPU 环境
-   - `_setup_adapter_config()`: 初始化 Adapter rank 配置
-
-**新增测试文件**:
-1. `test/test_gpu_worker_adapter_config.py`
-   - Adapter rank 配置的单元测试
-   - 测试覆盖：
-     - 有 lora_dirs 时的配置初始化
-     - 没有 lora_dirs 时的配置初始化
-     - lora_dirs 为空列表时的配置初始化
-     - dummy 模式下的配置初始化
-     - 配置加载失败时的处理（使用默认值）
-     - 多个 adapter 的配置初始化
-     - actual_adapter_size 初始化为 0
-   - 所有测试通过 ✓ (7/7)
-
-**验证结果**:
-- 单元测试：7/7 通过
-- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
-- lora_ranks 字典正确初始化
-- None 键正确添加（base 模型）
-- 错误处理健壮（加载失败时使用默认值）
-- 支持 dummy 模式
-- 为后续 Task 2.7.2（实际内存占用跟踪）和 Task 2.7.3（Adapter 加载/卸载）奠定基础
-
-**下一步**:
-- Task 2.7.2: 实现实际内存占用跟踪（`_update_actual_adapter_usage()`）
-- Task 2.7.3: 实现基本的 Adapter 加载/卸载（`_load_adapters()`）
-- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+- 初始化 `self.lora_ranks = {}` 字典
+- 遍历所有 adapter 目录，调用 `get_lora_config()` 读取配置
+- 提取 rank 值并存储到字典
+- 错误处理：加载失败时使用默认 rank 值（8）
+- 添加 `self.lora_ranks[None] = 0` 处理无 adapter 情况
 
 ---
 
-### 2025-01-13 - Task 2.7.2: 实现实际内存占用跟踪（Phase 1 必需）
+### 2025-01-13 - Task 2.7.2: 实现实际内存占用跟踪
 
 **修改文件**:
 1. `slora/server/router/gpu_worker.py`
-   - 更新 `__init__()` 方法：
-     - 添加 `self.actual_adapter_memory_usage = 0` 属性
-   - 实现新方法：
-     - `_update_actual_adapter_usage()`: 查询并更新实际的 adapter 内存占用
-   - 功能：通过 RPC 查询 LoRA 内存使用情况，用于并发控制的准确判断
+   - 添加 `self.actual_adapter_memory_usage = 0` 属性
+   - 实现 `_update_actual_adapter_usage()` 方法
+   - 功能：通过 RPC 查询 LoRA 内存使用情况
 
 **关键设计**:
-- **借鉴 manager.py**：复用张量并行模式中的实际内存占用跟踪策略
-- **actual_adapter_memory_usage**：缓存实际的 adapter 内存占用（单位：cells）
-- **用途**：在 adapter 加载/卸载后更新，用于并发控制的准确判断
-- **保守估计**：查询失败时保持当前值不变
+- 借鉴 manager.py：复用张量并行模式中的实际内存占用跟踪策略
+- actual_adapter_memory_usage：缓存实际的 adapter 内存占用（单位：cells）
+- 保守估计：查询失败时保持当前值不变
 
 **实现细节**:
-
-1. **`_update_actual_adapter_usage()` 方法**:
-   - 检查是否启用了 LoRA（`no_lora` 参数）
-   - 检查是否有 `model_rpc`（需要在模型加载后才能查询）
-   - 通过 RPC 查询 `check_lora_memory()` 获取内存信息
-   - 计算所有 adapter_cells 的总和：`sum(adapter_cells_list)`
-   - 同步更新 `actual_adapter_size`（用于 ReqQueue）
-   - 错误处理：
-     - 如果查询返回 None，保持当前值不变
-     - 如果查询抛出异常，捕获并输出警告日志
-   - 输出更新完成日志
-
-2. **属性更新**:
-   - `self.actual_adapter_memory_usage`: 缓存实际的 adapter 内存占用（单位：cells）
-   - 在 `__init__()` 中初始化为 0
-
-3. **调用时机**（将在后续任务中实现）:
-   - 模型初始化后：查询初始占用
-   - Adapter 加载后：更新占用
-   - Adapter 卸载后：更新占用
-
-**新增测试文件**:
-1. `test/test_gpu_worker_memory_tracking.py`
-   - 实际内存占用跟踪的单元测试
-   - 测试覆盖：
-     - actual_adapter_memory_usage 初始化为 0
-     - no_lora 模式下的内存占用更新
-     - 没有 model_rpc 时的内存占用更新
-     - 有效内存信息时的内存占用更新
-     - adapter_cells 为空时的内存占用更新
-     - check_lora_memory 返回 None 时的处理
-     - 查询异常时的处理（保守估计）
-     - 单个 adapter 时的内存占用更新
-     - 多次更新内存占用（模拟加载/卸载）
-   - 所有测试通过 ✓ (9/9)
-
-**验证结果**:
-- 单元测试：9/9 通过
-- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
-- actual_adapter_memory_usage 正确初始化
-- RPC 查询逻辑正确实现
-- adapter_cells 总和计算正确
-- actual_adapter_size 同步更新
-- 错误处理健壮（查询失败时保持当前值）
-- 支持多次更新（模拟加载/卸载场景）
-- 为后续 Task 2.7.3（Adapter 加载/卸载）和 Task 2.7.4（ReqQueue 集成）奠定基础
-
-**下一步**:
-- Task 2.7.3: 实现基本的 Adapter 加载/卸载（`_load_adapters()`）
-- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
+- 检查是否启用了 LoRA 和是否有 model_rpc
+- 通过 RPC 查询 `check_lora_memory()` 获取内存信息
+- 计算所有 adapter_cells 的总和
+- 同步更新 `actual_adapter_size`（用于 ReqQueue）
+- 完整的错误处理
 
 ---
 
-### 2025-01-13 - Task 2.7.3: 实现基本的 Adapter 加载/卸载（Phase 1 必需）
+### 2025-01-13 - Task 2.7.3: 实现基本的 Adapter 加载/卸载
 
 **修改文件**:
 1. `slora/server/router/gpu_worker.py`
-   - 实现新方法：
-     - `_load_adapters(adapter_dirs)`: 加载指定的 adapters
-   - 更新 `_process_requests()` 方法：
-     - 在生成新批次后加载所需的 adapters
-   - 功能：调用 RPC 加载 adapters，并更新实际内存占用
+   - 实现 `_load_adapters(adapter_dirs)` 方法
+   - 更新 `_process_requests()` 方法：在生成新批次后加载所需的 adapters
 
 **关键设计**:
-- **借鉴 manager.py**：复用张量并行模式中的 adapter 加载策略
-- **加载时机**：在 ReqQueue 生成新批次后，立即加载批次所需的 adapters
-- **内存更新**：加载后调用 `_update_actual_adapter_usage()` 更新实际占用
-- **错误处理**：加载失败不应该终止服务，输出警告日志并继续运行
+- 借鉴 manager.py：复用张量并行模式中的 adapter 加载策略
+- 加载时机：在 ReqQueue 生成新批次后，立即加载批次所需的 adapters
+- 内存更新：加载后调用 `_update_actual_adapter_usage()` 更新实际占用
 
 **实现细节**:
-
-1. **`_load_adapters(adapter_dirs)` 方法**:
-   - 检查是否启用了 LoRA（`no_lora` 参数）
-   - 检查是否有 `model_rpc`（需要在模型加载后才能加载 adapter）
-   - 检查 adapter_dirs 是否为空
-   - 调用 RPC 的 `load_adapters(adapter_dirs)` 方法
-   - 输出加载日志（显示加载的 adapter 数量和名称）
-   - 调用 `_update_actual_adapter_usage()` 更新实际占用
-   - 错误处理：
-     - 如果 RPC 调用失败，捕获异常并输出错误日志
-     - 不抛出异常，确保服务继续运行
-
-2. **`_process_requests()` 方法更新**:
-   - 在 `generate_new_batch()` 后检查是否有新批次
-   - 如果有新批次且未启用 `no_lora`：
-     - 检查批次的 `adapter_dirs` 是否非空
-     - 调用 `_load_adapters(new_batch.adapter_dirs)` 加载 adapters
-   - 然后合并批次并执行推理
-
-3. **加载流程**:
-   ```
-   generate_new_batch() 
-   → 检查 new_batch.adapter_dirs 
-   → _load_adapters(adapter_dirs) 
-   → RPC.load_adapters() 
-   → _update_actual_adapter_usage() 
-   → merge batch 
-   → inference
-   ```
-
-**新增测试文件**:
-1. `test/test_gpu_worker_adapter_loading.py`
-   - Adapter 加载功能的单元测试
-   - 测试覆盖：
-     - no_lora 模式下的加载（直接返回）
-     - 没有 model_rpc 时的加载（输出警告）
-     - 空 adapter 集合的加载（不调用 RPC）
-     - 成功加载 adapters
-     - 加载单个 adapter
-     - 加载时发生异常（不崩溃）
-     - 多次加载不同的 adapters
-     - actual_adapter_size 同步更新
-     - 加载大量 adapters
-   - 所有测试通过 ✓ (9/9)
-
-**验证结果**:
-- 单元测试：9/9 通过
-- 满足 Requirements 3.3（根据请求中的 adapter_dir 加载对应的 Adapter）
-- RPC 调用逻辑正确实现
-- 加载后内存占用正确更新
-- 错误处理健壮（加载失败不崩溃）
-- 支持多次加载（模拟批次变化）
-- 与 ReqQueue 批处理流程正确集成
-- 为后续 Task 2.7.4（ReqQueue 参数传递）奠定基础
+- 检查是否启用了 LoRA、是否有 model_rpc、adapter_dirs 是否为空
+- 调用 RPC 的 `load_adapters(adapter_dirs)` 方法
+- 调用 `_update_actual_adapter_usage()` 更新实际占用
+- 错误处理：加载失败不终止服务，输出警告日志并继续运行
 
 **Phase 1 简化说明**:
-- 假设 `model_rpc` 已经初始化（实际的 RPC 初始化将在后续任务中实现）
+- 假设 `model_rpc` 已经初始化
 - 暂不实现 adapter 卸载逻辑（Phase 1 只需要加载）
-- 完整的 adapter 管理（包括淘汰策略）将在后续 Phase 中实现
-
-**下一步**:
-- Task 2.7.4: 更新 ReqQueue 调用传递 Adapter 信息
 
 ---
 
@@ -441,75 +200,20 @@
 
 **修改文件**:
 1. `slora/server/router/gpu_worker.py`
-   - 更新 `_process_requests()` 方法：
-     - 使用关键字参数传递 `actual_adapter_size`
-     - 确保 ReqQueue 能够正确计算显存占用
+   - 更新 `_process_requests()` 方法：使用关键字参数传递 `actual_adapter_size`
 
 **关键设计**:
-- **显式参数传递**：使用 `actual_adapter_size=self.actual_adapter_memory_usage` 作为关键字参数
-- **与 manager.py 一致**：保持与张量并行模式相同的调用方式
-- **显存管理集成**：确保 ReqQueue 能够准确计算批次的显存占用
+- 显式参数传递：使用 `actual_adapter_size=self.actual_adapter_memory_usage` 作为关键字参数
+- 与 manager.py 一致：保持与张量并行模式相同的调用方式
 
 **实现细节**:
-
-1. **`generate_new_batch()` 调用更新**:
-   ```python
-   # 之前（位置参数）
-   new_batch = self.req_queue.generate_new_batch(
-       self.current_batch,
-       self.lora_ranks,
-       self.actual_adapter_size
-   )
-   
-   # 之后（关键字参数）
-   new_batch = self.req_queue.generate_new_batch(
-       self.current_batch,
-       self.lora_ranks,
-       actual_adapter_size=self.actual_adapter_memory_usage
-   )
-   ```
-
-2. **参数说明**:
-   - `current_batch`: 当前正在处理的批次（可能为 None）
-   - `lora_ranks`: adapter_dir -> rank 的映射，用于计算 adapter 显存占用
-   - `actual_adapter_size`: 实际已加载的 adapter 占用的显存大小（cells）
-
-3. **显存管理流程**:
-   ```
-   ReqQueue.generate_new_batch()
-   → _init_cache_list(current_batch, lora_ranks, actual_adapter_size)
-   → 计算当前 adapter 占用
-   → _can_add_new_req() 检查是否有足够显存
-   → 生成新批次
-   ```
-
-**新增测试文件**:
-1. `test/test_gpu_worker_reqqueue_integration.py`
-   - ReqQueue 集成测试
-   - 测试覆盖：
-     - lora_ranks 正确传递
-     - actual_adapter_size 正确传递
-     - actual_adapter_size 为 0 时的传递
-     - 有当前批次时的调用
-     - 批次生成后加载 adapters
-     - no_lora 模式下不加载 adapters
-     - adapter 信息在整个流程中的一致性
-   - 所有测试通过 ✓ (7/7)
-
-**验证结果**:
-- 单元测试：7/7 通过
-- 满足 Requirements 3.4（使用现有的模型推理逻辑处理请求）
-- lora_ranks 正确传递给 ReqQueue
-- actual_adapter_memory_usage 正确传递给 ReqQueue
-- ReqQueue 能够准确计算显存占用
-- 与 manager.py 的调用方式保持一致
-- 完整的 adapter 管理流程集成完成
-
-**集成验证**:
-- Task 2.7.1（Adapter Rank 配置）✓
-- Task 2.7.2（实际内存占用跟踪）✓
-- Task 2.7.3（Adapter 加载/卸载）✓
-- Task 2.7.4（ReqQueue 参数传递）✓
+```python
+new_batch = self.req_queue.generate_new_batch(
+    self.current_batch,
+    self.lora_ranks,
+    actual_adapter_size=self.actual_adapter_memory_usage
+)
+```
 
 **Adapter 管理完整流程**:
 ```
@@ -528,15 +232,352 @@
 → 执行推理
 ```
 
-**Phase 1 Adapter 管理总结**:
-- ✓ Adapter rank 配置读取
-- ✓ 实际内存占用跟踪
-- ✓ 基本的 adapter 加载
-- ✓ ReqQueue 显存管理集成
-- 为后续 Phase 的完整 adapter 管理（包括淘汰策略）奠定基础
+---
+
+### 2025-01-13 - Task 3.1: 创建 DataParallelRouterManager 类框架
+
+**新增文件**:
+1. `slora/server/router/dp_manager.py`
+   - 实现 `DataParallelRouterManager` 类框架
+   - 功能：管理多个 GPU Worker 进程并路由请求
+   - 核心方法：
+     - `__init__()`: 初始化 Router Manager
+     - `_detect_gpus()`: 自动检测可用 GPU 数量
+     - `_parse_gpu_ids()`: 解析 GPU ID 列表
+     - `_allocate_ports()`: 为每个 Worker 分配端口
+
+**关键设计**:
+- 多进程架构：每个 GPU Worker 运行在独立的进程中
+- 灵活配置：支持自动检测 GPU 或手动指定
+- 端口管理：为每个 Worker 分配唯一的通信端口（从 50000 开始递增）
+- 路由集成：集成 RoundRobinRouter 进行请求分发
+
+**实现细节**:
+- 接收参数：args（包含 num_workers, gpu_ids 等）、router_port、response_port
+- 初始化属性：num_workers、gpu_ids、workers、worker_ports、router
+- 验证 GPU ID 数量与 Worker 数量匹配
+- 使用 `torch.cuda.is_available()` 和 `torch.cuda.device_count()` 检测 GPU
+- 解析逗号分隔的 GPU ID 字符串，验证有效性
+- 完整的错误处理
+
+---
+
+### 2025-01-13 - Task 3.2: 实现 Worker 进程管理
+
+**修改文件**:
+1. `slora/server/router/dp_manager.py`
+   - 添加 asyncio 导入
+   - 实现 `start_workers()` 方法：启动所有 Worker 进程
+   - 实现 `_start_worker()` 方法：启动单个 Worker 进程
+   - 添加模块级函数 `run_gpu_worker_process()`: Worker 进程的入口函数
+
+**关键设计**:
+- 多进程架构：每个 Worker 运行在独立的进程中
+- 进程管理：使用 multiprocessing.Process 创建和管理 Worker 进程
+- 端口分配集成：在启动 Worker 前自动分配端口
+- 就绪等待：Phase 1 使用固定等待时间（5秒），Phase 2 将实现心跳机制
+
+**实现细节**:
+
+1. **`start_workers()` 方法**（异步）:
+   - 调用 `_allocate_ports()` 分配端口
+   - 循环启动所有 Worker 进程
+   - 等待 5 秒让 Worker 初始化
+   - 输出启动日志
+
+2. **`_start_worker()` 方法**:
+   - 创建 multiprocessing.Process 实例
+   - 目标函数：`run_gpu_worker_process`
+   - 传递参数：worker_id, gpu_id, args, request_port, response_port
+   - 设置进程名称：`GPUWorker-{worker_id}`
+   - 启动进程并返回进程对象
+
+3. **`run_gpu_worker_process()` 函数**（模块级）:
+   - Worker 进程的入口函数
+   - 创建 GPUWorker 实例
+   - 设置 ZMQ 通信
+   - Phase 1 简化：暂不加载模型和初始化请求队列
+   - 运行 Worker 主循环（asyncio.run）
+   - 完整的错误处理和日志输出
+
+**进程启动流程**:
+```
+start_workers()
+→ _allocate_ports() 分配端口
+→ 循环调用 _start_worker(i, gpu_id)
+  → 创建 Process(target=run_gpu_worker_process)
+  → proc.start() 启动进程
+  → 返回进程对象
+→ asyncio.sleep(5) 等待就绪
+→ 完成
+```
+
+**Phase 1 简化说明**:
+- 使用固定等待时间（5秒）而非心跳机制
+- Worker 进程中暂不加载模型和初始化请求队列
+- 完整的模型加载和请求队列初始化将在后续任务中实现
+
+---
+
+### 2025-01-13 - Task 3.3: 实现 ZMQ 通信设置
+
+**修改文件**:
+1. `slora/server/router/dp_manager.py`
+   - 添加 ZMQ 相关导入：`zmq`, `zmq.asyncio`
+   - 实现 `_setup_zmq()` 方法
+   - 功能：设置 Router Manager 的 ZMQ 通信
+
+**关键设计**:
+- **通信模式**：
+  - API Server → Router Manager: PUSH/PULL
+  - Router Manager → Workers: PUSH/PULL（每个 Worker 一个 PUSH socket）
+- **Socket 类型**：
+  - PULL socket：接收来自 API Server 的请求（多对一）
+  - PUSH sockets：向每个 Worker 发送请求（一对多）
+
+**实现细节**:
+
+1. **`_setup_zmq()` 方法**:
+   - 创建异步 ZMQ context：`zmq.asyncio.Context()`
+   - 创建 PULL socket 并绑定到 router_port：
+     - 用于接收来自 API Server 的请求
+     - 使用 `bind()` 因为 Router Manager 是服务端
+   - 为每个 Worker 创建 PUSH socket：
+     - 绑定到对应的 worker_port
+     - 用于向特定 Worker 发送请求
+     - 使用 `bind()` 因为 Router Manager 是服务端
+   - 输出详细的日志信息
+
+2. **通信架构**:
+```
+API Server (PUSH)
+    ↓
+Router Manager (PULL) - router_port
+    ↓
+Router Manager (PUSH) - worker_ports[0..N]
+    ↓
+Workers (PULL) - 每个 Worker 监听自己的端口
+```
+
+3. **端口使用**:
+   - `router_port`: Router Manager 接收 API Server 请求
+   - `worker_ports[i]`: Router Manager 向 Worker i 发送请求
+   - `response_port`: Workers 发送响应（将在 Response Merger 中使用）
+
+**满足 Requirements**:
+- Requirements 2.3（通过 ZMQ PUSH socket 发送请求消息）
+
+---
+### 2025-01-13 - Task 3.4: 实现请求路由逻辑
+
+**修改文件**:
+1. `slora/server/router/dp_manager.py`
+   - 实现 `route_request()` 方法：路由请求到 Worker
+   - 实现 `run()` 方法：主循环，持续接收和路由请求
+
+**新增文件**:
+1. `test/test_dp_manager_routing.py`
+   - 测试 `route_request()` 方法的正确性
+   - 测试 `run()` 主循环的功能
+   - 测试轮询路由的公平性
+   - 测试错误处理机制
+
+**关键设计**:
+- **路由策略**：使用 Round Robin Router 选择 Worker
+- **异步通信**：使用 ZMQ 异步 API 发送请求
+- **错误处理**：发送失败时记录错误日志并抛出异常
+- **持续运行**：主循环无限运行，直到进程被终止
+
+**实现细节**:
+
+1. **`route_request()` 方法**（异步）:
+   - 使用 `self.router.select_worker()` 选择 Worker
+   - DEBUG 级别记录路由决策（Requirement 8.4）
+   - 通过 `self.request_senders[worker_id].send_json(request)` 发送请求
+   - 错误处理：捕获异常，记录错误日志（Requirement 2.5）
+   - 抛出异常以便上层处理
+
+2. **`run()` 方法**（异步）:
+   - 输出启动日志，显示监听端口
+   - 无限循环：
+     - 从 `self.request_receiver.recv_json()` 接收请求
+     - 调用 `await self.route_request(request)` 路由请求
+   - 错误处理：
+     - 捕获所有异常
+     - 记录错误日志和堆栈跟踪
+     - 继续处理下一个请求（不终止循环）
+
+3. **路由流程**:
+```
+API Server 发送请求
+    ↓
+Router Manager.run() 接收请求
+    ↓
+Router Manager.route_request()
+    ↓
+Round Robin Router.select_worker() 选择 Worker
+    ↓
+ZMQ PUSH socket 发送请求到 Worker
+    ↓
+Worker 接收并处理请求
+```
+
+**测试覆盖**:
+
+1. **`test_route_request_selects_worker`**:
+   - 验证 route_request 能够选择 Worker
+   - 验证只有一个 sender 被调用
+
+2. **`test_route_request_round_robin_order`**:
+   - 验证轮询顺序正确（0, 1, 2, 0, 1, 2）
+   - 验证每个 Worker 收到的请求数量相等
+   - **满足 Requirements 2.1, 2.2**
+
+3. **`test_route_request_sends_correct_message`**:
+   - 验证发送的消息包含所有必需字段
+   - 验证消息内容与原始请求一致
+   - **满足 Requirements 2.3, 2.4**
+
+4. **`test_route_request_handles_error`**:
+   - 验证发送失败时抛出异常
+   - 验证错误日志被记录
+   - **满足 Requirement 2.5**
+
+5. **`test_run_receives_and_routes_requests`**:
+   - 验证 run() 能够持续接收请求
+   - 验证所有请求都被路由
+   - **满足 Requirements 2.1, 2.3**
+
+6. **`test_run_continues_on_error`**:
+   - 验证单个请求失败不会终止主循环
+   - 验证错误被记录但循环继续
+   - **满足 Requirement 2.5**
+
+**满足 Requirements**:
+- Requirements 2.1（使用 Round Robin Router 选择下一个 Worker）
+- Requirements 2.2（按照 Worker ID 的顺序循环分配请求）
+- Requirements 2.3（通过 ZMQ PUSH socket 发送请求消息）
+- Requirements 2.5（发送请求失败时记录错误日志）
+- Requirements 8.4（DEBUG 级别记录路由决策）
+
+**测试结果**:
+- 所有 6 个测试用例通过
+- 测试覆盖：路由选择、轮询顺序、消息格式、错误处理、主循环
+
+---
+### 2025-01-13 - Task 3.5: 实现主循环
+
+**说明**:
+Task 3.5 的实现已经在 Task 3.4 中完成。`run()` 方法在实现请求路由逻辑时一并实现，因为两者紧密相关。
+
+**已实现功能**:
+1. ✓ 持续接收来自 API Server 的请求
+2. ✓ 调用路由器选择 Worker
+3. ✓ 发送请求到选定的 Worker
+
+**实现细节**（参见 Task 3.4）:
+- `run()` 方法是一个异步无限循环
+- 从 `self.request_receiver.recv_json()` 接收请求
+- 调用 `await self.route_request(request)` 路由请求
+- 完整的错误处理：捕获异常但继续运行
+- 输出启动日志和错误日志
+
+**测试覆盖**（参见 Task 3.4）:
+- `test_run_receives_and_routes_requests`: 验证持续接收和路由功能
+- `test_run_continues_on_error`: 验证错误恢复机制
+
+**满足 Requirements**:
+- Requirements 2.1（新请求到达时使用 Round Robin Router 选择 Worker）
+- Requirements 2.3（通过 ZMQ 发送请求到选定的 Worker）
+
+**测试结果**:
+- 2/2 测试用例通过
+- 验证了主循环的持续运行能力
+- 验证了错误处理和恢复机制
+
+---
+
+### 2025-01-13 - Task 2.9.1: 实现模型 RPC 初始化
+
+**修改文件**:
+1. `slora/server/router/gpu_worker.py`
+   - 添加导入：`start_model_process`, `ModelRpcClient`, `InputParams`
+   - 添加 `self.model_rpc = None` 属性
+   - 实现 `_init_model_rpc()` 方法：初始化模型 RPC 连接
+   - 更新 `_update_actual_adapter_usage()` 和 `_load_adapters()` 方法：简化 model_rpc 检查
+
+2. `slora/server/router/dp_manager.py`
+   - 更新 `run_gpu_worker_process()` 函数：
+     - 添加 `worker._setup_request_queue()` 调用
+     - 添加 `asyncio.run(worker._init_model_rpc())` 调用
+     - 移除注释，启用完整的 Worker 初始化流程
+
+**关键设计**:
+- **RPC 架构**：使用 ModelRpcClient 连接到模型进程
+- **单 GPU 模式**：world_size=1，不启动额外的 RPC 进程
+- **参数传递**：创建 InputParams 对象传递给 init_model
+- **初始化顺序**：ZMQ → ReqQueue → Model RPC → 主循环
+
+**实现细节**:
+
+1. **`_init_model_rpc()` 方法**（异步）:
+   - 调用 `start_model_process(port=None, world_size=1)` 创建 ModelRpcClient
+   - 单 GPU 模式下直接返回本地 ModelRpcServer 实例
+   - 创建 InputParams 对象，从 args 中提取所有必需参数：
+     - 基础参数：max_req_total_len, max_total_token_num, batch_max_tokens 等
+     - LoRA 参数：pool_size_lora, no_lora, no_lora_compute 等
+     - 调度参数：scheduler, prefetch, swap 等
+     - 淘汰参数：evict_interval_threshold, evict_idle_threshold 等
+   - 调用 `model_rpc.init_model()` 初始化模型：
+     - rank_id=0, world_size=1（单 GPU 模式）
+     - 传递 weight_dir, adapter_dirs, max_total_token_num
+     - 传递 load_way, mode, input_params
+     - prefetch_stream=None（数据并行不使用 prefetch）
+   - 完整的错误处理和日志输出
+
+2. **Worker 初始化流程**（在 `run_gpu_worker_process` 中）:
+```
+创建 GPUWorker 实例
+    ↓
+_setup_zmq() - 设置 ZMQ 通信
+    ↓
+_setup_request_queue() - 初始化 ReqQueue
+    ↓
+_init_model_rpc() - 初始化模型 RPC（异步）
+    ↓ start_model_process(world_size=1)
+    ↓ 创建 ModelRpcClient（本地 ModelRpcServer）
+    ↓ 创建 InputParams 对象
+    ↓ model_rpc.init_model() - 加载模型权重
+    ↓
+run() - 启动主循环（异步）
+```
+
+3. **InputParams 参数映射**:
+   - 从 args 中提取参数，使用 getattr 提供默认值
+   - 所有参数都有合理的默认值，确保兼容性
+   - 关键参数：
+     - max_total_token_num: KV cache 总大小
+     - batch_max_tokens: 批次最大 token 数
+     - running_max_req_size: 批次最大请求数
+     - no_lora: 是否禁用 LoRA
+     - evict_*_threshold/ratio: 淘汰策略参数
+
+4. **model_rpc 检查简化**:
+   - 从 `hasattr(self, 'model_rpc') or self.model_rpc is None` 简化为 `self.model_rpc is None`
+   - 因为 `__init__` 中已经初始化 `self.model_rpc = None`
+
+**满足 Requirements**:
+- Requirements 1.4（在指定 GPU 上加载模型）
+- Requirements 3.4（使用现有的模型推理逻辑处理请求）
+
+**Phase 1 实现说明**:
+- 使用 RPC 方式加载模型，而不是直接加载（Task 2.3 的 `_load_model()` 方法）
+- 单 GPU 模式下，ModelRpcClient 直接包装本地 ModelRpcServer，不启动额外进程
+- 完整的参数传递，确保模型正确初始化
+- 为后续的推理逻辑（Task 2.9.2）奠定基础
 
 **下一步**:
-- Task 2.8: 编写 Adapter 管理单元测试（可选）
-- Task 3: 实现 Data Parallel Router Manager
+- Task 2.9.2: 实现实际推理逻辑（调用 model_rpc 执行推理）
+- Task 2.9.3: 集成完整的批次管理（处理 EOS token，更新批次状态）
 
 ---

@@ -20,6 +20,8 @@ from slora.server.router.req_queue import ReqQueue
 from slora.server.io_struct import Req, Batch
 from slora.server.sampling_params import SamplingParams
 from slora.models.peft.lora_adapter import get_lora_config
+from slora.server.router.model_infer.model_rpc import start_model_process, ModelRpcClient
+from slora.server.input_params import InputParams
 
 
 class GPUWorker:
@@ -56,6 +58,7 @@ class GPUWorker:
         
         # 模型相关（待后续任务实现）
         self.model = None
+        self.model_rpc = None  # ModelRpcClient 实例
         self.adapter_cache = {}
         
         # Adapter 管理（借鉴 manager.py）
@@ -159,7 +162,7 @@ class GPUWorker:
             return
         
         # 检查是否有 model_rpc（需要在模型加载后才能查询）
-        if not hasattr(self, 'model_rpc') or self.model_rpc is None:
+        if self.model_rpc is None:
             # 模型尚未加载，无法查询
             return
         
@@ -207,7 +210,7 @@ class GPUWorker:
             return
         
         # 检查是否有 model_rpc（需要在模型加载后才能加载 adapter）
-        if not hasattr(self, 'model_rpc') or self.model_rpc is None:
+        if self.model_rpc is None:
             print(f"[Worker {self.worker_id}] Warning: model_rpc not initialized, cannot load adapters")
             return
         
@@ -327,6 +330,86 @@ class GPUWorker:
             
         except Exception as e:
             print(f"[Worker {self.worker_id}] Failed to load model: {str(e)}")
+            raise
+    
+    async def _init_model_rpc(self) -> None:
+        """
+        初始化模型 RPC 连接
+        
+        创建 ModelRpcClient 连接到模型进程。在数据并行模式下，每个 Worker
+        运行在独立的进程中，使用 world_size=1 表示单 GPU 模式（无张量并行）。
+        
+        Requirements:
+            - 1.4: 在指定 GPU 上加载模型
+            - 3.4: 使用现有的模型推理逻辑处理请求
+        
+        Note:
+            - 数据并行模式下，每个 Worker 独立运行，world_size=1
+            - 使用 start_model_process() 创建 ModelRpcClient
+            - 单 GPU 模式下不使用 RPC，直接创建 ModelRpcServer 实例
+            - 初始化后调用 init_model() 加载模型权重
+        """
+        try:
+            print(f"[Worker {self.worker_id}] Initializing model RPC...")
+            
+            # 创建 ModelRpcClient（world_size=1 表示单 GPU 模式）
+            # 在单 GPU 模式下，start_model_process 会直接返回一个本地的 ModelRpcServer
+            # 不会启动额外的 RPC 进程
+            self.model_rpc = await start_model_process(
+                port=None,  # 单 GPU 模式不需要端口
+                world_size=1  # 数据并行模式，每个 Worker 独立
+            )
+            
+            print(f"[Worker {self.worker_id}] Model RPC client created")
+            
+            # 创建 InputParams 对象（从 args 中提取参数）
+            # 这是 init_model 所需的参数格式
+            input_params = InputParams(
+                max_req_total_len=getattr(self.args, 'max_req_total_len', 2048),
+                max_total_token_num=self.args.max_total_token_num,
+                pool_size_lora=getattr(self.args, 'pool_size_lora', 0),
+                batch_max_tokens=self.args.batch_max_tokens,
+                running_max_req_size=self.args.running_max_req_size,
+                swap=getattr(self.args, 'swap', False),
+                prefetch=getattr(self.args, 'prefetch', False),
+                prefetch_size=getattr(self.args, 'prefetch_size', 0),
+                scheduler=getattr(self.args, 'scheduler', 'slora'),
+                profile=getattr(self.args, 'profile', False),
+                batch_num_adapters=getattr(self.args, 'batch_num_adapters', None),
+                enable_abort=getattr(self.args, 'enable_abort', False),
+                dummy=getattr(self.args, 'dummy', False),
+                no_lora_compute=getattr(self.args, 'no_lora_compute', False),
+                no_lora_swap=getattr(self.args, 'no_lora_swap', False),
+                no_kernel=getattr(self.args, 'no_kernel', False),
+                no_mem_pool=getattr(self.args, 'no_mem_pool', False),
+                bmm=getattr(self.args, 'bmm', False),
+                no_lora=getattr(self.args, 'no_lora', False),
+                fair_weights=getattr(self.args, 'fair_weights', None),
+                evict_interval_threshold=getattr(self.args, 'evict_interval_threshold', 0.9),
+                evict_interval_ratio=getattr(self.args, 'evict_interval_ratio', 0.5),
+                evict_idle_threshold=getattr(self.args, 'evict_idle_threshold', 0.8),
+                evict_idle_ratio=getattr(self.args, 'evict_idle_ratio', 0.7),
+                max_lora_ratio=getattr(self.args, 'max_lora_ratio', 0.5),
+            )
+            
+            # 初始化模型（加载权重）
+            # 传递必要的参数给 RPC 服务器
+            await self.model_rpc.init_model(
+                rank_id=0,  # 单 GPU 模式，rank 始终为 0
+                world_size=1,  # 单 GPU 模式
+                weight_dir=self.args.model_dir,
+                adapter_dirs=getattr(self.args, 'lora_dirs', []),
+                max_total_token_num=self.args.max_total_token_num,
+                load_way=getattr(self.args, 'load_way', 'HF'),
+                mode=getattr(self.args, 'mode', []),
+                input_params=input_params,  # 传递 InputParams 对象
+                prefetch_stream=None  # 数据并行模式不使用 prefetch
+            )
+            
+            print(f"[Worker {self.worker_id}] Model RPC initialized successfully on GPU {self.gpu_id}")
+            
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Failed to initialize model RPC: {str(e)}")
             raise
     
     def _setup_request_queue(self) -> None:
