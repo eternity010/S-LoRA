@@ -18,7 +18,7 @@
 **测试要求**：
 - 每个任务完成后必须编写并运行单元测试
 - 测试通过后才能标记任务为完成状态
-- 测试命令：`pytest tests/` 或 `pytest <specific_test_file>`
+- 测试命令：`pytest test/` 或 `pytest <specific_test_file>`
 
 ## Tasks
 
@@ -27,13 +27,13 @@
   - 支持任意数量的 Worker
   - _Requirements: 2.1, 2.2_
 
-- [ ]* 1.1 编写 Round Robin Router 单元测试
+- [x]* 1.1 编写 Round Robin Router 单元测试
   - **Property 2: 轮询路由公平性**
   - **Validates: Requirements 2.1, 2.2**
   - 测试轮询顺序正确性
   - 测试不同 Worker 数量下的行为
 
-- [ ] 2. 实现 GPU Worker 基础框架
+- [x] 2. 实现 GPU Worker 基础框架
   - [x] 2.1 创建 GPUWorker 类框架
     - 实现 `__init__` 方法
     - 实现 GPU 环境设置
@@ -44,52 +44,78 @@
     - 创建 PUSH socket 发送响应
     - _Requirements: 2.3, 4.1_
   
-  - [ ] 2.3 集成模型加载逻辑
+  - [x] 2.3 集成模型加载逻辑
     - 复用 `slora/common/basemodel/` 代码
     - 在指定 GPU 上加载模型
     - _Requirements: 1.4_
   
-  - [ ] 2.4 实现请求处理循环
-    - 实现 `_receive_request()` 方法
-    - 实现 `_process_request()` 方法
+  - [x] 2.4 集成 ReqQueue 请求管理
+    - **关键设计**：复用张量并行的 `ReqQueue` 进行请求管理
+    - 实现 `_setup_request_queue()` 方法
+    - 导入并初始化 `ReqQueue`（来自 `slora/server/router/req_queue.py`）
+    - 配置 `max_total_tokens`, `batch_max_tokens`, `running_max_req_size`
+    - 实现 `_convert_to_req_object()` 方法（转换 ZMQ 消息为 Req 对象）
+    - 更新 `_process_request()` 为 `_process_requests()` 使用批处理
+    - _Requirements: 3.1, 3.2, 3.4_
+    - _复用组件_: `ReqQueue.append()`, `ReqQueue.generate_new_batch()`
+  
+  - [x] 2.5 实现请求处理循环（基础版本）
+    - 实现 `_receive_request()` 方法（接收 ZMQ 消息）
+    - 实现 `_process_request()` 方法（单请求处理）
     - 实现 `_send_response()` 方法
     - 实现 `run()` 主循环
     - _Requirements: 3.1, 3.2, 3.5_
+    - _注意_: 完整的批处理逻辑将在 Task 2.4 中实现
 
-- [ ]* 2.5 编写 GPU Worker 单元测试
+- [x]* 2.6 编写 GPU Worker 单元测试
   - 测试 GPU 环境设置
   - 测试 ZMQ socket 创建
   - 测试消息接收和发送
+  - 测试请求处理流程
 
 - [ ] 3. 实现 Data Parallel Router Manager
-  - [ ] 3.1 创建 DataParallelRouterManager 类
+  - [ ] 3.1 创建 DataParallelRouterManager 类框架
+    - 创建 `slora/server/router/dp_manager.py` 文件
     - 实现 `__init__` 方法
-    - 实现 GPU 检测逻辑
-    - 实现 GPU ID 解析
-    - _Requirements: 1.1, 5.2, 5.3_
+    - 实现 GPU 检测逻辑 `_detect_gpus()`
+    - 实现 GPU ID 解析 `_parse_gpu_ids()`
+    - 实现端口分配 `_allocate_ports()`
+    - _Requirements: 1.1, 5.2, 5.3, 5.4, 5.5_
   
   - [ ] 3.2 实现 Worker 进程管理
-    - 实现 `_start_worker()` 方法
-    - 实现 `start_workers()` 方法
-    - 为每个 Worker 分配端口
-    - _Requirements: 1.1, 1.2_
+    - 实现 `_start_worker()` 方法（启动单个 Worker 进程）
+    - 实现 `start_workers()` 方法（启动所有 Worker）
+    - 为每个 Worker 分配唯一的端口
+    - 等待所有 Worker 就绪
+    - _Requirements: 1.1, 1.2, 1.5_
   
-  - [ ] 3.3 实现请求路由逻辑
+  - [ ] 3.3 实现 ZMQ 通信设置
+    - 实现 `_setup_zmq()` 方法
+    - 创建 PULL socket 接收来自 API Server 的请求
+    - 为每个 Worker 创建 PUSH socket
+    - _Requirements: 2.3_
+  
+  - [ ] 3.4 实现请求路由逻辑
     - 集成 Round Robin Router
     - 实现 `route_request()` 方法
-    - 设置 ZMQ PUSH sockets
+    - 根据路由器选择 Worker 并发送请求
     - _Requirements: 2.1, 2.2, 2.3_
   
-  - [ ] 3.4 实现主循环
-    - 接收来自 API Server 的请求
+  - [ ] 3.5 实现主循环
+    - 实现 `run()` 方法
+    - 持续接收来自 API Server 的请求
     - 调用路由器选择 Worker
     - 发送请求到选定的 Worker
     - _Requirements: 2.1, 2.3_
 
-- [ ]* 3.5 编写 Router Manager 单元测试
-  - 测试 GPU 检测
+- [ ]* 3.6 编写 Router Manager 单元测试
+  - 测试 GPU 检测逻辑
+  - 测试 GPU ID 解析
+  - 测试端口分配
   - 测试 Worker 启动
   - 测试请求路由
+  - **Property 1: Worker 启动完整性**
+  - **Validates: Requirements 1.1, 1.5**
 
 - [ ] 4. 实现 Response Merger
   - [ ] 4.1 创建 ResponseMerger 类

@@ -4,6 +4,22 @@
 
 Phase 1 的设计目标是实现 S-LoRA 的数据并行基础架构，使多个 GPU 能够独立处理请求。本设计采用多进程架构，每个 GPU Worker 运行在独立的进程中，通过 ZeroMQ 进行进程间通信。核心设计原则是简单、可靠、易于扩展。
 
+### 设计理念：复用现有的请求管理策略
+
+**关键设计决策**：每个 GPU Worker 内部复用张量并行模式中的请求管理逻辑（`ReqQueue`）。
+
+**理由**：
+- 张量并行中的 `ReqQueue` 已经实现了成熟的批处理、显存管理、Adapter 调度策略
+- 每个 Worker 本质上是一个"单 GPU 的张量并行系统"
+- 复用现有代码可以减少开发工作量，提高稳定性
+- 保持代码一致性，便于维护
+
+**架构对比**：
+```
+张量并行：1 个 ReqQueue → 管理所有 GPU 的请求
+数据并行：N 个 ReqQueue → 每个 Worker 有自己的 ReqQueue
+```
+
 ## Architecture
 
 ### System Architecture
@@ -38,8 +54,14 @@ Phase 1 的设计目标是实现 S-LoRA 的数据并行基础架构，使多个 
 │ Base Model  │ │ Base Model  │ │ Base Model  │
 │ (Llama-7B)  │ │ (Llama-7B)  │ │ (Llama-7B)  │
 ├─────────────┤ ├─────────────┤ ├─────────────┤
-│Request Queue│ │Request Queue│ │Request Queue│
-│  (Async)    │ │  (Async)    │ │  (Async)    │
+│  ReqQueue   │ │  ReqQueue   │ │  ReqQueue   │
+│  (复用)     │ │  (复用)     │ │  (复用)     │
+│ - append()  │ │ - append()  │ │ - append()  │
+│ - generate_ │ │ - generate_ │ │ - generate_ │
+│   new_batch │ │   new_batch │ │   new_batch │
+│ - 显存管理  │ │ - 显存管理  │ │ - 显存管理  │
+│ - Adapter   │ │ - Adapter   │ │ - Adapter   │
+│   调度      │ │   调度      │ │   │
 └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
        │ ZMQ PUSH      │ ZMQ PUSH      │ ZMQ PUSH
        └───────────────┴───────────────┘
@@ -56,6 +78,12 @@ Phase 1 的设计目标是实现 S-LoRA 的数据并行基础架构，使多个 
               │   (Existing)   │
               └────────────────┘
 ```
+
+**关键设计亮点**：
+- 每个 GPU Worker 内部包含一个独立的 `ReqQueue` 实例
+- `ReqQueue` 来自 `slora/server/router/req_queue.py`（张量并行的请求管理逻辑）
+- 每个 Worker 本质上是一个"单 GPU 的张量并行系统"
+- 复用成熟的批处理、显存管理、Adapter 调度策略
 
 ### Process Model
 
@@ -88,6 +116,8 @@ Phase 1 的设计目标是实现 S-LoRA 的数据并行基础架构，使多个 
 
 **Responsibility**: 在单张 GPU 上运行独立的推理实例
 
+**设计理念**：每个 GPU Worker 内部复用 `ReqQueue` 进行请求管理，本质上是一个"单 GPU 的张量并行系统"。
+
 **Class Design**:
 
 ```python
@@ -115,6 +145,10 @@ class GPUWorker:
         # 模型相关
         self.model = None
         self.adapter_cache = {}
+        
+        # 请求队列管理（复用 ReqQueue）
+        self.req_queue = None  # 将在 _setup_request_queue() 中初始化
+        self.current_batch = None
     
     def _setup_gpu(self) -> None:
         """设置 GPU 环境"""
@@ -138,47 +172,71 @@ class GPUWorker:
         # 复用 slora/common/basemodel/ 中的模型加载逻辑
         pass
     
+    def _setup_request_queue(self) -> None:
+        """
+        初始化请求队列（复用 ReqQueue）
+        
+        ReqQueue 提供：
+        - 批处理逻辑（generate_new_batch）
+        - 显存管理（_can_add_new_req）
+        - Adapter 调度（adapter_size 计算）
+        """
+        from slora.server.router.req_queue import ReqQueue
+        
+        self.req_queue = ReqQueue(
+            max_total_tokens=self.args.max_total_token_num,
+            batch_max_tokens=self.args.batch_max_tokens,
+            running_max_req_size=self.args.running_max_req_size
+        )
+    
     async def _receive_request(self) -> dict:
         """接收请求"""
         request_json = await self.request_receiver.recv_json()
         return request_json
     
-    async def _process_request(self, request: dict) -> dict:
+    async def _process_requests(self) -> List[dict]:
         """
-        处理请求
-        
-        Args:
-            request: 请求消息，包含 request_id, adapter_dir, prompt_ids, sampling_params
+        处理请求批次（使用 ReqQueue 管理）
         
         Returns:
-            响应消息，包含 request_id, worker_id, output_ids, metadata, success
+            响应列表
         """
-        try:
-            # 加载 adapter（如果需要）
-            adapter_dir = request.get('adapter_dir')
-            if adapter_dir and adapter_dir not in self.adapter_cache:
-                await self._load_adapter(adapter_dir)
+        # 使用 ReqQueue 生成新批次
+        new_batch = self.req_queue.generate_new_batch(
+            self.current_batch,
+            self.lora_ranks,
+            self.actual_adapter_size
+        )
+        
+        if new_batch is not None:
+            # 合并到当前批次
+            if self.current_batch is None:
+                self.current_batch = new_batch
+            else:
+                self.current_batch.merge(new_batch)
+        
+        # 执行推理
+        if self.current_batch is not None and len(self.current_batch.reqs) > 0:
+            outputs = await self._infer_batch(self.current_batch)
             
-            # 执行推理（复用现有逻辑）
-            output_ids, metadata = await self._infer(request)
+            # 生成响应
+            responses = []
+            for req, output in zip(self.current_batch.reqs, outputs):
+                responses.append({
+                    'request_id': req.request_id,
+                    'worker_id': self.worker_id,
+                    'output_ids': output.output_ids,
+                    'metadata': output.metadata,
+                    'success': True,
+                    'error': None
+                })
             
-            return {
-                'request_id': request['request_id'],
-                'worker_id': self.worker_id,
-                'output_ids': output_ids,
-                'metadata': metadata,
-                'success': True,
-                'error': None
-            }
-        except Exception as e:
-            return {
-                'request_id': request['request_id'],
-                'worker_id': self.worker_id,
-                'output_ids': [],
-                'metadata': {},
-                'success': False,
-                'error': str(e)
-            }
+            # 更新批次状态
+            self._update_batch_state()
+            
+            return responses
+        
+        return []
     
     async def _send_response(self, response: dict) -> None:
         """发送响应"""
@@ -189,16 +247,37 @@ class GPUWorker:
         print(f"Worker {self.worker_id} ready on GPU {self.gpu_id}")
         
         while True:
-            request = await self._receive_request()
-            response = await self._process_request(request)
-            await self._send_response(response)
+            # 接收新请求并添加到队列
+            try:
+                request = await asyncio.wait_for(
+                    self._receive_request(), 
+                    timeout=0.01
+                )
+                req_obj = self._convert_to_req_object(request)
+                self.req_queue.append(req_obj)
+            except asyncio.TimeoutError:
+                pass
+            
+            # 处理请求批次
+            responses = await self._process_requests()
+            
+            # 发送响应
+            for response in responses:
+                await self._send_response(response)
 ```
 
 **Key Methods**:
 - `_setup_gpu()`: 设置 CUDA_VISIBLE_DEVICES
 - `_load_model()`: 加载基座模型
-- `_process_request()`: 处理单个请求
+- `_setup_request_queue()`: 初始化 ReqQueue（复用张量并行逻辑）
+- `_process_requests()`: 使用 ReqQueue 管理批处理
 - `run()`: 主循环，持续接收和处理请求
+
+**复用的 ReqQueue 功能**:
+- `append()`: 添加请求到等待队列
+- `generate_new_batch()`: 根据显存和批次大小生成新批次
+- `_can_add_new_req()`: 检查是否可以添加新请求（显存管理）
+- `_init_cache_list()`: 初始化缓存列表（Adapter 调度）
 
 ### Component 2: Data Parallel Router Manager
 
