@@ -67,6 +67,7 @@ class DataParallelRouterManager:
             - 5.3: 支持通过 --gpu-ids 参数指定使用的 GPU 列表
             - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
             - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
+            - 8.1: 输出详细的启动信息
         
         Note:
             如果未指定 num_workers，将自动检测可用 GPU 数量。
@@ -76,6 +77,8 @@ class DataParallelRouterManager:
         self.router_port = router_port
         self.response_port = response_port
         self.detoken_port = detoken_port
+        
+        print(f"[DataParallelRouterManager] ========== Initialization Started ==========")
         
         # Worker 管理
         # 如果未指定 num_workers，自动检测 GPU 数量
@@ -107,22 +110,39 @@ class DataParallelRouterManager:
         self.request_receiver = None
         self.request_senders = []
         
-        print(f"[DataParallelRouterManager] Initialized with {self.num_workers} workers")
-        print(f"[DataParallelRouterManager] GPU IDs: {self.gpu_ids}")
-        print(f"[DataParallelRouterManager] Router port: {router_port}, Response port: {response_port}, "
-              f"Detoken port: {detoken_port}")
+        # 请求统计（Requirement 8.2）
+        self.stats = {
+            'total_requests': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'worker_request_counts': [0] * self.num_workers,  # 每个 Worker 的请求计数
+            'start_time': None,  # 将在 run() 中设置
+        }
+        
+        print(f"[DataParallelRouterManager] Configuration:")
+        print(f"[DataParallelRouterManager]   Number of workers: {self.num_workers}")
+        print(f"[DataParallelRouterManager]   GPU IDs: {self.gpu_ids}")
+        print(f"[DataParallelRouterManager]   Router port: {router_port}")
+        print(f"[DataParallelRouterManager]   Response port: {response_port}")
+        print(f"[DataParallelRouterManager]   Detoken port: {detoken_port}")
+        print(f"[DataParallelRouterManager]   Model directory: {args.model_dir}")
+        print(f"[DataParallelRouterManager]   Max total tokens: {args.max_total_token_num}")
+        print(f"[DataParallelRouterManager]   Batch max tokens: {args.batch_max_tokens}")
+        print(f"[DataParallelRouterManager] ==========================================")
     
     def _detect_gpus(self) -> int:
         """
         自动检测可用 GPU 数量
         
         使用 PyTorch 的 cuda.device_count() 检测系统中可用的 GPU 数量。
+        输出详细的 GPU 信息。
         
         Returns:
             int: 可用 GPU 数量
         
         Requirements:
             - 5.4: 自动检测可用 GPU 数量并创建对应数量的 Worker
+            - 8.1: 输出详细的启动信息（GPU 型号、内存等）
         
         Raises:
             RuntimeError: 如果没有可用的 GPU
@@ -138,7 +158,26 @@ class DataParallelRouterManager:
         if num_gpus == 0:
             raise RuntimeError("No GPUs detected. Data parallel mode requires at least one GPU.")
         
-        print(f"[DataParallelRouterManager] Detected {num_gpus} available GPUs")
+        print(f"[DataParallelRouterManager] ========== GPU Detection ==========")
+        print(f"[DataParallelRouterManager] Detected {num_gpus} available GPU(s)")
+        
+        # 输出每个 GPU 的详细信息
+        for i in range(num_gpus):
+            try:
+                gpu_props = torch.cuda.get_device_properties(i)
+                gpu_name = gpu_props.name
+                gpu_memory_gb = gpu_props.total_memory / (1024 ** 3)
+                gpu_compute_capability = f"{gpu_props.major}.{gpu_props.minor}"
+                
+                print(f"[DataParallelRouterManager] GPU {i}:")
+                print(f"[DataParallelRouterManager]   Name: {gpu_name}")
+                print(f"[DataParallelRouterManager]   Memory: {gpu_memory_gb:.2f} GB")
+                print(f"[DataParallelRouterManager]   Compute Capability: {gpu_compute_capability}")
+            except Exception as e:
+                print(f"[DataParallelRouterManager] GPU {i}: Unable to get properties ({str(e)})")
+        
+        print(f"[DataParallelRouterManager] =======================================")
+        
         return num_gpus
     
     def _parse_gpu_ids(self, gpu_ids_str: Optional[str]) -> List[int]:
@@ -229,6 +268,7 @@ class DataParallelRouterManager:
         
         为每个 Worker 分配端口，然后启动所有 Worker 进程和 Response Merger 进程。
         等待所有 Worker 就绪后返回。检测 Worker 启动失败并终止所有进程。
+        输出详细的启动进度日志。
         
         Requirements:
             - 1.1: 根据配置创建指定数量的 GPU Worker 进程
@@ -237,6 +277,8 @@ class DataParallelRouterManager:
             - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
             - 7.1: Worker 启动失败时记录详细错误日志
             - 7.2: 检测 Worker 启动失败并终止所有进程
+            - 8.1: 输出详细的启动信息
+            - 8.3: 输出 Worker 就绪日志
         
         Raises:
             RuntimeError: 如果任何 Worker 启动失败
@@ -247,24 +289,33 @@ class DataParallelRouterManager:
         """
         import sys
         
+        print(f"[DataParallelRouterManager] ========== Starting Workers ==========")
+        
         # 分配端口
         self._allocate_ports()
         
         # 启动 Response Merger 进程
+        print(f"[DataParallelRouterManager] Starting Response Merger...")
         self._start_response_merger()
         
         # 启动所有 Worker
-        print(f"[DataParallelRouterManager] Starting {self.num_workers} workers...")
+        print(f"[DataParallelRouterManager] Starting {self.num_workers} worker(s)...")
         for i in range(self.num_workers):
+            print(f"[DataParallelRouterManager] Starting Worker {i}...")
+            print(f"[DataParallelRouterManager]   GPU ID: {self.gpu_ids[i]}")
+            print(f"[DataParallelRouterManager]   Request port: {self.worker_ports[i]}")
+            print(f"[DataParallelRouterManager]   Response port: {self.response_port}")
+            
             worker = self._start_worker(i, self.gpu_ids[i])
             self.workers.append(worker)
-            print(f"[DataParallelRouterManager] Started worker {i} on GPU {self.gpu_ids[i]}, "
-                  f"port {self.worker_ports[i]}")
+            
+            print(f"[DataParallelRouterManager] Worker {i} process started (PID: {worker.pid})")
         
         # 等待所有 Worker 就绪，同时检测启动失败
         # Phase 1 简化实现：固定等待时间 + 进程状态检查
         # Phase 2 将实现心跳机制进行实际的就绪检测
         print(f"[DataParallelRouterManager] Waiting for workers to initialize...")
+        print(f"[DataParallelRouterManager] This may take a few minutes (loading models)...")
         
         # 分多次检查，每次等待 1 秒，总共等待 5 秒
         for check_round in range(5):
@@ -279,9 +330,10 @@ class DataParallelRouterManager:
             
             # 如果有 Worker 启动失败，终止所有进程并退出
             if failed_workers:
-                print(f"[DataParallelRouterManager] ERROR: Worker startup failed!")
+                print(f"[DataParallelRouterManager] ========== Worker Startup Failed ==========")
                 for worker_id, exitcode in failed_workers:
-                    print(f"[DataParallelRouterManager] Worker {worker_id} failed with exit code {exitcode}")
+                    print(f"[DataParallelRouterManager] Worker {worker_id} (GPU {self.gpu_ids[worker_id]}) "
+                          f"failed with exit code {exitcode}")
                 
                 # 终止所有 Worker 进程
                 print(f"[DataParallelRouterManager] Terminating all workers...")
@@ -306,11 +358,17 @@ class DataParallelRouterManager:
                 # 抛出异常并退出
                 error_msg = f"Worker startup failed. Failed workers: {failed_workers}"
                 print(f"[DataParallelRouterManager] {error_msg}")
+                print(f"[DataParallelRouterManager] ==========================================")
                 raise RuntimeError(error_msg)
             
-            print(f"[DataParallelRouterManager] Check round {check_round + 1}/5: All workers alive")
+            print(f"[DataParallelRouterManager] Health check {check_round + 1}/5: All workers alive")
         
-        print(f"[DataParallelRouterManager] All {self.num_workers} workers started and ready")
+        print(f"[DataParallelRouterManager] ========== All Workers Ready ==========")
+        print(f"[DataParallelRouterManager] Successfully started {self.num_workers} worker(s)")
+        for i in range(self.num_workers):
+            print(f"[DataParallelRouterManager] Worker {i}: GPU {self.gpu_ids[i]}, "
+                  f"PID {self.workers[i].pid}, Port {self.worker_ports[i]}")
+        print(f"[DataParallelRouterManager] =======================================")
     
     def _start_response_merger(self) -> None:
         """
@@ -347,8 +405,11 @@ class DataParallelRouterManager:
         1. PULL socket: 从 API Server 接收请求
         2. PUSH sockets: 向每个 Worker 发送请求
         
+        配置超时参数以防止通信阻塞。
+        
         Requirements:
             - 2.3: 通过 ZMQ PUSH socket 发送请求消息
+            - 7.4: 设置 socket 超时防止通信阻塞
         
         Note:
             Router Manager 使用 PULL socket 接收请求（多对一）
@@ -357,28 +418,45 @@ class DataParallelRouterManager:
             通信模式：
             - API Server → Router Manager: PUSH/PULL
             - Router Manager → Workers: PUSH/PULL (每个 Worker 一个 PUSH socket)
+            
+            超时配置：
+            - RCVTIMEO: 30000ms (30秒) - 接收超时
+            - SNDTIMEO: 30000ms (30秒) - 发送超时
+            - LINGER: 0 - 关闭时立即丢弃未发送消息
         """
         # 创建异步 ZMQ context
         self.context = zmq.asyncio.Context()
         
         # 创建 PULL socket 接收来自 API Server 的请求
         self.request_receiver = self.context.socket(zmq.PULL)
+        
+        # 设置接收超时（30秒）
+        self.request_receiver.setsockopt(zmq.RCVTIMEO, 30000)
+        # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+        self.request_receiver.setsockopt(zmq.LINGER, 0)
+        
         self.request_receiver.bind(f"tcp://127.0.0.1:{self.router_port}")
         
         print(f"[DataParallelRouterManager] ZMQ PULL socket bound to port {self.router_port} "
-              f"(receiving from API Server)")
+              f"(receiving from API Server, timeout=30s)")
         
         # 为每个 Worker 创建 PUSH socket
         self.request_senders = []
         for i, port in enumerate(self.worker_ports):
             sender = self.context.socket(zmq.PUSH)
+            
+            # 设置发送超时（30秒）
+            sender.setsockopt(zmq.SNDTIMEO, 30000)
+            # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+            sender.setsockopt(zmq.LINGER, 0)
+            
             sender.bind(f"tcp://127.0.0.1:{port}")
             self.request_senders.append(sender)
             print(f"[DataParallelRouterManager] ZMQ PUSH socket bound to port {port} "
-                  f"(sending to Worker {i})")
+                  f"(sending to Worker {i}, timeout=30s)")
         
         print(f"[DataParallelRouterManager] ZMQ communication setup complete: "
-              f"{len(self.request_senders)} worker sockets created")
+              f"{len(self.request_senders)} worker sockets created with timeout=30s")
     
     def _start_worker(self, worker_id: int, gpu_id: int) -> mp.Process:
         """
@@ -416,6 +494,7 @@ class DataParallelRouterManager:
         路由请求到 Worker
         
         使用 Round Robin Router 选择一个 Worker，然后通过 ZMQ 发送请求。
+        包含重试逻辑和超时处理。
         
         Args:
             request: 请求消息字典，包含：
@@ -428,48 +507,226 @@ class DataParallelRouterManager:
             - 2.1: 使用 Round Robin Router 选择下一个 Worker
             - 2.2: 按照 Worker ID 的顺序循环分配请求
             - 2.3: 通过 ZMQ PUSH socket 发送请求消息
+            - 7.4: 实现重试逻辑（最多 3 次）
         
         Raises:
-            Exception: 如果发送请求失败
+            Exception: 如果发送请求失败（重试 3 次后）
         
         Note:
             这是一个异步方法，使用 ZMQ 的异步 API 发送消息。
             路由决策会在 DEBUG 级别记录日志（Requirement 8.4）。
+            发送失败时会重试最多 3 次，每次重试间隔 0.1 秒。
         """
-        try:
-            # 使用 Round Robin Router 选择 Worker
-            worker_id = self.router.select_worker()
-            
-            # DEBUG 级别记录路由决策（Requirement 8.4）
-            if hasattr(self.args, 'log_level') and self.args.log_level == 'DEBUG':
-                print(f"[DataParallelRouterManager] DEBUG: Routing request {request.get('request_id')} "
-                      f"to Worker {worker_id}")
-            
-            # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
-            await self.request_senders[worker_id].send_json(request)
-            
-        except Exception as e:
-            # Requirement 2.5: 发送请求失败时记录错误日志
-            print(f"[DataParallelRouterManager] ERROR: Failed to route request "
-                  f"{request.get('request_id', 'unknown')} to Worker {worker_id}: {str(e)}")
-            raise
+        worker_id = None
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # 使用 Round Robin Router 选择 Worker
+                worker_id = self.router.select_worker()
+                
+                # DEBUG 级别记录路由决策（Requirement 8.4）
+                if hasattr(self.args, 'log_level') and self.args.log_level == 'DEBUG':
+                    print(f"[DataParallelRouterManager] DEBUG: Routing request {request.get('request_id')} "
+                          f"to Worker {worker_id} (attempt {retry_count + 1}/{max_retries})")
+                
+                # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
+                await self.request_senders[worker_id].send_json(request)
+                
+                # 更新统计信息（Requirement 8.2）
+                self.stats['total_requests'] += 1
+                self.stats['successful_requests'] += 1  # Phase 1: 假设成功路由即为成功
+                self.stats['worker_request_counts'][worker_id] += 1
+                
+                # 发送成功，返回
+                return
+                
+            except zmq.Again as e:
+                # ZMQ 超时（SNDTIMEO 触发）
+                retry_count += 1
+                print(f"[DataParallelRouterManager] ZMQ timeout routing request "
+                      f"{request.get('request_id', 'unknown')} to Worker {worker_id} "
+                      f"(attempt {retry_count}/{max_retries})")
+                
+                if retry_count >= max_retries:
+                    # 超过重试次数，更新失败统计并抛出异常
+                    self.stats['failed_requests'] += 1
+                    error_msg = (f"Failed to route request {request.get('request_id', 'unknown')} "
+                                f"to Worker {worker_id} after {max_retries} attempts: ZMQ timeout")
+                    print(f"[DataParallelRouterManager] ERROR: {error_msg}")
+                    raise Exception(error_msg)
+                
+                # 等待一段时间后重试
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                # 其他错误，记录日志并抛出
+                retry_count += 1
+                print(f"[DataParallelRouterManager] Error routing request "
+                      f"{request.get('request_id', 'unknown')} to Worker {worker_id} "
+                      f"(attempt {retry_count}/{max_retries}):")
+                print(f"[DataParallelRouterManager]   Error type: {type(e).__name__}")
+                print(f"[DataParallelRouterManager]   Error: {str(e)}")
+                
+                if retry_count >= max_retries:
+                    # 超过重试次数，更新失败统计并抛出异常
+                    self.stats['failed_requests'] += 1
+                    error_msg = (f"Failed to route request {request.get('request_id', 'unknown')} "
+                                f"to Worker {worker_id} after {max_retries} attempts: {str(e)}")
+                    print(f"[DataParallelRouterManager] ERROR: {error_msg}")
+                    raise Exception(error_msg)
+                
+                # 等待一段时间后重试
+                await asyncio.sleep(0.1)
+    
+    async def _check_worker_health(self) -> None:
+        """
+        定期检查 Worker 进程健康状态
+        
+        每 10 秒检查一次所有 Worker 进程是否存活。
+        如果发现进程退出，记录详细日志（worker_id、exitcode、时间）。
+        
+        Requirements:
+            - 7.5: 定期检测 Worker 进程是否存活，记录进程退出日志
+        
+        Note:
+            这是一个后台任务，在主循环启动时创建。
+            当前实现只记录日志，不进行自动重启（Phase 2 功能）。
+        """
+        import time
+        
+        print(f"[DataParallelRouterManager] Starting worker health check task (interval: 10s)")
+        
+        while True:
+            try:
+                # 等待 10 秒
+                await asyncio.sleep(10)
+                
+                # 检查所有 Worker 进程状态
+                for i, worker in enumerate(self.workers):
+                    if not worker.is_alive():
+                        # Worker 进程已退出
+                        exitcode = worker.exitcode
+                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        print(f"[DataParallelRouterManager] WARNING: Worker {i} (GPU {self.gpu_ids[i]}) "
+                              f"has exited unexpectedly!")
+                        print(f"[DataParallelRouterManager]   Worker ID: {i}")
+                        print(f"[DataParallelRouterManager]   GPU ID: {self.gpu_ids[i]}")
+                        print(f"[DataParallelRouterManager]   Exit code: {exitcode}")
+                        print(f"[DataParallelRouterManager]   Timestamp: {timestamp}")
+                        
+                        # 根据退出码提供更多信息
+                        if exitcode == 0:
+                            print(f"[DataParallelRouterManager]   Status: Normal exit (exit code 0)")
+                        elif exitcode == 1:
+                            print(f"[DataParallelRouterManager]   Status: Error exit (exit code 1) - "
+                                  f"Check worker logs for details")
+                        elif exitcode == -9:
+                            print(f"[DataParallelRouterManager]   Status: Killed by signal 9 (SIGKILL) - "
+                                  f"Possible OOM or manual kill")
+                        elif exitcode == -15:
+                            print(f"[DataParallelRouterManager]   Status: Terminated by signal 15 (SIGTERM) - "
+                                  f"Graceful shutdown requested")
+                        elif exitcode and exitcode < 0:
+                            print(f"[DataParallelRouterManager]   Status: Killed by signal {-exitcode}")
+                        else:
+                            print(f"[DataParallelRouterManager]   Status: Unknown exit code {exitcode}")
+                
+            except Exception as e:
+                # 记录错误但继续监控
+                print(f"[DataParallelRouterManager] ERROR in worker health check: {str(e)}")
+                import traceback
+                traceback.print_exc()
+    
+    async def _print_statistics(self) -> None:
+        """
+        定期输出请求统计信息
+        
+        每 10 秒输出一次统计摘要，包括：
+        - 总请求数、成功数、失败数
+        - 每个 Worker 的请求分布
+        - 平均吞吐量（requests/second）
+        
+        Requirements:
+            - 8.2: 每 10 秒输出一次整体的请求处理统计
+        
+        Note:
+            这是一个后台任务，在主循环启动时创建。
+        """
+        import time
+        
+        print(f"[DataParallelRouterManager] Starting statistics reporting task (interval: 10s)")
+        
+        while True:
+            try:
+                # 等待 10 秒
+                await asyncio.sleep(10)
+                
+                # 计算运行时间
+                if self.stats['start_time'] is not None:
+                    elapsed_time = time.time() - self.stats['start_time']
+                    throughput = self.stats['total_requests'] / elapsed_time if elapsed_time > 0 else 0
+                else:
+                    elapsed_time = 0
+                    throughput = 0
+                
+                # 输出统计摘要
+                print(f"[DataParallelRouterManager] ========== Statistics Summary ==========")
+                print(f"[DataParallelRouterManager] Total Requests: {self.stats['total_requests']}")
+                print(f"[DataParallelRouterManager] Successful Requests: {self.stats['successful_requests']}")
+                print(f"[DataParallelRouterManager] Failed Requests: {self.stats['failed_requests']}")
+                print(f"[DataParallelRouterManager] Average Throughput: {throughput:.2f} req/s")
+                print(f"[DataParallelRouterManager] Running Time: {elapsed_time:.2f}s")
+                
+                # 输出每个 Worker 的请求分布
+                print(f"[DataParallelRouterManager] Worker Request Distribution:")
+                for i in range(self.num_workers):
+                    count = self.stats['worker_request_counts'][i]
+                    percentage = (count / self.stats['total_requests'] * 100) if self.stats['total_requests'] > 0 else 0
+                    print(f"[DataParallelRouterManager]   Worker {i} (GPU {self.gpu_ids[i]}): "
+                          f"{count} requests ({percentage:.1f}%)")
+                
+                print(f"[DataParallelRouterManager] ==========================================")
+                
+            except Exception as e:
+                # 记录错误但继续统计
+                print(f"[DataParallelRouterManager] ERROR in statistics reporting: {str(e)}")
+                import traceback
+                traceback.print_exc()
     
     async def run(self) -> None:
         """
         主循环 - 持续接收和路由请求
         
         从 API Server 接收请求，然后使用路由器选择 Worker 并发送请求。
+        同时启动后台任务定期检查 Worker 进程健康状态。
         这个方法会一直运行，直到进程被终止。
         
         Requirements:
             - 2.1: 新请求到达时使用 Round Robin Router 选择 Worker
             - 2.3: 通过 ZMQ 发送请求到选定的 Worker
+            - 7.5: 定期检测 Worker 进程是否存活，记录进程退出日志
         
         Note:
             这是一个无限循环，会持续处理请求直到进程被终止。
             在实际部署中，应该添加优雅关闭机制（Phase 2）。
+            Worker 健康检查作为后台任务运行，每 10 秒检查一次。
         """
         print(f"[DataParallelRouterManager] Starting main loop, listening on port {self.router_port}")
+        
+        # 设置统计开始时间（Requirement 8.2）
+        import time
+        self.stats['start_time'] = time.time()
+        
+        # 启动 Worker 健康检查后台任务
+        health_check_task = asyncio.create_task(self._check_worker_health())
+        print(f"[DataParallelRouterManager] Worker health check task started")
+        
+        # 启动统计报告后台任务（Requirement 8.2）
+        stats_task = asyncio.create_task(self._print_statistics())
+        print(f"[DataParallelRouterManager] Statistics reporting task started")
         
         while True:
             try:

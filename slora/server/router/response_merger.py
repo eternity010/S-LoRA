@@ -75,14 +75,22 @@ class ResponseMerger:
         1. PULL socket：接收来自所有 Worker 的响应（bind 模式）
         2. PUSH socket：发送到 Detokenization 进程（connect 模式）
         
+        配置超时参数以防止通信阻塞。
+        
         Requirements:
             - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
             - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
+            - 7.4: 设置 socket 超时防止通信阻塞
         
         Note:
             - PULL socket 使用 bind 模式，Worker 使用 connect 模式
             - PUSH socket 使用 connect 模式，Detokenization 使用 bind 模式
             - 这种模式确保了消息的可靠传递
+            
+            超时配置：
+            - RCVTIMEO: 30000ms (30秒) - 接收超时
+            - SNDTIMEO: 30000ms (30秒) - 发送超时
+            - LINGER: 0 - 关闭时立即丢弃未发送消息
         """
         # 创建 ZMQ 异步上下文
         self.context = zmq.asyncio.Context()
@@ -90,14 +98,26 @@ class ResponseMerger:
         # 接收 Worker 响应
         # 使用 PULL socket 接收来自多个 Worker 的 PUSH 消息
         self.worker_receiver = self.context.socket(zmq.PULL)
+        
+        # 设置接收超时（30秒）
+        self.worker_receiver.setsockopt(zmq.RCVTIMEO, 30000)
+        # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+        self.worker_receiver.setsockopt(zmq.LINGER, 0)
+        
         self.worker_receiver.bind(f"tcp://127.0.0.1:{self.worker_response_port}")
         
         # 发送到 Detokenization
         # 使用 PUSH socket 连接到 Detokenization 的 PULL socket
         self.detoken_sender = self.context.socket(zmq.PUSH)
+        
+        # 设置发送超时（30秒）
+        self.detoken_sender.setsockopt(zmq.SNDTIMEO, 30000)
+        # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+        self.detoken_sender.setsockopt(zmq.LINGER, 0)
+        
         self.detoken_sender.connect(f"tcp://127.0.0.1:{self.detoken_port}")
         
-        print(f"[ResponseMerger] ZMQ communication setup complete")
+        print(f"[ResponseMerger] ZMQ communication setup complete (timeout=30s)")
         print(f"[ResponseMerger] Listening for worker responses on port {self.worker_response_port}")
         print(f"[ResponseMerger] Forwarding to detokenization on port {self.detoken_port}")
     
@@ -164,12 +184,14 @@ class ResponseMerger:
         转发响应到 Detokenization 进程
         
         将 Worker 响应转换为 Detokenization 期望的格式，然后通过 ZMQ 发送。
+        添加详细的 DEBUG 级别日志。
         
         Args:
             response: Worker 响应字典
         
         Requirements:
             - 4.4: 将响应转发到 Detokenization 进程
+            - 8.5: DEBUG 级别记录响应信息
         
         Note:
             使用 send_pyobj 发送 Python 对象（pickle 序列化）
@@ -178,12 +200,33 @@ class ResponseMerger:
         # 转换为 Detokenization 格式
         detoken_msg = self._convert_to_detoken_format(response)
         
+        # DEBUG 级别记录响应详情（Requirement 8.5）
+        request_id = response['request_id']
+        worker_id = response['worker_id']
+        success = response['success']
+        output_ids = response.get('output_ids', [])
+        
+        # 基本日志（始终输出）
+        print(f"[ResponseMerger] Forwarding response: request_id={request_id}, "
+              f"worker_id={worker_id}, success={success}")
+        
+        # DEBUG 级别详细日志
+        # 可以通过环境变量 DEBUG=1 启用
+        import os
+        if os.environ.get('DEBUG', '0') == '1':
+            print(f"[ResponseMerger] DEBUG: Response details:")
+            print(f"[ResponseMerger] DEBUG:   Request ID: {request_id}")
+            print(f"[ResponseMerger] DEBUG:   Worker ID: {worker_id}")
+            print(f"[ResponseMerger] DEBUG:   Success: {success}")
+            print(f"[ResponseMerger] DEBUG:   Output IDs length: {len(output_ids)}")
+            if output_ids:
+                print(f"[ResponseMerger] DEBUG:   Last token: {output_ids[-1]}")
+            print(f"[ResponseMerger] DEBUG:   Metadata: {response.get('metadata', {})}")
+            if not success:
+                print(f"[ResponseMerger] DEBUG:   Error: {response.get('error', 'Unknown')}")
+        
         # 发送到 Detokenization
         await self.detoken_sender.send_pyobj(detoken_msg)
-        
-        # 调试日志
-        print(f"[ResponseMerger] Forwarded response for request {response['request_id']} "
-              f"from worker {response['worker_id']} to detokenization")
     
     async def run(self) -> None:
         """

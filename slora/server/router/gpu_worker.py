@@ -87,9 +87,11 @@ class GPUWorker:
         
         通过设置 CUDA_VISIBLE_DEVICES 环境变量，确保 Worker 只能看到分配给它的 GPU。
         然后将 PyTorch 的默认设备设置为该 GPU。
+        输出详细的 GPU 信息（型号、内存、计算能力）。
         
         Requirements:
             - 1.3: 设置 CUDA_VISIBLE_DEVICES 环境变量为对应的 gpu_id
+            - 8.1: 输出详细的启动信息（GPU 型号、内存等）
         
         Note:
             设置 CUDA_VISIBLE_DEVICES 后，从 Worker 的视角看，只有一个 GPU (索引为 0)。
@@ -101,8 +103,21 @@ class GPUWorker:
         # 设置 PyTorch 默认设备为 GPU 0（因为 CUDA_VISIBLE_DEVICES 已经限制了可见 GPU）
         if torch.cuda.is_available():
             torch.cuda.set_device(0)
-            print(f"[Worker {self.worker_id}] GPU environment setup complete: "
-                  f"CUDA_VISIBLE_DEVICES={self.gpu_id}, torch device=cuda:0")
+            
+            # 获取 GPU 详细信息
+            gpu_props = torch.cuda.get_device_properties(0)
+            gpu_name = gpu_props.name
+            gpu_memory_gb = gpu_props.total_memory / (1024 ** 3)  # 转换为 GB
+            gpu_compute_capability = f"{gpu_props.major}.{gpu_props.minor}"
+            
+            print(f"[Worker {self.worker_id}] ========== GPU Environment Setup ==========")
+            print(f"[Worker {self.worker_id}] Physical GPU ID: {self.gpu_id}")
+            print(f"[Worker {self.worker_id}] GPU Name: {gpu_name}")
+            print(f"[Worker {self.worker_id}] Total Memory: {gpu_memory_gb:.2f} GB")
+            print(f"[Worker {self.worker_id}] Compute Capability: {gpu_compute_capability}")
+            print(f"[Worker {self.worker_id}] CUDA_VISIBLE_DEVICES: {self.gpu_id}")
+            print(f"[Worker {self.worker_id}] PyTorch Device: cuda:0")
+            print(f"[Worker {self.worker_id}] ==========================================")
         else:
             raise RuntimeError(f"[Worker {self.worker_id}] CUDA is not available on GPU {self.gpu_id}")
     
@@ -219,6 +234,15 @@ class GPUWorker:
             return
         
         try:
+            # DEBUG 级别记录 adapter 加载详情（Requirement 8.5）
+            import os
+            if os.environ.get('DEBUG', '0') == '1':
+                print(f"[Worker {self.worker_id}] DEBUG: Loading adapters:")
+                for adapter_dir in adapter_dirs:
+                    adapter_name = adapter_dir.split('/')[-1]
+                    rank = self.lora_ranks.get(adapter_dir, 'unknown')
+                    print(f"[Worker {self.worker_id}] DEBUG:   - {adapter_name} (rank={rank})")
+            
             # 调用 RPC 加载 adapters
             await self.model_rpc.load_adapters(adapter_dirs)
             
@@ -227,6 +251,11 @@ class GPUWorker:
             
             # 加载后更新实际占用
             await self._update_actual_adapter_usage()
+            
+            # DEBUG 级别记录内存占用（Requirement 8.5）
+            if os.environ.get('DEBUG', '0') == '1':
+                print(f"[Worker {self.worker_id}] DEBUG: Adapter memory usage: "
+                      f"{self.actual_adapter_memory_usage} cells")
             
         except Exception as e:
             print(f"[Worker {self.worker_id}] Error loading adapters: {e}")
@@ -240,6 +269,8 @@ class GPUWorker:
         1. PULL socket: 从 Router Manager 接收请求
         2. PUSH socket: 向 Response Merger 发送响应
         
+        配置超时参数以防止通信阻塞。
+        
         Args:
             request_port: 接收请求的端口号（Router Manager 的 PUSH socket 绑定的端口）
             response_port: 发送响应的端口号（Response Merger 的 PULL socket 绑定的端口）
@@ -247,10 +278,16 @@ class GPUWorker:
         Requirements:
             - 2.3: 通过 ZMQ PUSH socket 发送请求消息
             - 4.1: 通过 ZMQ PUSH socket 发送响应消息
+            - 7.4: 设置 socket 超时防止通信阻塞
         
         Note:
             使用 zmq.asyncio.Context 以支持异步操作。
             Worker 使用 PULL socket 接收（多对一），使用 PUSH socket 发送（一对一）。
+            
+            超时配置：
+            - RCVTIMEO: 30000ms (30秒) - 接收超时
+            - SNDTIMEO: 30000ms (30秒) - 发送超时
+            - LINGER: 0 - 关闭时立即丢弃未发送消息
         """
         # 创建异步 ZMQ context
         self.context = zmq.asyncio.Context()
@@ -258,15 +295,27 @@ class GPUWorker:
         # 创建 PULL socket 接收请求
         # Router Manager 使用 PUSH 发送，Worker 使用 PULL 接收
         self.request_receiver = self.context.socket(zmq.PULL)
+        
+        # 设置接收超时（30秒）
+        self.request_receiver.setsockopt(zmq.RCVTIMEO, 30000)
+        # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+        self.request_receiver.setsockopt(zmq.LINGER, 0)
+        
         self.request_receiver.connect(f"tcp://127.0.0.1:{request_port}")
         
         # 创建 PUSH socket 发送响应
         # Worker 使用 PUSH 发送，Response Merger 使用 PULL 接收
         self.response_sender = self.context.socket(zmq.PUSH)
+        
+        # 设置发送超时（30秒）
+        self.response_sender.setsockopt(zmq.SNDTIMEO, 30000)
+        # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
+        self.response_sender.setsockopt(zmq.LINGER, 0)
+        
         self.response_sender.connect(f"tcp://127.0.0.1:{response_port}")
         
         print(f"[Worker {self.worker_id}] ZMQ communication setup complete: "
-              f"request_port={request_port}, response_port={response_port}")
+              f"request_port={request_port}, response_port={response_port}, timeout=30s")
     
     def _load_model(self) -> None:
         """
@@ -338,10 +387,13 @@ class GPUWorker:
         
         创建 ModelRpcClient 连接到模型进程。在数据并行模式下，每个 Worker
         运行在独立的进程中，使用 world_size=1 表示单 GPU 模式（无张量并行）。
+        输出详细的模型加载进度日志。
         
         Requirements:
             - 1.4: 在指定 GPU 上加载模型
             - 3.4: 使用现有的模型推理逻辑处理请求
+            - 8.1: 输出详细的启动信息（模型加载进度）
+            - 8.3: 输出模型大小、加载时间等信息
         
         Note:
             - 数据并行模式下，每个 Worker 独立运行，world_size=1
@@ -349,8 +401,13 @@ class GPUWorker:
             - 单 GPU 模式下不使用 RPC，直接创建 ModelRpcServer 实例
             - 初始化后调用 init_model() 加载模型权重
         """
+        import time
+        
         try:
-            print(f"[Worker {self.worker_id}] Initializing model RPC...")
+            print(f"[Worker {self.worker_id}] ========== Model Loading Started ==========")
+            start_time = time.time()
+            
+            print(f"[Worker {self.worker_id}] Step 1/3: Creating Model RPC client...")
             
             # 创建 ModelRpcClient（world_size=1 表示单 GPU 模式）
             # 在单 GPU 模式下，start_model_process 会直接返回一个本地的 ModelRpcServer
@@ -360,7 +417,10 @@ class GPUWorker:
                 world_size=1  # 数据并行模式，每个 Worker 独立
             )
             
-            print(f"[Worker {self.worker_id}] Model RPC client created")
+            rpc_time = time.time() - start_time
+            print(f"[Worker {self.worker_id}] Model RPC client created (took {rpc_time:.2f}s)")
+            
+            print(f"[Worker {self.worker_id}] Step 2/3: Preparing model initialization parameters...")
             
             # 创建 InputParams 对象（从 args 中提取参数）
             # 这是 init_model 所需的参数格式
@@ -392,6 +452,19 @@ class GPUWorker:
                 max_lora_ratio=getattr(self.args, 'max_lora_ratio', 0.5),
             )
             
+            print(f"[Worker {self.worker_id}] Model configuration:")
+            print(f"[Worker {self.worker_id}]   Model directory: {self.args.model_dir}")
+            print(f"[Worker {self.worker_id}]   Max total tokens: {self.args.max_total_token_num}")
+            print(f"[Worker {self.worker_id}]   Batch max tokens: {self.args.batch_max_tokens}")
+            print(f"[Worker {self.worker_id}]   Running max requests: {self.args.running_max_req_size}")
+            print(f"[Worker {self.worker_id}]   LoRA enabled: {not getattr(self.args, 'no_lora', False)}")
+            
+            if hasattr(self.args, 'lora_dirs') and self.args.lora_dirs:
+                print(f"[Worker {self.worker_id}]   Adapter directories: {len(self.args.lora_dirs)} adapters")
+            
+            print(f"[Worker {self.worker_id}] Step 3/3: Loading model weights...")
+            model_load_start = time.time()
+            
             # 初始化模型（加载权重）
             # 传递必要的参数给 RPC 服务器
             await self.model_rpc.init_model(
@@ -406,10 +479,38 @@ class GPUWorker:
                 prefetch_stream=None  # 数据并行模式不使用 prefetch
             )
             
+            model_load_time = time.time() - model_load_start
+            total_time = time.time() - start_time
+            
+            # 获取模型大小信息（如果可用）
+            try:
+                # 尝试获取模型参数数量
+                import os
+                model_dir = self.args.model_dir
+                # 估算模型大小（基于目录大小）
+                total_size = 0
+                for dirpath, dirnames, filenames in os.walk(model_dir):
+                    for filename in filenames:
+                        filepath = os.path.join(dirpath, filename)
+                        if os.path.isfile(filepath):
+                            total_size += os.path.getsize(filepath)
+                
+                model_size_gb = total_size / (1024 ** 3)
+                print(f"[Worker {self.worker_id}] Model size: {model_size_gb:.2f} GB")
+            except Exception as e:
+                # 如果获取失败，不影响主流程
+                pass
+            
+            print(f"[Worker {self.worker_id}] Model weights loaded (took {model_load_time:.2f}s)")
+            print(f"[Worker {self.worker_id}] ========== Model Loading Complete ==========")
+            print(f"[Worker {self.worker_id}] Total initialization time: {total_time:.2f}s")
             print(f"[Worker {self.worker_id}] Model RPC initialized successfully on GPU {self.gpu_id}")
             
         except Exception as e:
+            print(f"[Worker {self.worker_id}] ========== Model Loading Failed ==========")
             print(f"[Worker {self.worker_id}] Failed to initialize model RPC: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def _setup_request_queue(self) -> None:
@@ -569,6 +670,7 @@ class GPUWorker:
         执行批次推理
         
         调用 model_rpc 执行实际推理，处理推理结果并更新批次状态。
+        包含完善的异常处理和错误分类。
         
         Args:
             batch: 要推理的批次
@@ -579,11 +681,15 @@ class GPUWorker:
         Requirements:
             - 3.4: 使用现有的模型推理逻辑处理请求
             - 3.5: 生成包含 output_ids 和 metadata 的响应消息
+            - 7.3: 推理异常时记录详细错误日志
         
         Note:
             - 对于新批次（prefill），调用 init_batch + prefill_batch
             - 对于已有批次（decode），调用 decode_batch
             - 返回格式与 manager.py 保持一致
+        
+        Raises:
+            RuntimeError: 推理失败时抛出，包含错误类型和详细信息
         """
         try:
             # 判断是 prefill 还是 decode
@@ -610,17 +716,59 @@ class GPUWorker:
             
             return req_to_out_token_id
             
-        except Exception as e:
-            print(f"[Worker {self.worker_id}] Error in _infer_batch: {str(e)}")
+        except RuntimeError as e:
+            # CUDA OOM 或其他运行时错误
+            error_msg = str(e).lower()
+            if 'out of memory' in error_msg or 'oom' in error_msg:
+                error_type = "CUDA_OOM"
+                print(f"[Worker {self.worker_id}] CUDA Out of Memory error in _infer_batch:")
+                print(f"[Worker {self.worker_id}]   Batch ID: {batch.batch_id}")
+                print(f"[Worker {self.worker_id}]   Batch size: {len(batch.reqs)} requests")
+                print(f"[Worker {self.worker_id}]   Mode: {'prefill' if is_prefill else 'decode'}")
+                print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+            else:
+                error_type = "RUNTIME_ERROR"
+                print(f"[Worker {self.worker_id}] Runtime error in _infer_batch:")
+                print(f"[Worker {self.worker_id}]   Error type: {type(e).__name__}")
+                print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+            
             import traceback
             traceback.print_exc()
-            raise
+            raise RuntimeError(f"[{error_type}] Inference failed: {str(e)}")
+            
+        except asyncio.TimeoutError as e:
+            # RPC 超时
+            error_type = "RPC_TIMEOUT"
+            print(f"[Worker {self.worker_id}] RPC timeout in _infer_batch:")
+            print(f"[Worker {self.worker_id}]   Batch ID: {batch.batch_id}")
+            print(f"[Worker {self.worker_id}]   Batch size: {len(batch.reqs)} requests")
+            print(f"[Worker {self.worker_id}]   Mode: {'prefill' if is_prefill else 'decode'}")
+            print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+            
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"[{error_type}] Inference timeout: {str(e)}")
+            
+        except Exception as e:
+            # 其他未知错误
+            error_type = "UNKNOWN_ERROR"
+            print(f"[Worker {self.worker_id}] Unexpected error in _infer_batch:")
+            print(f"[Worker {self.worker_id}]   Error type: {type(e).__name__}")
+            print(f"[Worker {self.worker_id}]   Batch ID: {batch.batch_id}")
+            print(f"[Worker {self.worker_id}]   Batch size: {len(batch.reqs)} requests")
+            print(f"[Worker {self.worker_id}]   Mode: {'prefill' if is_prefill else 'decode'}")
+            print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+            
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"[{error_type}] Inference failed: {str(e)}")
     
     async def _process_requests(self) -> List[dict]:
         """
         处理请求批次（使用 ReqQueue 管理）
         
         使用 ReqQueue 生成新批次，合并到当前批次，执行推理，并生成响应。
+        包含完善的异常处理，确保错误时返回正确的错误响应。
         
         Returns:
             List[dict]: 响应列表，每个响应包含：
@@ -636,12 +784,14 @@ class GPUWorker:
             - 3.2: 解析请求消息并提取必要的参数
             - 3.4: 使用现有的模型推理逻辑处理请求
             - 3.5: 生成包含 output_ids 和 metadata 的响应消息
+            - 7.3: 推理异常时返回错误响应
         
         Note:
             Task 2.9.2 实现：
             - 使用 ReqQueue 管理批处理
             - 调用 model_rpc 执行实际推理
             - 处理 prefill 和 decode 两种模式
+            - 推理失败时生成错误响应并清理批次
         """
         try:
             # 使用 ReqQueue 生成新批次
@@ -651,6 +801,19 @@ class GPUWorker:
                 self.lora_ranks,
                 actual_adapter_size=self.actual_adapter_memory_usage
             )
+            
+            # DEBUG 级别记录批次信息（Requirement 8.5）
+            import os
+            if os.environ.get('DEBUG', '0') == '1':
+                if new_batch is not None:
+                    print(f"[Worker {self.worker_id}] DEBUG: Generated new batch:")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Batch ID: {new_batch.batch_id}")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(new_batch.reqs)} requests")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Adapter dirs: {new_batch.adapter_dirs}")
+                if self.current_batch is not None:
+                    print(f"[Worker {self.worker_id}] DEBUG: Current batch:")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Batch ID: {self.current_batch.batch_id}")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(self.current_batch.reqs)} requests")
             
             if new_batch is not None:
                 # 加载批次所需的 adapters（借鉴 manager.py）
@@ -665,51 +828,104 @@ class GPUWorker:
             
             # 执行推理
             if self.current_batch is not None and len(self.current_batch.reqs) > 0:
-                # 调用 model_rpc 执行实际推理
-                req_to_out_token_id = await self._infer_batch(self.current_batch)
+                # DEBUG 级别记录推理开始（Requirement 8.5）
+                if os.environ.get('DEBUG', '0') == '1':
+                    print(f"[Worker {self.worker_id}] DEBUG: Starting inference for batch {self.current_batch.batch_id}")
+                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(self.current_batch.reqs)} requests")
                 
-                # 将输出 token 添加到请求中
-                responses = []
-                for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
-                    req = self.current_batch.id_to_reqs[req_id]
-                    req.output_ids.append(new_token_id)
-                    req.output_metadata_list.append(new_gen_metadata)
+                try:
+                    # 调用 model_rpc 执行实际推理
+                    req_to_out_token_id = await self._infer_batch(self.current_batch)
                     
-                    # 生成响应（包含完整的输出序列）
-                    output_ids = req.prompt_ids + req.output_ids
-                    metadata = {
-                        'finish_reason': 'length' if len(req.output_ids) >= req.max_output_len else 'generating',
-                        'prompt_tokens': req.input_len,
-                        'completion_tokens': len(req.output_ids),
-                        'gen_metadata': new_gen_metadata
-                    }
+                    # 将输出 token 添加到请求中
+                    responses = []
+                    for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                        req = self.current_batch.id_to_reqs[req_id]
+                        req.output_ids.append(new_token_id)
+                        req.output_metadata_list.append(new_gen_metadata)
+                        
+                        # 生成响应（包含完整的输出序列）
+                        output_ids = req.prompt_ids + req.output_ids
+                        metadata = {
+                            'finish_reason': 'length' if len(req.output_ids) >= req.max_output_len else 'generating',
+                            'prompt_tokens': req.input_len,
+                            'completion_tokens': len(req.output_ids),
+                            'gen_metadata': new_gen_metadata
+                        }
+                        
+                        responses.append({
+                            'request_id': req.request_id,
+                            'worker_id': self.worker_id,
+                            'output_ids': output_ids,
+                            'metadata': metadata,
+                            'success': True,
+                            'error': None
+                        })
                     
-                    responses.append({
-                        'request_id': req.request_id,
-                        'worker_id': self.worker_id,
-                        'output_ids': output_ids,
-                        'metadata': metadata,
-                        'success': True,
-                        'error': None
-                    })
-                
-                # 标记已完成的请求
-                # 需要 eos_id 来判断是否遇到结束符
-                # 从 args 中获取 eos_id，如果没有则使用默认值 2（Llama 的 EOS）
-                eos_id = getattr(self.args, 'eos_id', 2)
-                has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
-                
-                # 处理已完成的请求
-                await self._handle_finish_req(self.current_batch, has_new_finished_req)
-                
-                return responses
+                    # 标记已完成的请求
+                    # 需要 eos_id 来判断是否遇到结束符
+                    # 从 args 中获取 eos_id，如果没有则使用默认值 2（Llama 的 EOS）
+                    eos_id = getattr(self.args, 'eos_id', 2)
+                    has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
+                    
+                    # 处理已完成的请求
+                    await self._handle_finish_req(self.current_batch, has_new_finished_req)
+                    
+                    return responses
+                    
+                except RuntimeError as e:
+                    # 推理失败，生成错误响应
+                    error_msg = str(e)
+                    print(f"[Worker {self.worker_id}] Inference failed, generating error responses")
+                    
+                    # 为批次中的所有请求生成错误响应
+                    error_responses = []
+                    for req in self.current_batch.reqs:
+                        error_responses.append({
+                            'request_id': req.request_id,
+                            'worker_id': self.worker_id,
+                            'output_ids': req.prompt_ids,  # 只返回 prompt
+                            'metadata': {
+                                'finish_reason': 'error',
+                                'prompt_tokens': req.input_len,
+                                'completion_tokens': 0,
+                                'error_type': error_msg.split(']')[0].strip('[') if '[' in error_msg else 'UNKNOWN'
+                            },
+                            'success': False,
+                            'error': error_msg
+                        })
+                    
+                    # 清理失败的批次
+                    if self.model_rpc:
+                        try:
+                            await self.model_rpc.remove_batch(self.current_batch.batch_id)
+                        except Exception as cleanup_error:
+                            print(f"[Worker {self.worker_id}] Error cleaning up batch: {cleanup_error}")
+                    
+                    self.current_batch = None
+                    
+                    return error_responses
             
             return []
             
         except Exception as e:
-            print(f"[Worker {self.worker_id}] Error processing requests: {str(e)}")
+            # 捕获其他异常（如 ReqQueue 错误、adapter 加载错误等）
+            print(f"[Worker {self.worker_id}] Error processing requests:")
+            print(f"[Worker {self.worker_id}]   Error type: {type(e).__name__}")
+            print(f"[Worker {self.worker_id}]   Error: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # 如果有当前批次，尝试清理
+            if self.current_batch is not None:
+                try:
+                    if self.model_rpc:
+                        await self.model_rpc.remove_batch(self.current_batch.batch_id)
+                except Exception as cleanup_error:
+                    print(f"[Worker {self.worker_id}] Error cleaning up batch: {cleanup_error}")
+                
+                self.current_batch = None
+            
             return []
     
     async def _handle_finish_req(self, batch: Batch, has_new_finished_req: bool) -> None:
@@ -783,15 +999,18 @@ class GPUWorker:
         
         持续接收请求、处理请求批次并发送响应。
         使用 ReqQueue 进行批处理管理。
+        包含完善的异常处理，确保单个错误不会终止服务。
         
         Requirements:
             - 3.1: 持续监听 ZMQ PULL socket 接收请求
             - 3.5: 生成包含 output_ids 和 metadata 的响应消息
+            - 7.3: 推理异常时记录详细错误日志
             - 8.3: 输出 Worker 就绪日志
         
         Note:
             这是一个无限循环，Worker 会一直运行直到进程被终止。
             使用 ReqQueue 管理批处理，支持多个请求并发处理。
+            捕获所有异常但继续运行，确保服务不中断。
         """
         print(f"Worker {self.worker_id} ready on GPU {self.gpu_id}")
         
@@ -808,14 +1027,33 @@ class GPUWorker:
                 except asyncio.TimeoutError:
                     # 超时是正常的，继续处理现有批次
                     pass
+                except Exception as recv_error:
+                    # 接收请求失败，记录错误但继续运行
+                    print(f"[Worker {self.worker_id}] Error receiving request:")
+                    print(f"[Worker {self.worker_id}]   Error type: {type(recv_error).__name__}")
+                    print(f"[Worker {self.worker_id}]   Error: {str(recv_error)}")
+                    # 继续处理现有批次
                 
                 # 处理请求批次
                 responses = await self._process_requests()
                 
                 # 发送响应
                 for response in responses:
-                    await self._send_response(response)
+                    try:
+                        await self._send_response(response)
+                    except Exception as send_error:
+                        # 发送响应失败，记录错误但继续处理下一个响应
+                        print(f"[Worker {self.worker_id}] Error sending response:")
+                        print(f"[Worker {self.worker_id}]   Request ID: {response.get('request_id', 'unknown')}")
+                        print(f"[Worker {self.worker_id}]   Error type: {type(send_error).__name__}")
+                        print(f"[Worker {self.worker_id}]   Error: {str(send_error)}")
+                        # 继续发送下一个响应
                 
             except Exception as e:
-                print(f"[Worker {self.worker_id}] Error in main loop: {str(e)}")
+                # 捕获主循环中的所有其他异常
+                print(f"[Worker {self.worker_id}] Unexpected error in main loop:")
+                print(f"[Worker {self.worker_id}]   Error type: {type(e).__name__}")
+                print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 # 继续运行，不因单个错误而终止
