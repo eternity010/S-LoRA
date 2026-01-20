@@ -228,18 +228,25 @@ class DataParallelRouterManager:
         启动所有 Worker 进程和 Response Merger
         
         为每个 Worker 分配端口，然后启动所有 Worker 进程和 Response Merger 进程。
-        等待所有 Worker 就绪后返回。
+        等待所有 Worker 就绪后返回。检测 Worker 启动失败并终止所有进程。
         
         Requirements:
             - 1.1: 根据配置创建指定数量的 GPU Worker 进程
             - 1.5: 确认所有 Worker 处于就绪状态
             - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
             - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
+            - 7.1: Worker 启动失败时记录详细错误日志
+            - 7.2: 检测 Worker 启动失败并终止所有进程
+        
+        Raises:
+            RuntimeError: 如果任何 Worker 启动失败
         
         Note:
             这是一个异步方法，会等待一段时间让 Worker 初始化。
             实际的就绪检测将在后续 Phase 中实现（通过心跳机制）。
         """
+        import sys
+        
         # 分配端口
         self._allocate_ports()
         
@@ -254,10 +261,54 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager] Started worker {i} on GPU {self.gpu_ids[i]}, "
                   f"port {self.worker_ports[i]}")
         
-        # 等待所有 Worker 就绪
-        # Phase 1 简化实现：固定等待时间
+        # 等待所有 Worker 就绪，同时检测启动失败
+        # Phase 1 简化实现：固定等待时间 + 进程状态检查
         # Phase 2 将实现心跳机制进行实际的就绪检测
-        await asyncio.sleep(5)
+        print(f"[DataParallelRouterManager] Waiting for workers to initialize...")
+        
+        # 分多次检查，每次等待 1 秒，总共等待 5 秒
+        for check_round in range(5):
+            await asyncio.sleep(1)
+            
+            # 检查所有 Worker 进程状态
+            failed_workers = []
+            for i, worker in enumerate(self.workers):
+                if not worker.is_alive():
+                    exitcode = worker.exitcode
+                    failed_workers.append((i, exitcode))
+            
+            # 如果有 Worker 启动失败，终止所有进程并退出
+            if failed_workers:
+                print(f"[DataParallelRouterManager] ERROR: Worker startup failed!")
+                for worker_id, exitcode in failed_workers:
+                    print(f"[DataParallelRouterManager] Worker {worker_id} failed with exit code {exitcode}")
+                
+                # 终止所有 Worker 进程
+                print(f"[DataParallelRouterManager] Terminating all workers...")
+                for i, worker in enumerate(self.workers):
+                    if worker.is_alive():
+                        print(f"[DataParallelRouterManager] Terminating worker {i}...")
+                        worker.terminate()
+                        worker.join(timeout=5)
+                        if worker.is_alive():
+                            print(f"[DataParallelRouterManager] Force killing worker {i}...")
+                            worker.kill()
+                
+                # 终止 Response Merger 进程
+                if self.merger_process and self.merger_process.is_alive():
+                    print(f"[DataParallelRouterManager] Terminating Response Merger...")
+                    self.merger_process.terminate()
+                    self.merger_process.join(timeout=5)
+                    if self.merger_process.is_alive():
+                        print(f"[DataParallelRouterManager] Force killing Response Merger...")
+                        self.merger_process.kill()
+                
+                # 抛出异常并退出
+                error_msg = f"Worker startup failed. Failed workers: {failed_workers}"
+                print(f"[DataParallelRouterManager] {error_msg}")
+                raise RuntimeError(error_msg)
+            
+            print(f"[DataParallelRouterManager] Check round {check_round + 1}/5: All workers alive")
         
         print(f"[DataParallelRouterManager] All {self.num_workers} workers started and ready")
     
@@ -443,6 +494,7 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
     Worker 进程的入口函数
     
     这个函数在独立的进程中运行，创建 GPUWorker 实例并启动主循环。
+    包含完善的异常捕获和错误日志记录。
     
     Args:
         worker_id: Worker 的唯一标识符
@@ -451,30 +503,56 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
         request_port: 接收请求的端口
         response_port: 发送响应的端口
     
+    Requirements:
+        - 7.1: Worker 启动失败时记录详细错误日志
+        - 7.2: 通过退出码通知 Router Manager 启动失败
+    
     Note:
         这个函数必须在模块级别定义，因为 multiprocessing 需要能够 pickle 它。
+        任何异常都会导致进程以非零退出码退出，通知 Router Manager 启动失败。
     """
+    import sys
+    import traceback
     from slora.server.router.gpu_worker import GPUWorker
     
     try:
+        print(f"[Worker {worker_id}] Starting worker process on GPU {gpu_id}...")
+        
         # 创建 Worker 实例
+        print(f"[Worker {worker_id}] Creating GPUWorker instance...")
         worker = GPUWorker(worker_id, gpu_id, args)
         
         # 设置 ZMQ 通信
+        print(f"[Worker {worker_id}] Setting up ZMQ communication...")
         worker._setup_zmq(request_port, response_port)
         
         # 初始化请求队列
+        print(f"[Worker {worker_id}] Setting up request queue...")
         worker._setup_request_queue()
         
         # 初始化模型 RPC（Task 2.9.1）
         # 使用 RPC 方式加载模型，而不是直接加载
+        print(f"[Worker {worker_id}] Initializing model RPC...")
         asyncio.run(worker._init_model_rpc())
+        
+        print(f"[Worker {worker_id}] Worker initialization complete, starting main loop...")
         
         # 运行主循环
         asyncio.run(worker.run())
         
+    except KeyboardInterrupt:
+        # 优雅处理 Ctrl+C
+        print(f"[Worker {worker_id}] Received keyboard interrupt, shutting down...")
+        sys.exit(0)
+        
     except Exception as e:
-        print(f"[Worker {worker_id}] Fatal error: {str(e)}")
-        import traceback
+        # 捕获所有异常，记录详细错误日志和堆栈跟踪
+        print(f"[Worker {worker_id}] FATAL ERROR during worker startup/execution:")
+        print(f"[Worker {worker_id}] Error type: {type(e).__name__}")
+        print(f"[Worker {worker_id}] Error message: {str(e)}")
+        print(f"[Worker {worker_id}] Full traceback:")
         traceback.print_exc()
-        raise
+        
+        # 通过非零退出码通知 Router Manager 启动失败
+        print(f"[Worker {worker_id}] Exiting with error code 1")
+        sys.exit(1)

@@ -1275,3 +1275,532 @@ _start_data_parallel_router()
 - Task 5.4: 更新 router/manager.py 或创建新的入口（确保两种模式可以共存）
 - Task 6: 完善错误处理（Worker 启动失败、ZMQ 超时等）
 - Task 8: Checkpoint - 基础功能验证（验证模式选择逻辑正确工作）
+_start_tensor_parallel_router()` 函数**:
+   - 将原有的 `start_router_process()` 逻辑完整移植
+   - 创建 InputParams 对象
+   - 创建 RouterManager 实例
+   - 等待模型就绪
+   - 处理 profiling 和 scheduler 初始化
+   - 发送 'init ok' 消息
+   - 运行主循环
+
+3. **`_start_data_parallel_router()` 函数**:
+   - 导入 DataParallelRouterManager 和 alloc_can_use_network_port
+   - 分配 response_port（用于 Worker → Response Merger 通信）
+   - 创建 DataParallelRouterManager 实例：
+     - 传递 args, router_port, response_port, detoken_port
+   - 设置 ZMQ 通信：`dp_manager._setup_zmq()`
+   - 启动 Workers：`asyncio.run(dp_manager.start_workers())`
+   - 发送 'init ok' 消息
+   - 运行主循环：`asyncio.run(dp_manager.run())`
+   - 完整的错误处理
+
+**启动流程对比**:
+
+**张量并行模式**:
+```
+start_router_process()
+    ↓
+_start_tensor_parallel_router()
+    ↓ 创建 InputParams
+    ↓ 创建 RouterManager
+    ↓ 启动模型进程（多个 RPC 进程）
+    ↓ 等待模型就绪
+    ↓ 运行主循环（loop_for_fwd + loop_for_netio_req）
+```
+
+**数据并行模式**:
+```
+start_router_process()
+    ↓
+_start_data_parallel_router()
+    ↓ 分配 response_port
+    ↓ 创建 DataParallelRouterManager
+    ↓ 设置 ZMQ 通信
+    ↓ 启动 Workers（多个 GPU Worker 进程）
+    ↓ 启动 Response Merger 进程
+    ↓ 运行主循环（接收请求 + 路由到 Worker）
+```
+
+**满足 Requirements**:
+- Requirements 6.1（未指定 parallel-mode 参数时默认使用张量并行模式）
+- Requirements 6.2（使用 --parallel-mode tensor 时使用原有的张量并行逻辑）
+- Requirements 6.3（使用 --parallel-mode data 时使用新的数据并行逻辑）
+- Requirements 6.4（保持现有的 API 接口不变）
+- Requirements 6.5（在启动日志中明确输出当前使用的并行模式）
+
+**向后兼容性**:
+- 默认模式为 `"tensor"`，保持现有行为
+- 张量并行逻辑完全保留，功能不变
+- 新增的数据并行模式不影响现有用户
+- API 接口保持不变（start_router_process 函数签名不变）
+
+**错误处理**:
+- 两种模式都有完整的异常捕获
+- 错误信息通过 pipe_writer 发送到主进程
+- 确保错误不会导致进程僵死
+
+**下一步**:
+- Task 5.3: 添加启动日志（输出 Worker 数量和 GPU 列表）
+- Task 5.4: 更新 router/manager.py 或创建新的入口（已完成，两种模式已共存）
+- Task 5.5: 编写 API Server 集成测试（可选）
+
+---
+
+### 2025-01-20 - Task 5.3: 添加启动日志
+
+**修改文件**:
+1. `slora/server/router/manager.py`
+   - 更新 `_start_data_parallel_router()` 函数
+     - 在创建 DataParallelRouterManager 之前输出配置信息
+     - 在所有 Worker 启动后输出启动完成摘要
+     - 使用分隔线使日志更清晰易读
+
+**关键设计**:
+- **启动前日志**：
+  - 输出并行模式（DATA PARALLEL MODE）
+  - 输出 Worker 数量配置（指定或自动检测）
+  - 输出 GPU ID 配置（指定或自动分配）
+  - 使用分隔线（80 个 `=`）使日志醒目
+- **启动后日志**：
+  - 输出启动成功消息
+  - 输出实际的 Worker 数量
+  - 输出实际的 GPU ID 列表
+  - 输出 Worker 端口列表
+  - 输出就绪状态确认
+  - 使用分隔线使日志醒目
+
+**实现细节**:
+
+1. **启动前日志**（在创建 dp_manager 之前）:
+   ```python
+   # Requirement 6.5 & 8.1: 输出启动配置信息
+   num_workers = getattr(args, 'num_workers', None)
+   gpu_ids_str = getattr(args, 'gpu_ids', None)
+   
+   print("=" * 80)
+   print("[DataParallelRouter] Starting Data Parallel Mode")
+   print("=" * 80)
+   if num_workers:
+       print(f"[DataParallelRouter] Number of Workers: {num_workers} (specified)")
+   else:
+       print(f"[DataParallelRouter] Number of Workers: Auto-detect (using all available GPUs)")
+   
+   if gpu_ids_str:
+       print(f"[DataParallelRouter] GPU IDs: {gpu_ids_str} (specified)")
+   else:
+       print(f"[DataParallelRouter] GPU IDs: Auto-assign (0, 1, 2, ...)")
+   print("=" * 80)
+   ```
+
+2. **启动后日志**（在 start_workers 完成后）:
+   ```python
+   # Requirement 6.5 & 8.1: 输出启动完成摘要
+   print("=" * 80)
+   print("[DataParallelRouter] Data Parallel Mode Started Successfully")
+   print("=" * 80)
+   print(f"[DataParallelRouter] Number of Workers: {dp_manager.num_workers}")
+   print(f"[DataParallelRouter] GPU IDs: {dp_manager.gpu_ids}")
+   print(f"[DataParallelRouter] Worker Ports: {dp_manager.worker_ports}")
+   print(f"[DataParallelRouter] All workers are ready and accepting requests")
+   print("=" * 80)
+   ```
+
+**日志示例**:
+
+**启动前**:
+```
+[Router] Starting router process in DATA parallel mode
+================================================================================
+[DataParallelRouter] Starting Data Parallel Mode
+================================================================================
+[DataParallelRouter] Number of Workers: 3 (specified)
+[DataParallelRouter] GPU IDs: 0,1,2 (specified)
+================================================================================
+[DataParallelRouter] Allocated response_port: 54321
+[DataParallelRouter] Router port: 12345
+[DataParallelRouter] Detokenization port: 12346
+[DataParallelRouterManager] Initialized with 3 workers
+[DataParallelRouterManager] GPU IDs: [0, 1, 2]
+...
+```
+
+**启动后**:
+```
+...
+[DataParallelRouterManager] All 3 workers started and ready
+================================================================================
+[DataParallelRouter] Data Parallel Mode Started Successfully
+================================================================================
+[DataParallelRouter] Number of Workers: 3
+[DataParallelRouter] GPU IDs: [0, 1, 2]
+[DataParallelRouter] Worker Ports: [50000, 50001, 50002]
+[DataParallelRouter] All workers are ready and accepting requests
+================================================================================
+```
+
+**满足 Requirements**:
+- Requirements 6.5（在启动日志中输出当前并行模式）
+- Requirements 8.1（输出 Worker 就绪日志）
+- 输出 Worker 数量（指定或自动检测）
+- 输出 GPU 列表（指定或自动分配）
+- 输出 Worker 端口列表
+- 输出就绪状态确认
+
+**日志级别**:
+- 使用 INFO 级别（print 输出）
+- 关键信息醒目显示（使用分隔线）
+- 便于用户快速确认系统配置和状态
+
+**用户体验**:
+- 清晰的启动流程可视化
+- 明确的配置信息展示
+- 易于调试和问题排查
+- 与张量并行模式的日志风格一致
+
+**下一步**:
+- Task 5.4: 更新 router/manager.py 或创建新的入口（已完成）
+- Task 5.5: 编写 API Server 集成测试（可选）
+- Task 6: 完善错误处理
+- Task 7: 完善基础监控
+
+---
+
+### 2025-01-20 - Task 5.4: 更新 router/manager.py 确保模式共存
+
+**说明**:
+Task 5.4 的实现已经在 Task 5.2 中完成。在实现模式选择逻辑时，已经确保了数据并行模式和张量并行模式可以共存，并保持了向后兼容性。
+
+**已实现功能**:
+1. ✅ 数据并行模式和张量并行模式可以共存
+2. ✅ 保持向后兼容性
+3. ✅ API 接口不变
+
+**实现细节**（参见 Task 5.2）:
+
+1. **函数签名保持不变**:
+   ```python
+   def start_router_process(args, router_port, detokenization_port, model_rpc_ports, mode, pipe_writer):
+   ```
+   - 与原有的函数签名完全一致
+   - api_server.py 中的调用代码无需修改
+   - 确保向后兼容性
+
+2. **模式路由逻辑**:
+   ```python
+   # 获取并行模式，默认为 'tensor'
+   parallel_mode = getattr(args, 'parallel_mode', 'tensor')
+   
+   # 根据并行模式选择启动逻辑
+   if parallel_mode == 'data':
+       _start_data_parallel_router(...)
+   else:
+       _start_tensor_parallel_router(...)
+   ```
+   - 使用 `getattr` 安全获取参数，默认为 'tensor'
+   - 条件分支确保两种模式互不干扰
+
+3. **张量并行模式完整保留**:
+   - `_start_tensor_parallel_router()` 函数包含原有的所有逻辑
+   - 支持所有现有功能：
+     - InputParams 配置
+     - RouterManager 初始化
+     - 模型加载和就绪等待
+     - Profiling 支持
+     - PETS scheduler 支持
+     - 主循环运行
+   - 功能和行为与原有实现完全一致
+
+4. **数据并行模式独立实现**:
+   - `_start_data_parallel_router()` 函数实现新的数据并行逻辑
+   - 使用 DataParallelRouterManager
+   - 不影响张量并行模式的任何功能
+
+**架构设计**:
+```
+start_router_process()
+    ↓
+    ├─ parallel_mode == 'data'
+    │   └─ _start_data_parallel_router()
+    │       └─ DataParallelRouterManager
+    │
+    └─ parallel_mode == 'tensor' (默认)
+        └─ _start_tensor_parallel_router()
+            └─ RouterManager (原有逻辑)
+```
+
+**满足 Requirements**:
+- Requirements 6.1（未指定 parallel-mode 参数时默认使用张量并行模式）
+- Requirements 6.2（使用 --parallel-mode tensor 时使用原有的张量并行逻辑）
+- Requirements 6.4（保持现有的 API 接口不变）
+
+**向后兼容性验证**:
+1. ✅ 函数签名不变：`start_router_process` 的参数列表完全一致
+2. ✅ 默认行为不变：未指定 `parallel_mode` 时使用张量并行模式
+3. ✅ 现有功能不变：张量并行模式的所有功能完整保留
+4. ✅ 调用方式不变：api_server.py 中的调用代码无需修改
+
+**共存机制**:
+- 两种模式通过条件分支完全隔离
+- 各自使用独立的 Manager 类（RouterManager vs DataParallelRouterManager）
+- 各自使用独立的进程和资源
+- 互不干扰，可以根据需要灵活切换
+
+**测试验证**:
+- 现有的张量并行模式测试应该全部通过（无需修改）
+- 新增的数据并行模式测试独立运行
+- 两种模式可以通过命令行参数自由切换
+
+**用户体验**:
+- 现有用户无需修改任何代码或配置
+- 新用户可以通过 `--parallel-mode data` 启用数据并行模式
+- 清晰的启动日志显示当前使用的模式
+- 两种模式的使用方式一致，学习成本低
+
+**下一步**:
+- Task 5.5: 编写 API Server 集成测试（可选）
+- Task 6: 完善错误处理
+- Task 7: 完善基础监控
+- Task 8: Checkpoint - 基础功能验证
+
+---
+
+
+---
+
+### 2025-01-20 - Task 6.1: Worker 启动失败处理
+
+**修改文件**:
+1. `slora/server/router/dp_manager.py`
+   - 更新 `run_gpu_worker_process()` 函数
+     - 添加完善的异常捕获和错误日志记录
+     - 添加详细的启动进度日志
+     - 处理 KeyboardInterrupt（优雅退出）
+     - 捕获所有异常并通过 sys.exit(1) 返回非零退出码
+     - 记录完整的错误类型、错误消息和堆栈跟踪
+   - 更新 `start_workers()` 方法
+     - 添加 Worker 进程状态检查
+     - 分多次检查（每秒一次，总共 5 次）
+     - 检测 Worker 启动失败（进程退出）
+     - 失败时终止所有 Worker 和 Response Merger 进程
+     - 抛出 RuntimeError 通知上层
+
+**新增文件**:
+1. `test/test_worker_startup_failure.py`
+   - 测试 Worker 启动失败处理
+   - 5 个测试用例：
+     - `test_run_gpu_worker_process_exception_handling`: 验证异常捕获和退出码
+     - `test_run_gpu_worker_process_keyboard_interrupt`: 验证 KeyboardInterrupt 处理
+     - `test_start_workers_detects_failure`: 验证启动失败检测和进程终止
+     - `test_start_workers_all_success`: 验证所有 Worker 启动成功
+     - `test_start_workers_early_failure_detection`: 验证早期失败检测
+
+**关键设计**:
+- **异常捕获**：
+  - 捕获所有异常类型（包括 KeyboardInterrupt）
+  - 记录详细的错误信息（类型、消息、堆栈跟踪）
+  - 通过退出码通知 Router Manager（0=正常，1=错误）
+- **启动检测**：
+  - 分 5 轮检查，每轮等待 1 秒
+  - 每轮检查所有 Worker 进程状态
+  - 发现失败立即终止所有进程
+  - 抛出 RuntimeError 通知上层
+- **进程清理**：
+  - 终止所有存活的 Worker 进程
+  - 终止 Response Merger 进程
+  - 使用 terminate() + join() + kill() 确保进程被清理
+  - 输出详细的清理日志
+
+**实现细节**:
+
+1. **`run_gpu_worker_process()` 函数更新**:
+   ```python
+   def run_gpu_worker_process(...):
+       import sys
+       import traceback
+       from slora.server.router.gpu_worker import GPUWorker
+       
+       try:
+           print(f"[Worker {worker_id}] Starting worker process on GPU {gpu_id}...")
+           
+           # 详细的启动进度日志
+           print(f"[Worker {worker_id}] Creating GPUWorker instance...")
+           worker = GPUWorker(worker_id, gpu_id, args)
+           
+           print(f"[Worker {worker_id}] Setting up ZMQ communication...")
+           worker._setup_zmq(request_port, response_port)
+           
+           print(f"[Worker {worker_id}] Setting up request queue...")
+           worker._setup_request_queue()
+           
+           print(f"[Worker {worker_id}] Initializing model RPC...")
+           asyncio.run(worker._init_model_rpc())
+           
+           print(f"[Worker {worker_id}] Worker initialization complete, starting main loop...")
+           asyncio.run(worker.run())
+           
+       except KeyboardInterrupt:
+           # 优雅处理 Ctrl+C
+           print(f"[Worker {worker_id}] Received keyboard interrupt, shutting down...")
+           sys.exit(0)
+           
+       except Exception as e:
+           # 捕获所有异常，记录详细错误日志和堆栈跟踪
+           print(f"[Worker {worker_id}] FATAL ERROR during worker startup/execution:")
+           print(f"[Worker {worker_id}] Error type: {type(e).__name__}")
+           print(f"[Worker {worker_id}] Error message: {str(e)}")
+           print(f"[Worker {worker_id}] Full traceback:")
+           traceback.print_exc()
+           
+           # 通过非零退出码通知 Router Manager 启动失败
+           print(f"[Worker {worker_id}] Exiting with error code 1")
+           sys.exit(1)
+   ```
+
+2. **`start_workers()` 方法更新**:
+   ```python
+   async def start_workers(self) -> None:
+       import sys
+       
+       # 分配端口
+       self._allocate_ports()
+       
+       # 启动 Response Merger 进程
+       self._start_response_merger()
+       
+       # 启动所有 Worker
+       print(f"[DataParallelRouterManager] Starting {self.num_workers} workers...")
+       for i in range(self.num_workers):
+           worker = self._start_worker(i, self.gpu_ids[i])
+           self.workers.append(worker)
+           print(f"[DataParallelRouterManager] Started worker {i} on GPU {self.gpu_ids[i]}, "
+                 f"port {self.worker_ports[i]}")
+       
+       # 等待所有 Worker 就绪，同时检测启动失败
+       print(f"[DataParallelRouterManager] Waiting for workers to initialize...")
+       
+       # 分多次检查，每次等待 1 秒，总共等待 5 秒
+       for check_round in range(5):
+           await asyncio.sleep(1)
+           
+           # 检查所有 Worker 进程状态
+           failed_workers = []
+           for i, worker in enumerate(self.workers):
+               if not worker.is_alive():
+                   exitcode = worker.exitcode
+                   failed_workers.append((i, exitcode))
+           
+           # 如果有 Worker 启动失败，终止所有进程并退出
+           if failed_workers:
+               print(f"[DataParallelRouterManager] ERROR: Worker startup failed!")
+               for worker_id, exitcode in failed_workers:
+                   print(f"[DataParallelRouterManager] Worker {worker_id} failed with exit code {exitcode}")
+               
+               # 终止所有 Worker 进程
+               print(f"[DataParallelRouterManager] Terminating all workers...")
+               for i, worker in enumerate(self.workers):
+                   if worker.is_alive():
+                       print(f"[DataParallelRouterManager] Terminating worker {i}...")
+                       worker.terminate()
+                       worker.join(timeout=5)
+                       if worker.is_alive():
+                           print(f"[DataParallelRouterManager] Force killing worker {i}...")
+                           worker.kill()
+               
+               # 终止 Response Merger 进程
+               if self.merger_process and self.merger_process.is_alive():
+                   print(f"[DataParallelRouterManager] Terminating Response Merger...")
+                   self.merger_process.terminate()
+                   self.merger_process.join(timeout=5)
+                   if self.merger_process.is_alive():
+                       print(f"[DataParallelRouterManager] Force killing Response Merger...")
+                       self.merger_process.kill()
+               
+               # 抛出异常并退出
+               error_msg = f"Worker startup failed. Failed workers: {failed_workers}"
+               print(f"[DataParallelRouterManager] {error_msg}")
+               raise RuntimeError(error_msg)
+           
+           print(f"[DataParallelRouterManager] Check round {check_round + 1}/5: All workers alive")
+       
+       print(f"[DataParallelRouterManager] All {self.num_workers} workers started and ready")
+   ```
+
+3. **错误处理流程**:
+```
+Worker 启动
+    ↓
+try:
+    创建 GPUWorker 实例
+    设置 ZMQ 通信
+    设置请求队列
+    初始化模型 RPC
+    运行主循环
+except KeyboardInterrupt:
+    优雅退出（exit code 0）
+except Exception as e:
+    记录错误类型、消息、堆栈跟踪
+    sys.exit(1) - 返回非零退出码
+    ↓
+Router Manager 检测到进程退出
+    ↓
+检查 worker.is_alive() == False
+检查 worker.exitcode == 1
+    ↓
+终止所有 Worker 进程
+终止 Response Merger 进程
+    ↓
+抛出 RuntimeError
+```
+
+4. **进程清理流程**:
+```
+检测到 Worker 失败
+    ↓
+遍历所有 Worker 进程
+    ↓ 如果进程存活
+    ├─ worker.terminate() - 发送 SIGTERM
+    ├─ worker.join(timeout=5) - 等待最多 5 秒
+    └─ 如果仍存活: worker.kill() - 发送 SIGKILL
+    ↓
+终止 Response Merger 进程
+    ├─ merger.terminate()
+    ├─ merger.join(timeout=5)
+    └─ 如果仍存活: merger.kill()
+    ↓
+抛出 RuntimeError
+```
+
+**满足 Requirements**:
+- Requirements 7.1（Worker 启动失败时记录详细错误日志）
+- Requirements 7.2（通过退出码通知 Router Manager 启动失败）
+- Requirements 7.2（检测 Worker 启动失败并终止所有进程）
+
+**测试覆盖**:
+- 5/5 测试用例通过
+- 验证了异常捕获和退出码
+- 验证了 KeyboardInterrupt 处理
+- 验证了启动失败检测和进程终止
+- 验证了所有 Worker 启动成功的情况
+- 验证了早期失败检测（在等待期间检测到失败）
+
+**错误场景覆盖**:
+1. **GPU 初始化失败**：CUDA 不可用、GPU 不存在
+2. **模型加载失败**：模型文件不存在、内存不足
+3. **ZMQ 通信失败**：端口被占用、网络错误
+4. **RPC 初始化失败**：模型进程启动失败
+5. **进程崩溃**：运行时异常、段错误
+6. **用户中断**：Ctrl+C、SIGINT
+
+**Phase 1 完整实现**:
+- 完善的异常捕获和错误日志
+- 详细的启动进度日志
+- 可靠的启动失败检测
+- 完整的进程清理机制
+- 为后续的监控和恢复（Phase 2）奠定基础
+
+**下一步**:
+- Task 6.2: 推理异常处理（验证和完善）
+- Task 6.3: ZMQ 通信超时处理
+- Task 6.4: Worker 进程监控
+- Task 6.5: 编写错误处理测试（可选）

@@ -22,16 +22,16 @@
 
 ## 当前状态总结
 
-**已完成的核心组件**：
+**已完成的核心组件**（Tasks 1-5）:
 - ✅ Round Robin Router（轮询路由器）
 - ✅ GPU Worker 基础框架（ZMQ 通信、ReqQueue 集成、Adapter 管理）
 - ✅ GPU Worker 推理逻辑（模型 RPC 初始化、批次推理、批次管理）
 - ✅ DataParallelRouterManager（Worker 管理、请求路由）
-- ✅ 单元测试覆盖（21 个测试文件）
+- ✅ Response Merger（响应收集与转发）
+- ✅ API Server 集成（命令行参数、模式选择、启动日志）
+- ✅ 单元测试覆盖（17 个测试文件，覆盖核心功能）
 
-**待实现的组件**：
-- ⏳ Response Merger（响应合并器）
-- ⏳ API Server 集成（命令行参数、模式选择）
+**待实现的组件**（Tasks 6-12）:
 - ⏳ 错误处理完善（Worker 启动失败、ZMQ 超时、进程监控）
 - ⏳ 监控完善（请求统计、调试日志）
 - ⏳ 集成测试（端到端测试）
@@ -271,7 +271,7 @@
   - **Property 1: Worker 启动完整性**
   - **Validates: Requirements 1.1, 1.5**
 
-- [ ] 4. 实现 Response Merger
+- [x] 4. 实现 Response Merger
   - [x] 4.1 创建 ResponseMerger 类
     - 创建 `slora/server/router/response_merger.py` 文件
     - 实现 `__init__` 方法
@@ -295,7 +295,7 @@
   - 测试响应转发
   - 测试与 Detokenization 的集成
 
-- [ ] 5. 修改 API Server 入口
+- [x] 5. 修改 API Server 入口
   - [x] 5.1 添加命令行参数
     - 在 `slora/server/api_server.py` 中添加 `--parallel-mode` 参数
     - 添加 `--num-workers` 参数
@@ -309,12 +309,12 @@
       - `tensor` 或默认: 使用原有的张量并行逻辑
     - _Requirements: 6.1, 6.2, 6.3_
   
-  - [ ] 5.3 添加启动日志
+  - [x] 5.3 添加启动日志
     - 输出当前并行模式
     - 输出 Worker 数量和 GPU 列表
     - _Requirements: 6.5, 8.1_
   
-  - [ ] 5.4 更新 router/manager.py 或创建新的入口
+  - [x] 5.4 更新 router/manager.py 或创建新的入口
     - 确保数据并行模式和张量并行模式可以共存
     - 保持向后兼容性
     - _Requirements: 6.1, 6.2, 6.4_
@@ -325,18 +325,28 @@
   - 测试启动日志输出
 
 - [ ] 6. 完善错误处理
-  - [ ] 6.1 Worker 启动失败处理
+  - [x] 6.1 Worker 启动失败处理
     - 在 `run_gpu_worker_process()` 中添加更完善的异常捕获
     - 记录详细错误日志和堆栈跟踪
     - 通过退出码通知 Router Manager
     - 在 Router Manager 中检测 Worker 启动失败
+    - 实现方式：
+      - 在 `run_gpu_worker_process()` 中捕获所有异常
+      - 使用 `sys.exit(1)` 返回非零退出码
+      - 在 `dp_manager.start_workers()` 中检查进程状态
+      - 如果任何 Worker 启动失败，终止所有进程并退出
     - _Requirements: 7.1, 7.2_
   
-  - [ ] 6.2 推理异常处理（验证和完善）
+  - [-] 6.2 推理异常处理（验证和完善）
     - 验证 Worker 中的推理异常捕获是否完整
     - 确保返回错误响应格式正确
     - 添加更详细的错误日志
     - 测试各种异常场景（CUDA OOM、模型错误等）
+    - 实现方式：
+      - 检查 `_infer_batch()` 和 `_process_requests()` 的异常处理
+      - 确保所有异常都被捕获并转换为错误响应
+      - 添加错误类型分类（OOM、模型错误、超时等）
+      - 编写测试用例模拟各种异常场景
     - _Requirements: 7.3_
   
   - [ ] 6.3 ZMQ 通信超时处理
@@ -344,6 +354,12 @@
     - 在 Worker 中设置 socket 超时
     - 实现重试逻辑（最多 3 次）
     - 记录超时错误日志
+    - 实现方式：
+      - 使用 `socket.setsockopt(zmq.RCVTIMEO, 30000)` 设置接收超时
+      - 使用 `socket.setsockopt(zmq.SNDTIMEO, 30000)` 设置发送超时
+      - 在超时时捕获 `zmq.Again` 异常
+      - 实现重试循环，记录每次重试
+      - 超过重试次数后返回错误响应
     - _Requirements: 7.4_
   
   - [ ] 6.4 Worker 进程监控
@@ -351,6 +367,12 @@
     - 定期检测 Worker 进程是否存活
     - 检测 Worker 进程意外退出
     - 记录进程退出日志
+    - 实现方式：
+      - 在 `dp_manager.run()` 主循环中添加进程检查
+      - 使用 `process.is_alive()` 检查进程状态
+      - 使用 `process.exitcode` 获取退出码
+      - 每 10 秒检查一次所有 Worker 进程
+      - 发现进程退出时记录详细日志（worker_id、exitcode、时间）
     - _Requirements: 7.5_
 
 - [ ]* 6.5 编写错误处理测试
@@ -365,6 +387,11 @@
     - 确认 Router Manager 启动日志已输出（已实现）
     - 添加更详细的启动信息（GPU 型号、内存等）
     - 添加模型加载进度日志
+    - 实现方式：
+      - 在 Worker 启动时使用 `torch.cuda.get_device_properties()` 获取 GPU 信息
+      - 输出 GPU 名称、总内存、计算能力
+      - 在模型加载过程中添加进度日志
+      - 输出模型大小、加载时间等信息
     - _Requirements: 8.1, 8.3_
   
   - [ ] 7.2 实现请求统计
@@ -373,6 +400,12 @@
     - 每 10 秒输出统计信息
     - 添加每个 Worker 的请求分布统计
     - 添加平均延迟和吞吐量统计
+    - 实现方式：
+      - 在 `dp_manager.py` 中添加 `self.stats` 字典
+      - 记录：total_requests, successful_requests, failed_requests
+      - 记录每个 Worker 的请求计数：worker_request_counts
+      - 使用 asyncio.create_task 创建后台统计任务
+      - 每 10 秒输出统计摘要
     - _Requirements: 8.2_
   
   - [ ] 7.3 验证和完善调试日志
@@ -380,6 +413,12 @@
     - 添加响应返回日志（DEBUG 级别）
     - 添加批次处理日志（DEBUG 级别）
     - 添加 Adapter 加载/卸载日志
+    - 实现方式：
+      - 在 `route_request()` 中已有 DEBUG 日志
+      - 在 Response Merger 中添加响应接收日志
+      - 在 Worker 的 `_process_requests()` 中添加批次信息日志
+      - 在 `_load_adapters()` 中添加加载详情日志
+      - 使用 Python logging 模块，设置 DEBUG 级别
     - _Requirements: 8.4, 8.5_
 
 - [ ]* 7.4 编写监控测试
@@ -393,6 +432,12 @@
   - 验证多 Worker 能够并发处理（使用测试脚本）
   - 验证 Response Merger 正确转发响应
   - 验证 API Server 集成正常工作
+  - 测试方式：
+    - 创建简单的测试脚本 `test/manual_test_phase1.py`
+    - 启动数据并行模式：`--parallel-mode data --num-workers 2`
+    - 发送测试请求到 API Server
+    - 验证响应正确返回
+    - 检查日志输出是否正常
   - 询问用户是否有问题
 
 - [ ] 9. 集成测试
@@ -402,6 +447,11 @@
     - 发送测试请求到 API Server
     - 验证响应正确
     - 验证延迟在合理范围内
+    - 实现方式：
+      - 使用 pytest fixtures 启动系统组件
+      - 模拟 HTTP 请求到 API Server
+      - 验证响应格式和内容
+      - 测试不同的 prompt 长度和采样参数
     - _Requirements: 10.1_
   
   - [ ] 9.2 多 Worker 并发测试
@@ -411,6 +461,11 @@
     - 验证所有响应正确
     - 验证请求均匀分配到所有 Worker
     - 验证并发性能提升
+    - 实现方式：
+      - 使用 asyncio.gather 并发发送请求
+      - 检查 Router Manager 的统计信息
+      - 验证每个 Worker 处理的请求数大致相等
+      - 对比单 Worker 和多 Worker 的吞吐量
     - _Requirements: 10.2_
   
   - [ ] 9.3 ZMQ 通信测试
@@ -419,6 +474,11 @@
     - 测试 Worker → Response Merger 通信
     - 测试消息不丢失
     - 测试消息顺序（如果需要）
+    - 实现方式：
+      - 创建独立的 ZMQ socket 测试
+      - 发送大量消息验证可靠性
+      - 使用 request_id 跟踪消息
+      - 验证所有消息都被接收
     - _Requirements: 10.5_
   
   - [ ] 9.4 Adapter 切换测试
@@ -426,6 +486,11 @@
     - 测试在不同请求中切换 Adapter
     - 验证 Adapter 正确加载和使用
     - 验证内存管理正确
+    - 实现方式：
+      - 准备多个测试 Adapter
+      - 交替发送使用不同 Adapter 的请求
+      - 验证输出结果符合预期
+      - 检查内存占用统计
     - _Requirements: 3.3, 3.4_
 
 - [ ]* 9.5 编写 Property-Based 测试
@@ -447,6 +512,11 @@
     - 实现延迟测试（P50, P90, P99）
     - 实现 GPU 利用率监控
     - 支持不同 Worker 数量的对比测试
+    - 实现方式：
+      - 使用 `time.time()` 测量延迟
+      - 使用 `asyncio` 并发发送请求测量吞吐量
+      - 使用 `nvidia-smi` 或 `pynvml` 监控 GPU 利用率
+      - 生成性能报告（CSV 或 JSON 格式）
     - _Requirements: 9.4_
   
   - [ ] 10.2 运行基准测试
@@ -454,6 +524,12 @@
     - 记录吞吐量和延迟数据
     - 验证 GPU 利用率
     - 生成性能对比图表
+    - 测试配置：
+      - 模型：Llama-7B
+      - Prompt 长度：128 tokens
+      - 输出长度：128 tokens
+      - 并发请求数：10, 20, 50
+      - 每个配置运行 3 次取平均值
     - _Requirements: 9.1, 9.2, 9.3_
   
   - [ ] 10.3 性能分析和优化
@@ -462,6 +538,10 @@
     - 优化消息序列化（如果需要）
     - 优化批次管理（如果需要）
     - 验证优化效果
+    - 分析工具：
+      - Python cProfile 或 py-spy
+      - ZMQ 消息大小和频率分析
+      - 批次大小和利用率分析
     - _Requirements: 9.1, 9.2_
   
   - [ ] 10.4 性能验收
@@ -469,6 +549,11 @@
     - 验证平均延迟增加 < 10%
     - 验证 GPU 利用率 > 85%
     - 记录性能测试结果
+    - 验收标准：
+      - 吞吐量：3 Workers ≥ 2.5x baseline
+      - 延迟：P50 增加 < 10%, P99 增加 < 20%
+      - GPU 利用率：> 85%（使用 nvidia-smi）
+      - 内存占用：无明显泄漏（运行 1 小时）
     - _Requirements: 9.1, 9.2, 9.3_
 
 - [ ] 11. 文档和示例
@@ -478,23 +563,47 @@
     - 说明配置参数（--parallel-mode, --num-workers, --gpu-ids）
     - 提供完整的启动命令示例
     - 说明如何验证系统正常工作
+    - 内容包括：
+      - 前置条件（GPU 数量、模型路径、依赖安装）
+      - 基本启动命令
+      - 参数说明和推荐配置
+      - 验证方法（发送测试请求）
+      - 常见问题和解决方法
   
   - [ ] 11.2 创建示例脚本
     - 创建 `examples/run_data_parallel.sh`
     - 提供不同配置的示例（1/2/3/4 Workers）
     - 提供不同 GPU 配置的示例
     - 添加注释说明每个参数的作用
+    - 示例包括：
+      - 单 Worker 模式（测试）
+      - 多 Worker 模式（生产）
+      - 指定 GPU 模式
+      - 不同模型大小的配置
   
   - [ ] 11.3 编写故障排查指南
     - 创建 `docs/data_parallel_troubleshooting.md`
     - 常见错误和解决方法
     - 调试技巧（如何查看日志、如何检查进程状态）
     - 性能调优建议
+    - 内容包括：
+      - Worker 启动失败（GPU 不可用、内存不足）
+      - ZMQ 通信错误（端口占用、超时）
+      - 推理错误（CUDA OOM、模型加载失败）
+      - 性能问题（吞吐量低、延迟高）
+      - 日志查看方法
+      - 进程监控方法
   
   - [ ] 11.4 更新主 README
     - 在主 README 中添加数据并行模式的说明
     - 添加快速开始链接
     - 添加性能对比数据
+    - 内容包括：
+      - 数据并行模式简介
+      - 与张量并行模式的对比
+      - 使用场景和优势
+      - 快速开始链接
+      - 性能基准数据
 
 - [ ] 12. Final Checkpoint - Phase 1 完成验收
   - 所有功能测试通过
@@ -502,6 +611,13 @@
   - 性能目标达成（3 Workers ≥ 2.5x）
   - 文档完整且准确
   - 代码修改记录完整
+  - 验收清单：
+    - [ ] 核心功能：单 Worker 和多 Worker 模式都能正常工作
+    - [ ] 错误处理：各种异常场景都能正确处理
+    - [ ] 监控：日志和统计信息完整准确
+    - [ ] 性能：达到或超过性能目标
+    - [ ] 测试：单元测试和集成测试覆盖率 > 80%
+    - [ ] 文档：快速开始指南、故障排查指南、示例脚本完整
   - 询问用户是否满意，是否需要调整
 
 ## Notes
@@ -511,3 +627,52 @@
 - Checkpoint 任务用于阶段性验证，确保及时发现问题
 - Property-Based 测试使用 Hypothesis 框架
 - 性能测试目标：3 Workers 吞吐量 ≥ 单 Worker 的 2.5 倍
+
+## 实施优先级建议
+
+**高优先级**（必须完成）:
+1. Task 6: 完善错误处理 - 确保系统稳定性
+2. Task 7: 完善基础监控 - 便于调试和运维
+3. Task 8: Checkpoint - 验证基础功能
+4. Task 9.1-9.2: 端到端集成测试 - 验证系统正确性
+
+**中优先级**（建议完成）:
+1. Task 9.3-9.4: 通信和 Adapter 测试 - 验证关键功能
+2. Task 10.1-10.2: 性能测试 - 验证性能目标
+3. Task 11.1-11.2: 快速开始指南和示例 - 便于用户使用
+
+**低优先级**（可选）:
+1. Task 6.5, 7.4: 错误处理和监控测试 - 提高测试覆盖率
+2. Task 9.5: Property-Based 测试 - 提高测试质量
+3. Task 10.3-10.4: 性能优化和验收 - 进一步提升性能
+4. Task 11.3-11.4: 故障排查指南和 README 更新 - 完善文档
+
+## 下一步行动
+
+根据当前进度（Tasks 1-5 已完成），建议按以下顺序执行：
+
+1. **Task 6.1-6.4**: 完善错误处理（预计 2-3 天）
+   - 这是确保系统稳定性的关键
+   - 需要测试各种异常场景
+
+2. **Task 7.1-7.3**: 完善基础监控（预计 1-2 天）
+   - 便于调试和运维
+   - 大部分功能已实现，主要是完善
+
+3. **Task 8**: Checkpoint - 基础功能验证（预计 0.5 天）
+   - 手动测试验证系统能够正常工作
+   - 发现并修复基础问题
+
+4. **Task 9.1-9.2**: 端到端集成测试（预计 2-3 天）
+   - 验证系统正确性
+   - 为后续优化提供基准
+
+5. **Task 10.1-10.2**: 性能测试（预计 2-3 天）
+   - 验证性能目标
+   - 识别性能瓶颈
+
+6. **Task 11.1-11.2**: 文档和示例（预计 1-2 天）
+   - 便于用户使用
+   - 降低学习成本
+
+**总预计时间**: 8-13 天（不包括可选任务）

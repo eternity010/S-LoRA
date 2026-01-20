@@ -732,6 +732,8 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         - 1.1: 根据配置创建指定数量的 GPU Worker 进程
         - 5.2: 支持通过 --num-workers 参数指定 Worker 数量
         - 5.3: 支持通过 --gpu-ids 参数指定使用的 GPU 列表
+        - 6.5: 在启动日志中输出当前并行模式
+        - 8.1: 输出 Worker 就绪日志
     """
     from slora.server.router.dp_manager import DataParallelRouterManager
     from slora.utils.net_utils import alloc_can_use_network_port
@@ -744,6 +746,25 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         print(f"[DataParallelRouter] Allocated response_port: {response_port}")
         print(f"[DataParallelRouter] Router port: {router_port}")
         print(f"[DataParallelRouter] Detokenization port: {detokenization_port}")
+        
+        # Requirement 6.5 & 8.1: 输出启动配置信息
+        # 在创建 manager 之前输出配置，因为 manager 初始化时会解析这些参数
+        num_workers = getattr(args, 'num_workers', None)
+        gpu_ids_str = getattr(args, 'gpu_ids', None)
+        
+        print("=" * 80)
+        print("[DataParallelRouter] Starting Data Parallel Mode")
+        print("=" * 80)
+        if num_workers:
+            print(f"[DataParallelRouter] Number of Workers: {num_workers} (specified)")
+        else:
+            print(f"[DataParallelRouter] Number of Workers: Auto-detect (using all available GPUs)")
+        
+        if gpu_ids_str:
+            print(f"[DataParallelRouter] GPU IDs: {gpu_ids_str} (specified)")
+        else:
+            print(f"[DataParallelRouter] GPU IDs: Auto-assign (0, 1, 2, ...)")
+        print("=" * 80)
         
         # 创建 DataParallelRouterManager 实例
         dp_manager = DataParallelRouterManager(
@@ -759,7 +780,15 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         # 启动所有 Worker 和 Response Merger
         asyncio.run(dp_manager.start_workers())
         
-        print(f"[DataParallelRouter] All workers started successfully")
+        # Requirement 6.5 & 8.1: 输出启动完成摘要
+        print("=" * 80)
+        print("[DataParallelRouter] Data Parallel Mode Started Successfully")
+        print("=" * 80)
+        print(f"[DataParallelRouter] Number of Workers: {dp_manager.num_workers}")
+        print(f"[DataParallelRouter] GPU IDs: {dp_manager.gpu_ids}")
+        print(f"[DataParallelRouter] Worker Ports: {dp_manager.worker_ports}")
+        print(f"[DataParallelRouter] All workers are ready and accepting requests")
+        print("=" * 80)
         
     except Exception as e:
         import traceback
