@@ -26,14 +26,16 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0,1,2"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.num_workers == 3
         assert manager.gpu_ids == [0, 1, 2]
         assert manager.router_port == 10000
         assert manager.response_port == 10001
+        assert manager.detoken_port == 10002
         assert len(manager.workers) == 0  # 尚未启动
         assert len(manager.worker_ports) == 0  # 尚未分配
+        assert manager.merger_process is None  # 尚未启动
     
     @patch('torch.cuda.device_count')
     @patch('torch.cuda.is_available')
@@ -44,7 +46,7 @@ class TestDataParallelRouterManagerFramework:
         
         args = argparse.Namespace()
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.num_workers == 4
         assert manager.gpu_ids == [0, 1, 2, 3]
@@ -57,7 +59,7 @@ class TestDataParallelRouterManagerFramework:
         args = argparse.Namespace()
         
         with pytest.raises(RuntimeError, match="CUDA is not available"):
-            DataParallelRouterManager(args, router_port=10000, response_port=10001)
+            DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
     
     @patch('torch.cuda.device_count')
     @patch('torch.cuda.is_available')
@@ -69,7 +71,7 @@ class TestDataParallelRouterManagerFramework:
         args = argparse.Namespace()
         
         with pytest.raises(RuntimeError, match="No GPUs detected"):
-            DataParallelRouterManager(args, router_port=10000, response_port=10001)
+            DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
     
     def test_parse_gpu_ids_valid(self):
         """测试解析有效的 GPU ID 列表"""
@@ -78,7 +80,7 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0,1,2"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.gpu_ids == [0, 1, 2]
     
@@ -89,7 +91,7 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0, 1, 2"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.gpu_ids == [0, 1, 2]
     
@@ -102,7 +104,7 @@ class TestDataParallelRouterManagerFramework:
         
         args = argparse.Namespace()
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.gpu_ids == [0, 1, 2]
     
@@ -119,7 +121,7 @@ class TestDataParallelRouterManagerFramework:
         )
         
         with pytest.raises(ValueError, match="Failed to parse GPU IDs"):
-            DataParallelRouterManager(args, router_port=10000, response_port=10001)
+            DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
     
     @patch('torch.cuda.device_count')
     @patch('torch.cuda.is_available')
@@ -134,7 +136,7 @@ class TestDataParallelRouterManagerFramework:
         )
         
         with pytest.raises(ValueError, match="Invalid GPU ID 5"):
-            DataParallelRouterManager(args, router_port=10000, response_port=10001)
+            DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
     
     def test_gpu_ids_count_mismatch(self):
         """测试 GPU ID 数量与 Worker 数量不匹配"""
@@ -144,7 +146,7 @@ class TestDataParallelRouterManagerFramework:
         )
         
         with pytest.raises(ValueError, match="Number of GPU IDs .* does not match"):
-            DataParallelRouterManager(args, router_port=10000, response_port=10001)
+            DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
     
     def test_allocate_ports(self):
         """测试端口分配"""
@@ -153,7 +155,7 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0,1,2"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         manager._allocate_ports()
         
         assert len(manager.worker_ports) == 3
@@ -171,7 +173,7 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0,1,2,3,4"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         manager._allocate_ports()
         
         assert len(manager.worker_ports) == 5
@@ -186,7 +188,7 @@ class TestDataParallelRouterManagerFramework:
             gpu_ids="0,1,2"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         assert manager.router is not None
         assert manager.router.num_workers == 3
@@ -199,12 +201,13 @@ class TestDataParallelRouterManagerFramework:
             model_dir="/path/to/model"
         )
         
-        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001)
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
         
         # 验证基本属性
         assert manager.args == args
         assert manager.router_port == 10000
         assert manager.response_port == 10001
+        assert manager.detoken_port == 10002
         assert manager.num_workers == 2
         assert manager.gpu_ids == [0, 1]
         
@@ -216,6 +219,38 @@ class TestDataParallelRouterManagerFramework:
         # 验证 ZMQ 相关属性初始化为 None
         assert manager.context is None
         assert manager.request_receiver is None
+        assert manager.merger_process is None
+    
+    @patch('slora.server.router.dp_manager.mp.Process')
+    def test_start_response_merger(self, mock_process):
+        """测试启动 Response Merger 进程"""
+        args = argparse.Namespace(
+            num_workers=2,
+            gpu_ids="0,1"
+        )
+        
+        manager = DataParallelRouterManager(args, router_port=10000, response_port=10001, detoken_port=10002)
+        
+        # 创建 mock 进程实例
+        mock_process_instance = MagicMock()
+        mock_process.return_value = mock_process_instance
+        
+        # 调用 _start_response_merger
+        manager._start_response_merger()
+        
+        # 验证进程被创建
+        mock_process.assert_called_once()
+        call_args = mock_process.call_args
+        
+        # 验证参数
+        assert call_args[1]['args'] == (10001, 10002)  # response_port, detoken_port
+        assert call_args[1]['name'] == "ResponseMerger"
+        
+        # 验证进程被启动
+        mock_process_instance.start.assert_called_once()
+        
+        # 验证 merger_process 被设置
+        assert manager.merger_process == mock_process_instance
 
 
 if __name__ == "__main__":

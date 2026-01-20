@@ -606,6 +606,45 @@ class RouterManager:
 
 
 def start_router_process(args, router_port, detokenization_port, model_rpc_ports, mode, pipe_writer):
+    """
+    启动路由进程 - 支持张量并行和数据并行模式
+    
+    根据 args.parallel_mode 参数选择启动逻辑：
+    - 'tensor' 或默认: 使用原有的张量并行逻辑 (RouterManager)
+    - 'data': 使用新的数据并行逻辑 (DataParallelRouterManager)
+    
+    Requirements:
+        - 6.1: 未指定 parallel-mode 参数时默认使用张量并行模式
+        - 6.2: 使用 --parallel-mode tensor 时使用原有的张量并行逻辑
+        - 6.3: 使用 --parallel-mode data 时使用新的数据并行逻辑
+    """
+    # 获取并行模式，默认为 'tensor'
+    parallel_mode = getattr(args, 'parallel_mode', 'tensor')
+    
+    # Requirement 6.5: 在启动日志中明确输出当前使用的并行模式
+    print(f"[Router] Starting router process in {parallel_mode.upper()} parallel mode")
+    
+    # 根据并行模式选择启动逻辑
+    if parallel_mode == 'data':
+        # 数据并行模式 - 使用 DataParallelRouterManager
+        _start_data_parallel_router(args, router_port, detokenization_port, pipe_writer)
+    else:
+        # 张量并行模式（默认）- 使用原有的 RouterManager
+        _start_tensor_parallel_router(args, router_port, detokenization_port, 
+                                      model_rpc_ports, mode, pipe_writer)
+
+
+def _start_tensor_parallel_router(args, router_port, detokenization_port, 
+                                  model_rpc_ports, mode, pipe_writer):
+    """
+    启动张量并行路由器（原有逻辑）
+    
+    这是原有的 start_router_process 函数的逻辑，保持向后兼容性。
+    
+    Requirements:
+        - 6.2: 使用 --parallel-mode tensor 时使用原有的张量并行逻辑
+        - 6.4: 保持现有的 API 接口不变
+    """
     input_params = InputParams(max_req_total_len=args.max_req_total_len,
                                # kv cache manager parameters
                                max_total_token_num=args.max_total_token_num,
@@ -678,4 +717,61 @@ def start_router_process(args, router_port, detokenization_port, model_rpc_ports
     asyncio.set_event_loop(loop)
     loop.create_task(router.loop_for_fwd())
     loop.run_until_complete(router.loop_for_netio_req())
+    return
+
+
+def _start_data_parallel_router(args, router_port, detokenization_port, pipe_writer):
+    """
+    启动数据并行路由器（新逻辑）
+    
+    使用 DataParallelRouterManager 启动多个 GPU Worker 进程，
+    并使用 Round Robin 策略路由请求。
+    
+    Requirements:
+        - 6.3: 使用 --parallel-mode data 时使用新的数据并行逻辑
+        - 1.1: 根据配置创建指定数量的 GPU Worker 进程
+        - 5.2: 支持通过 --num-workers 参数指定 Worker 数量
+        - 5.3: 支持通过 --gpu-ids 参数指定使用的 GPU 列表
+    """
+    from slora.server.router.dp_manager import DataParallelRouterManager
+    from slora.utils.net_utils import alloc_can_use_network_port
+    
+    try:
+        # 分配 response_port（用于 Worker 发送响应到 Response Merger）
+        # 使用 alloc_can_use_network_port 分配一个可用端口
+        response_port = alloc_can_use_network_port(num=1, used_nccl_port=None)[0]
+        
+        print(f"[DataParallelRouter] Allocated response_port: {response_port}")
+        print(f"[DataParallelRouter] Router port: {router_port}")
+        print(f"[DataParallelRouter] Detokenization port: {detokenization_port}")
+        
+        # 创建 DataParallelRouterManager 实例
+        dp_manager = DataParallelRouterManager(
+            args=args,
+            router_port=router_port,
+            response_port=response_port,
+            detoken_port=detokenization_port
+        )
+        
+        # 设置 ZMQ 通信
+        dp_manager._setup_zmq()
+        
+        # 启动所有 Worker 和 Response Merger
+        asyncio.run(dp_manager.start_workers())
+        
+        print(f"[DataParallelRouter] All workers started successfully")
+        
+    except Exception as e:
+        import traceback
+        err_str = '\n'.join(traceback.format_exception(e))
+        pipe_writer.send(err_str)
+        raise
+    
+    # 通知主进程初始化成功
+    pipe_writer.send('init ok')
+    
+    # 运行主循环
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(dp_manager.run())
     return

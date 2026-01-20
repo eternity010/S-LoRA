@@ -564,6 +564,58 @@ class GPUWorker:
                 'error': str(e)
             }
     
+    async def _infer_batch(self, batch: Batch) -> dict:
+        """
+        执行批次推理
+        
+        调用 model_rpc 执行实际推理，处理推理结果并更新批次状态。
+        
+        Args:
+            batch: 要推理的批次
+        
+        Returns:
+            dict: 请求ID到输出token的映射 {request_id: (token_id, metadata)}
+        
+        Requirements:
+            - 3.4: 使用现有的模型推理逻辑处理请求
+            - 3.5: 生成包含 output_ids 和 metadata 的响应消息
+        
+        Note:
+            - 对于新批次（prefill），调用 init_batch + prefill_batch
+            - 对于已有批次（decode），调用 decode_batch
+            - 返回格式与 manager.py 保持一致
+        """
+        try:
+            # 判断是 prefill 还是 decode
+            # 如果批次中的请求还没有输出 token，则是 prefill
+            is_prefill = all(len(req.output_ids) == 0 for req in batch.reqs)
+            
+            if is_prefill:
+                # Prefill 阶段：初始化批次并执行 prefill
+                # 1. 初始化批次（将请求信息传递给 RPC）
+                reqs_rpc = [req.to_rpc_obj() for req in batch.reqs]
+                await self.model_rpc.init_batch(batch.batch_id, reqs_rpc)
+                
+                # 2. 执行 prefill（处理 prompt）
+                req_to_out_token_id = await self.model_rpc.prefill_batch(batch.batch_id)
+            else:
+                # Decode 阶段：生成下一个 token
+                # 更新适配器使用统计信息（在推理前）
+                if not getattr(self.args, 'no_lora', False):
+                    adapter_dirs_list = list(batch.adapter_dirs)
+                    await self.model_rpc.update_adapter_stats(adapter_dirs_list)
+                
+                # 执行 decode
+                req_to_out_token_id = await self.model_rpc.decode_batch(batch.batch_id)
+            
+            return req_to_out_token_id
+            
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Error in _infer_batch: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
     async def _process_requests(self) -> List[dict]:
         """
         处理请求批次（使用 ReqQueue 管理）
@@ -586,10 +638,10 @@ class GPUWorker:
             - 3.5: 生成包含 output_ids 和 metadata 的响应消息
         
         Note:
-            Phase 1 简化实现：
+            Task 2.9.2 实现：
             - 使用 ReqQueue 管理批处理
-            - 暂不实现实际推理逻辑（使用占位数据）
-            - 完整的推理逻辑将在后续 Phase 中实现
+            - 调用 model_rpc 执行实际推理
+            - 处理 prefill 和 decode 两种模式
         """
         try:
             # 使用 ReqQueue 生成新批次
@@ -613,19 +665,23 @@ class GPUWorker:
             
             # 执行推理
             if self.current_batch is not None and len(self.current_batch.reqs) > 0:
-                # TODO: Phase 1 简化实现 - 实际推理逻辑将在后续任务中完善
-                # 这里先返回占位响应，确保批处理流程正确
+                # 调用 model_rpc 执行实际推理
+                req_to_out_token_id = await self._infer_batch(self.current_batch)
                 
+                # 将输出 token 添加到请求中
                 responses = []
-                for req in self.current_batch.reqs:
-                    # 占位：简单追加一些 token
-                    output_ids = req.prompt_ids + req.output_ids + [1, 2, 3]
-                    req.output_ids.extend([1, 2, 3])
+                for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                    req = self.current_batch.id_to_reqs[req_id]
+                    req.output_ids.append(new_token_id)
+                    req.output_metadata_list.append(new_gen_metadata)
                     
+                    # 生成响应（包含完整的输出序列）
+                    output_ids = req.prompt_ids + req.output_ids
                     metadata = {
-                        'finish_reason': 'length',
+                        'finish_reason': 'length' if len(req.output_ids) >= req.max_output_len else 'generating',
                         'prompt_tokens': req.input_len,
-                        'completion_tokens': len(req.output_ids)
+                        'completion_tokens': len(req.output_ids),
+                        'gen_metadata': new_gen_metadata
                     }
                     
                     responses.append({
@@ -636,16 +692,15 @@ class GPUWorker:
                         'success': True,
                         'error': None
                     })
-                    
-                    # 标记请求完成（简化实现）
-                    req.has_generate_finished = True
                 
-                # 更新批次状态（移除已完成的请求）
-                self.current_batch.filter_finished()
+                # 标记已完成的请求
+                # 需要 eos_id 来判断是否遇到结束符
+                # 从 args 中获取 eos_id，如果没有则使用默认值 2（Llama 的 EOS）
+                eos_id = getattr(self.args, 'eos_id', 2)
+                has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
                 
-                # 如果批次为空，重置
-                if self.current_batch.is_clear():
-                    self.current_batch = None
+                # 处理已完成的请求
+                await self._handle_finish_req(self.current_batch, has_new_finished_req)
                 
                 return responses
             
@@ -653,7 +708,57 @@ class GPUWorker:
             
         except Exception as e:
             print(f"[Worker {self.worker_id}] Error processing requests: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
+    
+    async def _handle_finish_req(self, batch: Batch, has_new_finished_req: bool) -> None:
+        """
+        处理批次中已完成请求的逻辑
+        
+        当批次中有请求完成时：
+        1. 记录完成的请求使用的适配器
+        2. 过滤掉已完成的请求，更新批次状态
+        3. 减少完成请求的适配器的当前请求计数
+        4. 如果批次完全清空，则移除批次；否则过滤批次
+        
+        Args:
+            batch: 当前运行的批次
+            has_new_finished_req: 是否有新完成的请求
+        
+        Requirements:
+            - 3.5: 生成包含 output_ids 和 metadata 的响应消息
+        
+        Note:
+            借鉴 manager.py 的 _handle_finish_req 方法，简化为数据并行模式。
+            Phase 1 不实现复杂的淘汰策略，只做基本的请求计数管理。
+        """
+        if has_new_finished_req:
+            # 记录完成的请求使用的适配器（在 filter_finished 之前）
+            finished_adapter_dirs = []
+            if not getattr(self.args, 'no_lora', False):
+                for req in batch.reqs:
+                    if req.has_generate_finished:
+                        finished_adapter_dirs.append(req.adapter_dir)
+            
+            # 过滤掉已完成的请求，只保留未完成的请求
+            # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
+            batch.filter_finished()
+
+            # 减少完成请求的适配器的当前请求计数
+            # 这对于 adapter 使用统计和淘汰策略很重要
+            if finished_adapter_dirs and not getattr(self.args, 'no_lora', False):
+                await self.model_rpc.decrease_request_counts(finished_adapter_dirs)
+
+            # 根据批次状态决定后续操作
+            if batch.is_clear():
+                # 批次完全清空，移除 RPC 端的批次
+                await self.model_rpc.remove_batch(batch.batch_id)
+                self.current_batch = None
+            else:
+                # 批次还有未完成的请求，过滤 RPC 端的批次
+                req_id_list = [req.request_id for req in batch.reqs]
+                await self.model_rpc.filter_batch(batch.batch_id, req_id_list)
     
     async def _send_response(self, response: dict) -> None:
         """

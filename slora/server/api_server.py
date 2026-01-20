@@ -369,6 +369,14 @@ def main():
     parser.add_argument("--batch-num-adapters", type=int, default=None)
     parser.add_argument("--enable-abort", action="store_true")
 
+    # Data parallel mode arguments
+    parser.add_argument("--parallel-mode", type=str, default="tensor", choices=["tensor", "data"],
+                        help="Parallel mode: 'tensor' for tensor parallelism (default), 'data' for data parallelism")
+    parser.add_argument("--num-workers", type=int, default=None,
+                        help="Number of GPU workers for data parallel mode. If not specified, uses all available GPUs")
+    parser.add_argument("--gpu-ids", type=str, default=None,
+                        help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). If not specified, uses all available GPUs")
+
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
                         help="请求完成时触发淘汰的内存使用率阈值 (0-1)，默认 0.85 (85%%)")

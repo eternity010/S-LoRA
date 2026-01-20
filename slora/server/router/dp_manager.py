@@ -38,15 +38,17 @@ class DataParallelRouterManager:
         args: 命令行参数
         router_port: 接收 HTTP 请求的端口
         response_port: 接收 Worker 响应的端口
+        detoken_port: Detokenization 进程的端口
         num_workers: Worker 数量
         gpu_ids: GPU ID 列表
         workers: Worker 进程列表
         worker_ports: Worker 端口列表
+        merger_process: Response Merger 进程
         router: 路由器实例
     """
     
     def __init__(self, args: argparse.Namespace, 
-                 router_port: int, response_port: int):
+                 router_port: int, response_port: int, detoken_port: int):
         """
         初始化 Data Parallel Router Manager
         
@@ -57,11 +59,14 @@ class DataParallelRouterManager:
                 - 其他模型和推理相关参数
             router_port: 接收来自 API Server 的请求的端口
             response_port: 接收来自 Worker 的响应的端口
+            detoken_port: Detokenization 进程的端口
         
         Requirements:
             - 1.1: 根据配置创建指定数量的 GPU Worker 进程
             - 5.2: 支持通过 --num-workers 参数指定 Worker 数量
             - 5.3: 支持通过 --gpu-ids 参数指定使用的 GPU 列表
+            - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
+            - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
         
         Note:
             如果未指定 num_workers，将自动检测可用 GPU 数量。
@@ -70,6 +75,7 @@ class DataParallelRouterManager:
         self.args = args
         self.router_port = router_port
         self.response_port = response_port
+        self.detoken_port = detoken_port
         
         # Worker 管理
         # 如果未指定 num_workers，自动检测 GPU 数量
@@ -90,6 +96,9 @@ class DataParallelRouterManager:
         self.workers: List[mp.Process] = []
         self.worker_ports: List[int] = []
         
+        # Response Merger 进程
+        self.merger_process: Optional[mp.Process] = None
+        
         # 路由器
         self.router = RoundRobinRouter(self.num_workers)
         
@@ -100,7 +109,8 @@ class DataParallelRouterManager:
         
         print(f"[DataParallelRouterManager] Initialized with {self.num_workers} workers")
         print(f"[DataParallelRouterManager] GPU IDs: {self.gpu_ids}")
-        print(f"[DataParallelRouterManager] Router port: {router_port}, Response port: {response_port}")
+        print(f"[DataParallelRouterManager] Router port: {router_port}, Response port: {response_port}, "
+              f"Detoken port: {detoken_port}")
     
     def _detect_gpus(self) -> int:
         """
@@ -215,14 +225,16 @@ class DataParallelRouterManager:
     
     async def start_workers(self) -> None:
         """
-        启动所有 Worker 进程
+        启动所有 Worker 进程和 Response Merger
         
-        为每个 Worker 分配端口，然后启动所有 Worker 进程。
+        为每个 Worker 分配端口，然后启动所有 Worker 进程和 Response Merger 进程。
         等待所有 Worker 就绪后返回。
         
         Requirements:
             - 1.1: 根据配置创建指定数量的 GPU Worker 进程
             - 1.5: 确认所有 Worker 处于就绪状态
+            - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
+            - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
         
         Note:
             这是一个异步方法，会等待一段时间让 Worker 初始化。
@@ -230,6 +242,9 @@ class DataParallelRouterManager:
         """
         # 分配端口
         self._allocate_ports()
+        
+        # 启动 Response Merger 进程
+        self._start_response_merger()
         
         # 启动所有 Worker
         print(f"[DataParallelRouterManager] Starting {self.num_workers} workers...")
@@ -245,6 +260,33 @@ class DataParallelRouterManager:
         await asyncio.sleep(5)
         
         print(f"[DataParallelRouterManager] All {self.num_workers} workers started and ready")
+    
+    def _start_response_merger(self) -> None:
+        """
+        启动 Response Merger 进程
+        
+        创建一个新的进程来运行 Response Merger。
+        Response Merger 负责收集来自所有 Worker 的响应并转发到 Detokenization 进程。
+        
+        Requirements:
+            - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
+            - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
+        
+        Note:
+            Response Merger 进程的目标函数是 run_response_merger_process，
+            它会创建 ResponseMerger 实例并运行主循环。
+        """
+        from slora.server.router.response_merger import run_response_merger_process
+        
+        self.merger_process = mp.Process(
+            target=run_response_merger_process,
+            args=(self.response_port, self.detoken_port),
+            name="ResponseMerger"
+        )
+        self.merger_process.start()
+        
+        print(f"[DataParallelRouterManager] Started Response Merger process "
+              f"(worker_response_port={self.response_port}, detoken_port={self.detoken_port})")
     
     def _setup_zmq(self) -> None:
         """
