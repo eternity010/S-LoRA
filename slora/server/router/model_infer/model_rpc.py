@@ -50,7 +50,10 @@ class ModelRpcServer(rpyc.Service):
 
         self.cache = {}
 
-        dist.init_process_group('nccl', init_method=f'tcp://127.0.0.1:{setting["nccl_port"]}', rank=rank_id, world_size=world_size)
+        # 数据并行模式（world_size=1）不需要 NCCL 分布式训练
+        # 只有张量并行模式（world_size>1）才需要初始化 NCCL 进程组
+        if world_size > 1:
+            dist.init_process_group('nccl', init_method=f'tcp://127.0.0.1:{setting["nccl_port"]}', rank=rank_id, world_size=world_size)
         torch.cuda.set_device(rank_id)
 
         model_cfg = get_model_config(weight_dir, dummy=input_params.dummy)

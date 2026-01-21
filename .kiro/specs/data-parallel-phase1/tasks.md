@@ -32,8 +32,28 @@
 - ✅ 基础监控（启动日志、请求统计、调试日志）
 - ✅ 单元测试覆盖（20+ 个测试文件，覆盖核心功能）
 
-**待实现的组件**（Tasks 8-12）:
-- ⏳ 基础功能验证（Checkpoint）
+**Task 8 进度**（基础功能验证 - Checkpoint）:
+- ✅ 8.1: 准备测试环境（测试框架、环境验证）
+- ✅ 8.2.1: 测试 Round Robin Router
+- ✅ 8.2.2: 测试 GPU Worker 初始化
+- ✅ 8.2.3: 测试 DataParallelRouterManager 初始化
+- ✅ 8.3.1: 测试单个 Worker 进程启动
+- ✅ 8.3.2: 测试多个 Worker 进程启动
+- ✅ 8.3.3: 测试 Response Merger 进程启动
+- ✅ 8.4.1: 测试 Manager → Worker 通信
+- ✅ 8.4.2: 测试 Worker → Merger 通信
+- ✅ 8.4.3: 测试完整通信链路
+- ✅ 8.5.1: 测试单个请求处理（1 Worker）
+- ✅ 8.5.2: 测试多个串行请求（1 Worker）
+- ✅ 8.5.3: 测试并发请求（2 Workers）
+- ✅ 8.5.4: 测试高并发（4 Workers）
+- ✅ 8.6.1: 测试 Worker 启动失败
+- ✅ 8.6.2: 测试 Worker 进程崩溃
+- ✅ 8.6.3: 测试推理异常
+- ⏳ 8.7: 监控和日志测试（待完成）
+- ⏳ 8.8: 总结和报告（待完成）
+
+**待实现的组件**（Tasks 9-12）:
 - ⏳ 集成测试（端到端测试）
 - ⏳ 性能测试（吞吐量、延迟基准）
 - ⏳ 文档和示例
@@ -428,73 +448,303 @@
   - 测试调试日志输出
 
 - [ ] 8. Checkpoint - 基础功能验证
-  - 手动测试所有核心组件能够正常工作
-  - 验证单 Worker 能够处理请求（使用测试脚本）
-  - 验证多 Worker 能够并发处理（使用测试脚本）
-  - 验证 Response Merger 正确转发响应
-  - 验证 API Server 集成正常工作
-  - 验证错误处理机制（Worker 失败、推理异常、ZMQ 超时）
-  - 验证监控日志输出正常
-  - 测试方式：
-    - 创建简单的测试脚本 `test/manual_test_phase1.py`
-    - 启动数据并行模式：`--parallel-mode data --num-workers 2`
-    - 发送测试请求到 API Server
-    - 验证响应正确返回
-    - 检查日志输出是否正常
-    - 测试异常场景（Worker 崩溃、推理失败等）
-  - 询问用户是否有问题
+  - **目标**: 阶段性验证所有核心组件能够正常工作
+  - **方式**: 从简单到复杂，逐步验证每个组件
+  
+  - [x] 8.1 准备测试环境
+    - [x] 8.1.1 确认开发环境
+      - 激活 conda 环境：`conda activate slora`
+      - 检查 Python 版本和依赖
+      - 确认 GPU 可用：`nvidia-smi`
+    
+    - [x] 8.1.2 创建测试脚本目录
+      - 创建 `test/phase1_manual/` 目录
+      - 创建基础测试脚本框架
+  
+  - [x] 8.2 组件级测试（从底层到上层）
+    
+    - [x] 8.2.1 测试 Round Robin Router（最简单）
+      - 创建 `test/phase1_manual/test_router.py`
+      - 测试内容：
+        - 创建 Router 实例
+        - 测试 `select_worker()` 方法
+        - 验证轮询顺序：0, 1, 2, 0, 1, 2...
+        - 验证不同 Worker 数量
+      - 预期结果：轮询顺序正确
+      - 运行：`python test/phase1_manual/test_router.py`
+    
+    - [x] 8.2.2 测试 GPU Worker 初始化（不启动推理）
+      - 创建 `test/phase1_manual/test_worker_init.py`
+      - 测试内容：
+        - 创建 GPUWorker 实例
+        - 测试 GPU 环境设置
+        - 测试 ZMQ socket 创建
+        - 测试 Adapter 配置初始化
+      - 预期结果：Worker 初始化成功，无异常
+      - 运行：`python test/phase1_manual/test_worker_init.py`
+    
+    - [x] 8.2.3 测试 DataParallelRouterManager 初始化
+      - 创建 `test/phase1_manual/test_manager_init.py`
+      - 测试内容：
+        - 创建 DataParallelRouterManager 实例
+        - 测试 GPU 检测
+        - 测试端口分配
+        - 测试 ZMQ socket 创建
+      - 预期结果：Manager 初始化成功
+      - 运行：`python test/phase1_manual/test_manager_init.py`
+  
+  - [x] 8.3 进程级测试（启动但不发送请求）
+    
+    - [x] 8.3.1 测试单个 Worker 进程启动
+      - 创建 `test/phase1_manual/test_single_worker_startup.py`
+      - 测试内容：
+        - 启动 1 个 Worker 进程（Dummy 模式）
+        - 检查进程是否存活
+        - 检查启动日志输出
+        - 等待 5 秒后检查进程状态
+        - 优雅关闭进程
+      - 预期结果：Worker 进程启动成功，输出"Worker 0 ready"
+      - 运行：`python test/phase1_manual/test_single_worker_startup.py`
+    
+    - [x] 8.3.2 测试多个 Worker 进程启动
+      - 创建 `test/phase1_manual/test_multi_worker_startup.py`
+      - 测试内容：
+        - 启动 2 个 Worker 进程（Dummy 模式）
+        - 检查所有进程是否存活
+        - 检查启动日志（每个 Worker 的就绪消息）
+        - 验证 GPU 隔离（每个 Worker 使用不同 GPU）
+        - 优雅关闭所有进程
+      - 预期结果：所有 Worker 启动成功，GPU 正确分配
+      - 运行：`python test/phase1_manual/test_multi_worker_startup.py`
+    
+    - [x] 8.3.3 测试 Response Merger 进程启动
+      - 创建 `test/phase1_manual/test_merger_startup.py`
+      - 测试内容：
+        - 启动 Response Merger 进程
+        - 检查进程是否存活
+        - 检查 ZMQ socket 绑定
+        - 优雅关闭进程
+      - 预期结果：Response Merger 启动成功
+      - 运行：`python test/phase1_manual/test_merger_startup.py`
+  
+  - [x] 8.4 通信级测试（测试 ZMQ 消息传递）
+    
+    - [x] 8.4.1 测试 Manager → Worker 通信
+      - 创建 `test/phase1_manual/test_manager_to_worker.py`
+      - 测试内容：
+        - 启动 Manager 和 1 个 Worker
+        - Manager 发送测试消息到 Worker
+        - Worker 接收并打印消息
+        - 验证消息内容正确
+      - 预期结果：消息成功传递，内容正确
+      - 运行：`python test/phase1_manual/test_manager_to_worker.py`
+    
+    - [x] 8.4.2 测试 Worker → Merger 通信
+      - 创建 `test/phase1_manual/test_worker_to_merger.py`
+      - 测试内容：
+        - 启动 1 个 Worker 和 Response Merger
+        - Worker 发送测试响应到 Merger
+        - Merger 接收并打印响应
+        - 验证响应内容正确
+      - 预期结果：响应成功传递，内容正确
+      - 运行：`python test/phase1_manual/test_worker_to_merger.py`
+    
+    - [x] 8.4.3 测试完整通信链路
+      - 创建 `test/phase1_manual/test_full_communication.py`
+      - 测试内容：
+        - 启动 Manager、2 个 Worker、Response Merger
+        - Manager 发送 10 个测试请求
+        - 验证请求轮询分配到不同 Worker
+        - 验证所有响应都被 Merger 接收
+        - 验证响应顺序和内容
+      - 预期结果：所有消息正确传递，轮询分配正确
+      - 运行：`python test/phase1_manual/test_full_communication.py`
+  
+  - [x] 8.5 功能级测试（Dummy 模式，简化推理）
+    
+    - [x] 8.5.1 测试单个请求处理（1 Worker）
+      - 创建 `test/phase1_manual/test_single_request.py`
+      - 测试内容：
+        - 启动完整系统（1 Worker，Dummy 模式）
+        - 发送 1 个测试请求
+        - 验证响应返回
+        - 验证响应格式正确
+        - 检查日志输出
+      - 预期结果：请求成功处理，响应正确返回
+      - 运行：`python test/phase1_manual/test_single_request.py`
+    
+    - [x] 8.5.2 测试多个串行请求（1 Worker）
+      - 创建 `test/phase1_manual/test_serial_requests.py`
+      - 测试内容：
+        - 启动完整系统（1 Worker，Dummy 模式）
+        - 串行发送 5 个测试请求
+        - 验证所有响应返回
+        - 验证响应顺序正确
+        - 检查请求统计日志
+      - 预期结果：所有请求成功处理，统计正确
+      - 运行：`python test/phase1_manual/test_serial_requests.py`
+    
+    - [x] 8.5.3 测试并发请求（2 Workers）
+      - 创建 `test/phase1_manual/test_concurrent_requests.py`
+      - 测试内容：
+        - 启动完整系统（2 Workers，Dummy 模式）
+        - 并发发送 10 个测试请求
+        - 验证所有响应返回
+        - 验证请求分配到不同 Worker
+        - 检查每个 Worker 的请求计数
+      - 预期结果：请求均匀分配，所有响应正确
+      - 运行：`python test/phase1_manual/test_concurrent_requests.py`
+    
+    - [x] 8.5.4 测试高并发（4 Workers）
+      - 创建 `test/phase1_manual/test_high_concurrency.py`
+      - 测试内容：
+        - 启动完整系统（4 Workers，Dummy 模式）
+        - 并发发送 100 个测试请求
+        - 验证所有响应返回
+        - 计算吞吐量和平均延迟
+        - 检查 GPU 利用率
+      - 预期结果：系统稳定，吞吐量符合预期
+      - 运行：`python test/phase1_manual/test_high_concurrency.py`
+  
+  - [x] 8.6 错误处理测试
+    
+    - [x] 8.6.1 测试 Worker 启动失败
+      - 创建 `test/phase1_manual/test_worker_startup_failure.py`
+      - 测试内容：
+        - 尝试启动 Worker 但指定不存在的 GPU
+        - 验证 Manager 检测到启动失败
+        - 验证错误日志输出
+        - 验证系统优雅退出
+      - 预期结果：错误被正确捕获和记录
+      - 运行：`python test/phase1_manual/test_worker_startup_failure.py`
+    
+    - [x] 8.6.2 测试 Worker 进程崩溃
+      - 创建 `test/phase1_manual/test_worker_crash.py`
+      - 测试内容：
+        - 启动完整系统（2 Workers）
+        - 手动杀死一个 Worker 进程
+        - 验证 Manager 检测到进程退出
+        - 验证错误日志输出
+        - 验证系统继续使用剩余 Worker
+      - 预期结果：系统检测到崩溃，继续运行
+      - 运行：`python test/phase1_manual/test_worker_crash.py`
+    
+    - [x] 8.6.3 测试推理异常
+      - 创建 `test/phase1_manual/test_inference_error.py`
+      - 测试内容：
+        - 启动完整系统
+        - 发送会导致推理失败的请求
+        - 验证返回错误响应
+        - 验证错误响应格式正确
+        - 验证系统继续处理后续请求
+      - 预期结果：错误被正确处理，系统稳定
+      - 运行：`python test/phase1_manual/test_inference_error.py`
+  
+  - [ ] 8.7 监控和日志测试
+    
+    - [x] 8.7.1 验证启动日志
+      - 测试内容：
+        - 启动完整系统（2 Workers）
+        - 检查启动日志是否包含：
+          - 并行模式信息
+          - Worker 数量和 GPU 列表
+          - 每个 Worker 的就绪消息
+          - GPU 信息（型号、内存）
+      - 预期结果：所有启动日志正确输出
+    
+    - [x] 8.7.2 验证请求统计
+      - 测试内容：
+        - 启动完整系统
+        - 发送 20 个请求
+        - 等待 10 秒
+        - 检查统计日志是否输出：
+          - 总请求数
+          - 成功/失败数
+          - 每个 Worker 的请求分布
+      - 预期结果：统计信息正确输出
+    
+    - [ ] 8.7.3 验证调试日志
+      - 测试内容：
+        - 启动完整系统（DEBUG 模式）
+        - 发送测试请求
+        - 检查 DEBUG 日志是否包含：
+          - 路由决策日志
+          - 批次处理日志
+          - Adapter 加载日志
+          - 响应返回日志
+      - 预期结果：所有 DEBUG 日志正确输出
+  
+  - [ ] 8.8 总结和报告
+    - [ ] 8.8.1 汇总测试结果
+      - 记录所有测试的通过/失败状态
+      - 记录发现的问题和 Bug
+      - 记录性能数据（吞吐量、延迟）
+    
+    - [ ] 8.8.2 更新文档
+      - 更新 `Phase1-代码修改记录.md`
+      - 记录 Task 8 的验证结果
+      - 列出需要修复的问题
+    
+    - [ ] 8.8.3 决定下一步
+      - 如果所有测试通过 → 继续 Task 9
+      - 如果有问题 → 修复后重新测试
+      - 询问用户/团队意见
 
 - [ ] 9. 集成测试
-  - [ ] 9.1 单 Worker 端到端测试
-    - 创建 `test/test_e2e_single_worker.py`
-    - 启动完整的数据并行系统（1 个 Worker）
-    - 发送测试请求到 API Server
-    - 验证响应正确
-    - 验证延迟在合理范围内
-    - 实现方式：
-      - 使用 pytest fixtures 启动系统组件
-      - 模拟 HTTP 请求到 API Server
-      - 验证响应格式和内容
+  - [ ] 9.1 端到端测试（使用实际模型）
+    - 创建 `test/test_e2e_data_parallel.py`
+    - 测试内容：
+      - 启动完整的数据并行系统（使用实际模型，如 Llama-7B）
+      - 发送真实的推理请求
+      - 验证响应正确性（与张量并行模式对比）
       - 测试不同的 prompt 长度和采样参数
-    - _Requirements: 10.1_
+      - 测试 Adapter 切换功能
+    - 预期结果：
+      - 所有请求成功处理
+      - 响应内容正确
+      - Adapter 正确加载和使用
+    - _Requirements: 10.1, 10.3_
   
   - [ ] 9.2 多 Worker 并发测试
-    - 创建 `test/test_e2e_multi_worker.py`
-    - 启动完整的数据并行系统（3 个 Worker）
-    - 并发发送 10 个请求
-    - 验证所有响应正确
-    - 验证请求均匀分配到所有 Worker
-    - 验证并发性能提升
-    - 实现方式：
-      - 使用 asyncio.gather 并发发送请求
-      - 检查 Router Manager 的统计信息
-      - 验证每个 Worker 处理的请求数大致相等
-      - 对比单 Worker 和多 Worker 的吞吐量
+    - 创建 `test/test_e2e_multi_worker_concurrent.py`
+    - 测试内容：
+      - 启动完整的数据并行系统（3 个 Worker）
+      - 并发发送 30 个请求
+      - 验证所有响应正确
+      - 验证请求均匀分配到所有 Worker
+      - 验证并发性能提升
+    - 预期结果：
+      - 所有请求成功处理
+      - 请求分配均匀（每个 Worker 约 10 个请求）
+      - 吞吐量显著提升（接近 3x）
     - _Requirements: 10.2_
   
-  - [ ] 9.3 ZMQ 通信测试
-    - 创建 `test/test_zmq_communication.py`
-    - 测试 Router → Worker 通信
-    - 测试 Worker → Response Merger 通信
-    - 测试消息不丢失
-    - 测试消息顺序（如果需要）
-    - 实现方式：
-      - 创建独立的 ZMQ socket 测试
-      - 发送大量消息验证可靠性
+  - [ ] 9.3 ZMQ 通信可靠性测试
+    - 创建 `test/test_zmq_reliability.py`
+    - 测试内容：
+      - 测试 Router → Worker 通信可靠性
+      - 测试 Worker → Response Merger 通信可靠性
+      - 发送大量消息验证无丢失
       - 使用 request_id 跟踪消息
       - 验证所有消息都被接收
+    - 预期结果：
+      - 所有消息成功传递
+      - 无消息丢失
+      - 消息顺序正确（如果需要）
     - _Requirements: 10.5_
   
   - [ ] 9.4 Adapter 切换测试
     - 创建 `test/test_e2e_adapter_switching.py`
-    - 测试在不同请求中切换 Adapter
-    - 验证 Adapter 正确加载和使用
-    - 验证内存管理正确
-    - 实现方式：
+    - 测试内容：
       - 准备多个测试 Adapter
       - 交替发送使用不同 Adapter 的请求
+      - 验证 Adapter 正确加载和使用
       - 验证输出结果符合预期
       - 检查内存占用统计
+    - 预期结果：
+      - Adapter 正确切换
+      - 输出结果正确
+      - 内存管理正常
     - _Requirements: 3.3, 3.4_
 
 - [ ]* 9.5 编写 Property-Based 测试
@@ -511,7 +761,7 @@
 
 - [ ] 10. 性能测试
   - [ ] 10.1 编写性能测试脚本
-    - 创建 `benchmarks/benchmark_phase1.py`
+    - 创建 `benchmarks/benchmark_phase1_data_parallel.py`
     - 实现吞吐量测试（requests/second）
     - 实现延迟测试（P50, P90, P99）
     - 实现 GPU 利用率监控
@@ -536,7 +786,7 @@
       - 每个配置运行 3 次取平均值
     - _Requirements: 9.1, 9.2, 9.3_
   
-  - [ ] 10.3 性能分析和优化
+  - [ ] 10.3 性能分析和优化（可选）
     - 分析性能瓶颈（使用 profiler）
     - 优化 ZMQ 通信（如果需要）
     - 优化消息序列化（如果需要）

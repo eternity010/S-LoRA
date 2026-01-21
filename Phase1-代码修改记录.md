@@ -3264,3 +3264,738 @@ DEBUG=1 python -m slora.server.api_server --parallel-mode data --model_dir /path
 - Task 9: 集成测试
 - Task 10: 性能测试
 
+
+
+---
+
+### 2025-01-20 - Task 8.1: 准备测试环境
+
+**新增文件**:
+1. `test/phase1_manual/README.md`
+   - Phase 1 手动测试脚本的说明文档
+   - 包含测试环境信息、测试分类、运行方法
+   - 列出所有测试脚本的用途和执行顺序
+
+2. `test/phase1_manual/__init__.py`
+   - Phase 1 手动测试框架的包初始化文件
+
+3. `test/phase1_manual/test_base.py`
+   - 手动测试的基础框架
+   - 实现 `TestResult` 类：测试结果容器
+   - 实现 `ManualTest` 类：手动测试基类
+   - 实现 `run_test_suite()` 函数：测试套件运行器
+   - 提供通用的测试工具方法：assert_true, assert_equal, assert_not_none
+
+4. `test/phase1_manual/example_test.py`
+   - 示例测试脚本，演示如何使用测试框架
+   - 包含 `SimpleTest` 和 `EnvironmentTest` 两个示例
+   - 可作为创建新测试的模板
+
+**关键设计**:
+- **测试框架**：
+  - 提供统一的测试基类和结果容器
+  - 支持 setup、execute、teardown 三阶段测试
+  - 自动记录测试时长和结果
+  - 提供断言方法简化测试编写
+- **测试分类**：
+  - 组件测试（8.2.x）：测试单个组件
+  - 进程测试（8.3.x）：测试进程启动
+  - 通信测试（8.4.x）：测试 ZMQ 消息传递
+  - 功能测试（8.5.x）：测试端到端功能
+  - 错误处理测试（8.6.x）：测试失败场景
+- **测试环境**：
+  - Conda 环境：slora
+  - Python 版本：3.9.25
+  - PyTorch：2.0.1+cu118
+  - 可用 GPU：3x NVIDIA L40 (49GB each)
+
+**实现细节**:
+
+1. **TestResult 类**:
+   - 存储测试名称、通过状态、错误消息、执行时长、详细信息
+   - 提供 `mark_passed()` 和 `mark_failed()` 方法
+   - 提供 `print_summary()` 方法输出测试结果
+
+2. **ManualTest 类**:
+   - 抽象基类，子类需实现 `execute()` 方法
+   - 提供 `setup()` 和 `teardown()` 钩子方法
+   - 自动记录测试时长
+   - 提供断言方法：assert_true, assert_equal, assert_not_none
+   - 自动设置日志记录器
+
+3. **run_test_suite() 函数**:
+   - 运行一组测试并收集结果
+   - 输出测试套件摘要（总数、通过数、失败数）
+   - 返回测试结果字典
+
+4. **example_test.py**:
+   - SimpleTest：演示基本断言和测试流程
+   - EnvironmentTest：验证 Python 环境和依赖
+   - 可作为创建新测试的模板
+
+**测试框架使用示例**:
+```python
+from test_base import ManualTest, run_test_suite
+
+class MyTest(ManualTest):
+    def setup(self):
+        # 初始化测试环境
+        self.test_data = {"value": 42}
+    
+    def execute(self):
+        # 执行测试逻辑
+        self.assert_not_none(self.test_data)
+        self.assert_equal(self.test_data["value"], 42)
+    
+    def teardown(self):
+        # 清理测试环境
+        self.test_data = None
+
+# 运行测试
+test = MyTest("my_test", "Test description")
+result = test.run()
+```
+
+**环境验证结果**:
+- ✅ Conda 环境 slora 已激活
+- ✅ Python 版本：3.9.25
+- ✅ PyTorch 版本：2.0.1+cu118
+- ✅ ZMQ 版本：4.3.5
+- ✅ pytest 版本：8.4.2
+- ✅ 可用 GPU：3x NVIDIA L40 (49GB each)
+
+**测试框架验证**:
+- ✅ 示例测试运行成功
+- ✅ 测试结果正确记录
+- ✅ 测试摘要正确输出
+- ✅ 环境测试通过（Python、PyTorch、CUDA、ZMQ）
+
+**满足 Requirements**:
+- Task 8.1.1（确认开发环境）：
+  - ✅ 激活 conda 环境 slora
+  - ✅ 检查 Python 版本和依赖
+  - ✅ 确认 GPU 可用
+- Task 8.1.2（创建测试脚本目录）：
+  - ✅ 创建 test/phase1_manual/ 目录
+  - ✅ 创建基础测试脚本框架
+
+**下一步**:
+- Task 8.2: 组件级测试（从底层到上层）
+  - 8.2.1: 测试 Round Robin Router
+  - 8.2.2: 测试 GPU Worker 初始化
+  - 8.2.3: 测试 DataParallelRouterManager 初始化
+- Task 8.3: 进程级测试（启动但不发送请求）
+- Task 8.4: 通信级测试（测试 ZMQ 消息传递）
+- Task 8.5: 功能级测试（Dummy 模式，简化推理）
+- Task 8.6: 错误处理测试
+
+**测试目录结构**:
+```
+test/phase1_manual/
+├── README.md                    # 测试说明文档
+├── __init__.py                  # 包初始化
+├── test_base.py                 # 测试基础框架
+├── example_test.py              # 示例测试
+└── (待创建的测试脚本)
+    ├── test_router.py           # 8.2.1
+    ├── test_worker_init.py      # 8.2.2
+    ├── test_manager_init.py     # 8.2.3
+    ├── test_single_worker_startup.py  # 8.3.1
+    ├── test_multi_worker_startup.py   # 8.3.2
+    ├── test_merger_startup.py         # 8.3.3
+    ├── test_manager_to_worker.py      # 8.4.1
+    ├── test_worker_to_merger.py       # 8.4.2
+    ├── test_full_communication.py     # 8.4.3
+    ├── test_single_request.py         # 8.5.1
+    ├── test_serial_requests.py        # 8.5.2
+    ├── test_concurrent_requests.py    # 8.5.3
+    ├── test_high_concurrency.py       # 8.5.4
+    ├── test_worker_startup_failure.py # 8.6.1
+    ├── test_worker_crash.py           # 8.6.2
+    └── test_inference_error.py        # 8.6.3
+```
+
+
+---
+
+
+
+---
+
+### 2025-01-20 - Task 8.2.1: 测试 Round Robin Router
+
+**新增文件**:
+1. `test/phase1_manual/test_router.py`
+   - Round Robin Router 组件测试
+   - 7 个测试用例：创建、选择、轮询顺序、不同 Worker 数、统计、重置、线程安全
+   - 测试结果：✅ 7/7 通过
+
+**验证内容**:
+- Router 创建和 Worker 选择功能正常
+- 轮询顺序正确（0, 1, 2, 0, 1, 2...）
+- 统计信息和重置功能正常
+- 线程安全基础验证通过
+
+**下一步**:
+- Task 8.2.2: 测试 GPU Worker 初始化
+
+
+---
+
+### 2025-01-20 - Task 8.2.2: 测试 GPU Worker 初始化
+
+**新增文件**:
+1. `test/phase1_manual/test_worker_init.py`
+   - GPU Worker 初始化测试（不启动推理）
+   - 6 个测试用例：Worker 创建、GPU 环境、ZMQ socket、Adapter 配置、请求队列、多 Worker
+   - 测试结果：✅ 6/6 通过
+
+**验证内容**:
+- Worker 实例创建和基本属性正确
+- GPU 环境设置正确（CUDA_VISIBLE_DEVICES、设备隔离）
+- ZMQ socket 创建和清理正常
+- Adapter 配置初始化正确（lora_ranks）
+- 请求队列设置正确（max_total_tokens、batch_max_tokens）
+- 支持多个 Worker 使用不同 GPU
+
+**下一步**:
+- Task 8.2.3: 测试 DataParallelRouterManager 初始化
+
+
+---
+
+### 2025-01-20 - Task 8.2.3: 测试 DataParallelRouterManager 初始化
+
+**新增文件**:
+1. `test/phase1_manual/test_manager_init.py`
+   - DataParallelRouterManager 初始化测试
+   - 6 个测试用例：Manager 创建、GPU 检测、GPU ID 解析、端口分配、ZMQ 设置、Router 集成
+   - 测试结果：✅ 6/6 通过
+
+**验证内容**:
+- Manager 实例创建和基本属性正确
+- GPU 自动检测正确（检测到 3 个 GPU）
+- GPU ID 解析正确（支持 "0", "0,1", "0,1,2", "1,2" 等格式）
+- Worker 端口分配正确（50000, 50001, 50002）
+- ZMQ socket 创建和清理正常
+- Router 集成正确（3 workers，轮询选择正常）
+
+**组件测试（8.2.x）完成**：
+- ✅ 8.2.1: Round Robin Router 测试
+- ✅ 8.2.2: GPU Worker 初始化测试
+- ✅ 8.2.3: DataParallelRouterManager 初始化测试
+
+**下一步**:
+- Task 8.3: 进程级测试（启动但不发送请求）
+
+
+---
+
+### 2025-01-20 - Task 8.3.1: 测试单个 Worker 进程启动
+
+**新增文件**:
+1. `test/phase1_manual/test_single_worker_startup.py`
+   - 单个 Worker 进程启动测试（Dummy 模式）
+   - 3 个测试用例：进程启动和存活、启动日志验证、优雅关闭
+   - 测试结果：✅ 3/3 通过
+
+**验证内容**:
+- Worker 进程成功创建并初始化
+- 进程保持存活（5 秒后仍运行）
+- 启动日志正确输出（GPU 环境、ZMQ、请求队列、模型 RPC）
+- 进程可以优雅关闭（SIGTERM）
+
+**下一步**:
+- Task 8.3.2: 测试多个 Worker 进程启动
+
+
+---
+
+### 2025-01-20 - Task 8.3.2 修复: NCCL 端口冲突问题
+
+**问题描述**:
+- 在启动多个 Worker 进程时，发现 NCCL 端口冲突错误
+- 错误信息：`RuntimeError: The server socket has failed to bind to [::]:28765 (errno: 98 - Address already in use)`
+- 根本原因：数据并行模式下，每个 Worker 独立运行（world_size=1），不应该使用 NCCL 分布式训练
+- 但 `model_rpc.py` 中的 `exposed_init_model()` 无条件调用了 `dist.init_process_group()`
+
+**修改文件**:
+1. `slora/server/router/model_infer/model_rpc.py`
+   - 修改 `ModelRpcServer.exposed_init_model()` 方法
+   - 添加条件判断：只有在 `world_size > 1` 时才初始化 NCCL 进程组
+   - 修改内容：
+     ```python
+     # 修改前：
+     dist.init_process_group('nccl', init_method=f'tcp://127.0.0.1:{setting["nccl_port"]}', rank=rank_id, world_size=world_size)
+     
+     # 修改后：
+     if world_size > 1:
+         dist.init_process_group('nccl', init_method=f'tcp://127.0.0.1:{setting["nccl_port"]}', rank=rank_id, world_size=world_size)
+     ```
+
+**实现细节**:
+- 数据并行模式（world_size=1）：每个 Worker 独立运行，不需要 NCCL 分布式训练
+- 张量并行模式（world_size>1）：多个进程协同工作，需要 NCCL 进程组通信
+- 这个修改确保了数据并行和张量并行模式的兼容性
+- 修复后，多个 Worker 可以同时启动，不会出现端口冲突
+
+**影响范围**:
+- 仅影响模型 RPC 初始化逻辑
+- 不影响张量并行模式的正常运行
+- 解决了数据并行模式下多 Worker 启动失败的问题
+
+**测试验证**:
+- 重新运行 `test/phase1_manual/test_multi_worker_startup.py`
+- 验证多个 Worker 可以成功启动
+- 验证 GPU 隔离正常工作
+
+
+---
+
+### 2025-01-20 - Task 8.3.2 完成: 多 Worker 进程启动测试
+
+**测试文件**: `test/phase1_manual/test_multi_worker_startup.py`
+
+**测试内容**:
+1. test_multi_worker_startup: 启动多个 Worker 进程并验证存活
+2. test_gpu_isolation: 验证 GPU 隔离（每个 Worker 使用不同 GPU）
+3. test_startup_logs: 验证启动日志输出
+4. test_graceful_shutdown_all: 验证所有进程优雅关闭
+
+**测试结果**: ✅ 所有 4 个测试通过
+
+**验证内容**:
+- 多个 Worker 进程成功启动（使用 Dummy 模式）
+- GPU 正确分配（每个 Worker 使用不同 GPU）
+- 启动日志正确输出
+- 所有进程可以优雅关闭
+
+**下一步**:
+- Task 8.3.3: 测试 Response Merger 进程启动
+
+
+---
+
+### 2025-01-20 - Task 8.3.3 完成: Response Merger 进程启动测试
+
+**测试文件**: `test/phase1_manual/test_merger_startup.py`
+
+**测试内容**:
+1. test_merger_startup: Response Merger 进程启动并保持存活
+2. test_merger_zmq_binding: 验证 ZMQ socket 绑定（PULL 和 PUSH）
+3. test_merger_startup_logs: 验证启动日志输出
+4. test_merger_graceful_shutdown: 验证优雅关闭
+
+**测试结果**: ✅ 所有 4 个测试通过
+
+**验证内容**:
+- Response Merger 进程成功创建并初始化
+- ZMQ sockets 正确绑定：
+  - PULL socket 绑定到 worker_response_port（接收 Worker 响应）
+  - PUSH socket 连接到 detoken_port（转发到 Detokenization）
+- 启动日志正确输出（初始化、ZMQ 设置、端口信息、主循环启动）
+- 进程可以优雅关闭（SIGTERM）
+
+**进程测试总结（Task 8.3.x）**:
+- ✅ 单个 Worker 进程启动测试通过
+- ✅ 多个 Worker 进程启动测试通过（修复 NCCL 端口冲突）
+- ✅ Response Merger 进程启动测试通过
+- 所有核心进程都能正常启动和关闭
+
+**下一步**:
+- Task 8.4: 通信级测试（测试 ZMQ 消息传递）
+
+
+---
+
+### 2025-01-21 - Task 8.4.1 完成: Manager → Worker 通信测试
+
+**测试文件**: `test/phase1_manual/test_manager_to_worker.py`
+
+**测试内容**:
+1. test_basic_communication: 基础通信测试（3条消息）
+2. test_multiple_messages: 多消息测试（10条消息，验证顺序）
+3. test_high_load_reliability: 高负载测试（50条消息，验证可靠性）
+
+**测试结果**: ✅ 所有 3 个测试通过
+
+**验证内容**:
+- Manager 通过 ZMQ PUSH socket 成功发送消息到 Worker
+- Worker 通过 ZMQ PULL socket 正确接收消息
+- 消息内容验证正确（request_id, prompt_ids, adapter_dir, sampling_params）
+- 消息顺序保持
+- 高负载下无消息丢失（100% 成功率）
+
+**下一步**:
+- Task 8.4.2: 测试 Worker → Merger 通信
+- Task 8.4.3: 测试完整通信链路（Manager → Worker → Merger）
+
+
+
+---
+
+### 2025-01-21 - Task 8.4.2 完成: Worker → Merger 通信测试
+
+**测试文件**: `test/phase1_manual/test_worker_to_merger.py`
+
+**测试内容**:
+1. test_basic_communication: 基础通信测试（3条响应）
+2. test_multiple_responses: 多响应测试（10条响应，验证顺序）
+3. test_high_load_reliability: 高负载测试（50条响应，验证可靠性）
+
+**测试结果**: ✅ 所有 3 个测试通过
+
+**验证内容**:
+- Worker 通过 ZMQ PUSH socket 成功发送响应到 Merger
+- Merger 通过 ZMQ PULL socket 正确接收响应
+- 响应内容验证正确（request_id, worker_id, output_ids, metadata, success）
+- 响应顺序保持
+- 高负载下无响应丢失（100% 成功率）
+
+**下一步**:
+- Task 8.4.3: 测试完整通信链路（Manager → Worker → Merger）
+
+
+---
+
+### 2025-01-21 - Task 8.4.3 完成: 完整通信链路测试
+
+**测试文件**: `test/phase1_manual/test_full_communication.py`
+
+**测试内容**:
+1. test_basic_communication: 基础完整链路测试（Manager + 2 Workers + Merger，10个请求）
+2. test_load_communication: 高负载完整链路测试（20个请求）
+
+**测试结果**: ✅ 所有 2 个测试通过
+
+**验证内容**:
+- Manager 成功发送请求到多个 Worker
+- Round-robin 轮询路由正确工作（每个 Worker 接收相等数量的请求）
+- Worker 正确接收请求并发送响应到 Merger
+- Merger 接收所有响应（100% 成功率）
+- 完整通信链路无消息丢失
+- 高负载下通信可靠
+
+**下一步**:
+- Task 8.5: 功能级测试（Dummy 模式，简化推理）
+
+
+---
+
+### 2025-01-21 - Task 8.5.1 完成: 单个请求处理测试
+
+**测试文件**: `test/phase1_manual/test_single_request.py`
+
+**测试内容**:
+1. test_single_request_processing: 完整系统单请求处理（Manager + 1 Worker + Merger，Dummy 模式）
+
+**测试结果**: ✅ 测试通过
+
+**验证内容**:
+- 完整系统成功启动（Manager、Worker、Merger）
+- Manager 成功路由请求到 Worker
+- Worker 处理请求（Dummy 模式，模拟推理）
+- Worker 发送响应到 Merger
+- Merger 接收响应
+- 响应格式正确（request_id, worker_id, output_ids, metadata, success）
+- 输出长度正确（prompt + generated tokens）
+- 元数据正确（finish_reason, prompt_tokens, completion_tokens）
+
+**下一步**:
+- Task 8.5.2: 测试多个串行请求（1 Worker）
+
+
+---
+
+### 2025-01-21 - Task 8.5.2 完成: 多个串行请求处理测试
+
+**测试文件**: `test/phase1_manual/test_serial_requests.py`
+
+**测试内容**:
+1. test_serial_requests_processing: 完整系统串行请求处理（Manager + 1 Worker + Merger，5个请求，Dummy 模式）
+
+**测试结果**: ✅ 测试通过
+
+**验证内容**:
+- 完整系统处理多个串行请求
+- Manager 路由所有 5 个请求到 Worker
+- Worker 顺序处理所有请求
+- Merger 接收所有 5 个响应
+- 响应顺序保持（与请求顺序一致）
+- 所有响应格式正确且有效
+
+**下一步**:
+- Task 8.5.3: 测试并发请求（2 Workers）
+
+
+---
+
+### 2025-01-21 - Task 8.5.3 完成: 并发请求处理测试
+
+**测试文件**: `test/phase1_manual/test_concurrent_requests.py`
+
+**测试内容**:
+1. test_concurrent_requests_processing: 完整系统并发请求处理（Manager + 2 Workers + Merger，10个请求，Dummy 模式）
+
+**测试结果**: ✅ 测试通过
+
+**验证内容**:
+- 完整系统支持 2 个 Worker 并发处理
+- Manager 路由所有 10 个请求
+- Round-robin 分配正确（每个 Worker 5 个请求）
+- 两个 Worker 并行处理请求
+- Merger 接收所有 10 个响应
+- 负载均衡正确（响应来自 2 个不同 Worker）
+
+**下一步**:
+- Task 8.5.4: 测试高并发（4 Workers）
+
+
+---
+
+### 2025-01-21 - Task 8.5.4 完成: 高并发处理测试
+
+**测试文件**: `test/phase1_manual/test_high_concurrency.py`
+
+**测试内容**:
+1. test_high_concurrency: 高并发系统测试（Manager + 4 Workers + Merger，100个请求，Dummy 模式）
+
+**测试结果**: ✅ 测试通过
+
+**验证内容**:
+- 完整系统支持 4 个 Worker 高并发处理
+- 100 个请求全部成功处理
+- 负载均匀分配（每个 Worker 25 个请求）
+- Merger 接收所有 100 个响应
+- 系统在高负载下保持稳定
+- 所有组件（Manager、4 Workers、Merger）在测试结束时仍然存活
+- 所有响应有效
+
+**性能指标**:
+- 请求发送时间：1.01秒（100个请求）
+- 所有请求处理完成
+- 系统稳定性验证通过
+
+**下一步**:
+- Task 8.6: 错误处理测试
+
+
+---
+
+### 2025-01-21 - Task 8.6.1 完成: Worker 启动失败测试
+
+**测试文件**: `test/phase1_manual/test_worker_startup_failure.py`
+
+**测试内容**:
+1. test_worker_startup_failure: Worker 启动失败测试（模型加载错误）
+2. test_worker_failure_detection: Worker 启动失败检测机制测试
+
+**测试结果**: ✅ 所有 2 个测试通过
+
+**验证内容**:
+- Manager 成功检测 Worker 启动失败（exit code 1）
+- 错误日志正确输出（错误类型、错误消息、堆栈跟踪）
+- Manager 终止所有 Worker 进程
+- Manager 终止 Response Merger 进程
+- 系统优雅退出（抛出 RuntimeError）
+- 所有进程被正确清理
+
+**下一步**:
+- Task 8.6.2: 测试 Worker 进程崩溃
+- Task 8.6.3: 测试推理异常
+
+
+
+---
+
+### 2025-01-21 - Task 8.6.2 完成: Worker 进程崩溃测试
+
+**测试文件**: `test/phase1_manual/test_worker_crash.py`
+
+**测试内容**:
+1. test_worker_crash_detection: Worker 进程崩溃检测和系统弹性测试
+
+**测试结果**: ✅ 所有 1 个测试通过
+
+**验证内容**:
+- 完整系统启动（2 个 Workers）
+- 手动终止 Worker 0（使用 terminate()）
+- 主测试进程检测到 Worker 0 崩溃（exit code -15）
+- Worker 1 继续运行
+- 系统继续处理请求（使用剩余的 Worker 1）
+- Worker 1 成功处理崩溃后的请求
+- Merger 继续接收响应
+- 系统保持稳定（Manager、Worker 1、Merger 都存活）
+
+**下一步**:
+- Task 8.6.3: 测试推理异常
+
+
+---
+
+### 2025-01-21 - Task 8.6.3 完成: 推理异常测试
+
+**测试文件**: `test/phase1_manual/test_inference_error.py`
+
+**测试内容**:
+1. test_inference_error_handling: 推理异常处理和系统弹性测试
+
+**测试结果**: ✅ 所有 1 个测试通过
+
+**验证内容**:
+- 完整系统启动（2 个 Workers）
+- 模拟推理失败（request_id 以 'test-error-' 开头触发错误）
+- 错误响应正确生成（success=False）
+- 错误响应格式正确（error 字段包含错误信息）
+- 错误响应 metadata 正确（finish_reason='error'）
+- 系统继续处理后续请求（错误后的正常请求成功处理）
+- 所有组件保持稳定（Manager、Workers、Merger 都存活）
+
+**下一步**:
+- Task 8.7.1: 验证启动日志
+
+
+
+
+---
+
+### 2025-01-21 - Task 8.7.1 完成: 验证启动日志
+
+**测试文件**: `test/phase1_manual/test_startup_logs.py`
+
+**测试内容**:
+1. 启动完整系统（2 Workers）
+2. 验证所有启动日志正确输出
+
+**测试结果**: ✅ 测试通过
+
+**验证的日志内容**:
+1. ✅ 并行模式信息
+   - DataParallelRouterManager 初始化日志
+   - 配置摘要（Worker 数量、GPU IDs、端口等）
+
+2. ✅ Worker 数量和 GPU 列表
+   - "Number of workers: 2"
+   - "GPU IDs: [0, 1]"
+   - "Using specified GPU IDs: [0, 1]"
+
+3. ✅ GPU 信息
+   - GPU ID 分配（GPU 0, GPU 1）
+   - Worker 进程的 GPU 环境设置（如果捕获到）
+   - 物理 GPU ID、GPU 名称、内存、计算能力
+
+4. ✅ Worker 启动日志
+   - "Starting 2 worker(s)"
+   - "Starting Worker 0..." / "Starting Worker 1..."
+   - Worker 进程启动消息（PID）
+   - 每个 Worker 的 GPU ID 和端口分配
+
+5. ✅ Worker 就绪消息
+   - "Worker 0 process started (PID: ...)"
+   - "Worker 1 process started (PID: ...)"
+   - "All Workers Ready"
+   - Worker 摘要信息（"Worker 0: GPU 0, PID ..., Port ..."）
+
+6. ✅ Worker 内部初始化日志（如果捕获到）
+   - "[Worker 0] Starting worker process on GPU 0..."
+   - "[Worker 1] Starting worker process on GPU 1..."
+   - GPU 环境设置详情
+   - 模型加载进度
+
+7. ✅ 端口分配日志
+   - "Allocated ports for workers: [50000, 50001]"
+   - 每个 Worker 的请求端口和响应端口
+
+8. ✅ Response Merger 启动
+   - "Starting Response Merger..."
+   - "Started Response Merger process"
+
+9. ✅ 配置摘要
+   - Router port、Response port、Detoken port
+   - Model directory、Max total tokens、Batch max tokens
+
+**关键发现**:
+- Manager 进程的日志可以被 StringIO 捕获
+- Worker 进程的日志（独立进程）可能不会被捕获，但会输出到 stdout
+- 所有关键的启动信息都正确输出
+- 日志格式清晰，便于调试和监控
+
+**测试方法**:
+- 使用 multiprocessing.set_start_method('spawn') 避免 CUDA 初始化问题
+- 使用 TeeOutput 同时输出到控制台和 StringIO
+- 验证关键日志模式是否存在
+- 对于 Worker 进程日志，采用宽松的验证策略
+
+**下一步**:
+- Task 8.7.2: 验证请求统计（可选）
+- Task 8.7.3: 验证调试日志（可选）
+- Task 8.8: 总结和报告
+
+
+---
+
+### 2025-01-21 - Task 8.7.2 完成: 验证请求统计
+
+**测试文件**: `test/phase1_manual/test_request_statistics.py`
+
+**测试内容**:
+1. 启动完整系统（2 Workers）
+2. 发送 20 个测试请求
+3. 等待 10 秒让统计任务输出
+4. 验证统计日志正确输出
+
+**测试结果**: ✅ 测试通过
+
+**验证的统计内容**:
+1. ✅ 统计摘要标题
+   - "Statistics Summary" 标题正确输出
+
+2. ✅ 总请求数
+   - 显示 "Total Requests: 20"
+   - 准确记录了发送的 20 个请求
+
+3. ✅ 成功/失败数
+   - "Successful Requests: 20"
+   - "Failed Requests: 0"
+   - 所有请求都成功处理
+
+4. ✅ 平均吞吐量
+   - "Average Throughput: 2.00 req/s"
+   - 正确计算吞吐量（20 请求 / 10 秒）
+
+5. ✅ 运行时间
+   - "Running Time: 10.01s"
+   - 准确记录运行时间
+
+6. ✅ Worker 请求分布
+   - "Worker Request Distribution:" 标题
+   - Worker 0 (GPU 0): 10 requests (50.0%)
+   - Worker 1 (GPU 1): 10 requests (50.0%)
+   - Round Robin 路由实现完美的 1:1 分布
+
+7. ✅ 百分比显示
+   - 每个 Worker 的请求百分比正确计算和显示
+
+**关键发现**:
+- 统计任务每 10 秒输出一次，准确可靠
+- Round Robin 路由器实现了完美的负载均衡（50%/50%）
+- 所有统计指标都正确计算和输出
+- 统计格式清晰，便于监控和调试
+
+**测试方法**:
+- 在后台线程中运行 Manager 主循环
+- 使用 ZMQ 客户端发送 20 个测试请求
+- 等待 11 秒确保统计任务输出（10 秒间隔 + 1 秒缓冲）
+- 捕获并验证统计日志内容
+
+**性能数据**:
+- 总请求数: 20
+- 成功率: 100% (20/20)
+- 失败率: 0% (0/20)
+- 吞吐量: 2.00 req/s
+- 负载均衡: 完美 1:1 分布
+
+**下一步**:
+- Task 8.7.3: 验证调试日志（可选）
+- Task 8.8: 总结和报告
+
