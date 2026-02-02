@@ -1024,15 +1024,84 @@ class GPUWorker:
         """
         await self.response_sender.send_json(response)
     
-    async def run(self) -> None:
+    async def _receive_requests_loop(self) -> None:
         """
-        主循环
-        """
-        print(f"[Worker {self.worker_id}] Ready on GPU {self.gpu_id}")
+        请求接收协程 - 持续接收 ZMQ 消息并存入本地队列
         
+        这个协程独立运行，专门负责从 ZMQ socket 接收请求并存入本地队列。
+        这样可以：
+        1. 避免 ZMQ 内部缓存导致的消息丢失问题
+        2. 实现更可控的队列管理（为未来的多级队列、优先级调度做准备）
+        3. 提供更好的可观测性（可以随时查看队列状态）
+        
+        Note:
+            - 使用阻塞式 recv_json()，不会丢失消息
+            - 接收到的请求立即转换为 Req 对象并存入 req_queue
+            - 这个协程会一直运行，直到 Worker 进程终止
+        """
+        import sys
+        
+        print(f"[Worker {self.worker_id}] Request receiver loop started")
+        sys.stdout.flush()
+        
+        while True:
+            try:
+                # 阻塞式接收请求（不会丢失消息）
+                # ZMQ RCVTIMEO 设置为 30s，超时后会抛出 zmq.Again
+                request = await self.request_receiver.recv_json()
+                
+                # 更新接收计数
+                self._received_count += 1
+                request_id = request.get('request_id', 'unknown')
+                
+                print(f"[Worker {self.worker_id}] Received #{self._received_count}: {request_id[:8]}...")
+                sys.stdout.flush()
+                
+                # 转换为 Req 对象并存入队列
+                req_obj = self._convert_to_req_object(request)
+                self.req_queue.append(req_obj)
+                
+                # 未来扩展点：这里可以实现优先级判断，将请求存入不同的队列
+                # 例如：
+                # priority = self._calculate_priority(request)
+                # self.multi_level_queue.enqueue(req_obj, priority)
+                
+            except zmq.Again:
+                # ZMQ 超时（RCVTIMEO），继续等待
+                # 这是正常的，不需要打印日志
+                continue
+            except asyncio.CancelledError:
+                # 协程被取消，正常退出
+                print(f"[Worker {self.worker_id}] Request receiver loop cancelled")
+                break
+            except Exception as e:
+                # 其他错误，记录日志但继续运行
+                print(f"[Worker {self.worker_id}] Recv error: {e}")
+                import traceback
+                traceback.print_exc()
+                # 短暂等待后继续
+                await asyncio.sleep(0.1)
+    
+    async def _process_loop(self) -> None:
+        """
+        请求处理协程 - 从本地队列取出请求并处理
+        
+        这个协程独立运行，负责：
+        1. 从本地队列生成批次
+        2. 执行推理
+        3. 发送响应
+        
+        Note:
+            - 与接收协程分离，实现接收和处理的并行
+            - 当队列为空时，短暂等待后重试
+        """
+        import sys
         import time
+        
+        print(f"[Worker {self.worker_id}] Process loop started")
+        sys.stdout.flush()
+        
         last_heartbeat_time = time.time()
-        received_count = 0  # 请求计数器
         
         while True:
             try:
@@ -1041,26 +1110,9 @@ class GPUWorker:
                 if now - last_heartbeat_time >= 10:
                     queue_size = len(self.req_queue.waiting_req_list) if self.req_queue else 0
                     batch_size = len(self.current_batch.reqs) if self.current_batch else 0
-                    print(f"[Worker {self.worker_id}] Heartbeat: received={received_count}, queue={queue_size}, batch={batch_size}")
+                    print(f"[Worker {self.worker_id}] Heartbeat: received={self._received_count}, queue={queue_size}, batch={batch_size}")
+                    sys.stdout.flush()
                     last_heartbeat_time = now
-                
-                # 尝试接收新请求并添加到队列（非阻塞）
-                # 每次循环尝试接收多个请求，避免请求堆积
-                for _ in range(10):  # 每次循环最多接收 10 个请求
-                    try:
-                        request = await asyncio.wait_for(
-                            self._receive_request(), 
-                            timeout=0.001  # 1ms 超时
-                        )
-                        received_count += 1
-                        print(f"[Worker {self.worker_id}] Received #{received_count}: {request.get('request_id', 'unknown')[:8]}...")
-                        req_obj = self._convert_to_req_object(request)
-                        self.req_queue.append(req_obj)
-                    except asyncio.TimeoutError:
-                        break  # 没有更多请求，退出循环
-                    except Exception as recv_error:
-                        print(f"[Worker {self.worker_id}] Recv error: {recv_error}")
-                        break
                 
                 # 处理请求批次
                 responses = await self._process_requests()
@@ -1072,7 +1124,61 @@ class GPUWorker:
                     except Exception as send_error:
                         print(f"[Worker {self.worker_id}] Send error: {send_error}")
                 
+                # 如果没有待处理的请求，短暂等待
+                if not self.req_queue.waiting_req_list and self.current_batch is None:
+                    await asyncio.sleep(0.01)  # 10ms
+                    
+            except asyncio.CancelledError:
+                # 协程被取消，正常退出
+                print(f"[Worker {self.worker_id}] Process loop cancelled")
+                break
             except Exception as e:
-                print(f"[Worker {self.worker_id}] Loop error: {e}")
+                print(f"[Worker {self.worker_id}] Process error: {e}")
                 import traceback
                 traceback.print_exc()
+                # 短暂等待后继续
+                await asyncio.sleep(0.1)
+    
+    async def run(self) -> None:
+        """
+        主循环 - 启动接收和处理两个独立的协程
+        
+        设计说明：
+        - 接收协程 (_receive_requests_loop): 持续从 ZMQ 接收请求，存入本地队列
+        - 处理协程 (_process_loop): 从本地队列取出请求，执行推理，发送响应
+        
+        这种设计的优点：
+        1. 接收和处理并行，不会因为处理慢而丢失消息
+        2. 本地队列可控，为未来的多级队列、优先级调度做准备
+        3. 更好的可观测性和调试能力
+        """
+        import sys
+        print(f"[Worker {self.worker_id}] Ready on GPU {self.gpu_id}")
+        sys.stdout.flush()
+        
+        # 初始化接收计数器
+        self._received_count = 0
+        
+        # 启动接收协程和处理协程
+        receive_task = asyncio.create_task(self._receive_requests_loop())
+        process_task = asyncio.create_task(self._process_loop())
+        
+        print(f"[Worker {self.worker_id}] Started receive and process loops")
+        sys.stdout.flush()
+        
+        try:
+            # 等待两个协程（正常情况下它们会一直运行）
+            await asyncio.gather(receive_task, process_task)
+        except asyncio.CancelledError:
+            # 主循环被取消，取消子协程
+            receive_task.cancel()
+            process_task.cancel()
+            try:
+                await asyncio.gather(receive_task, process_task, return_exceptions=True)
+            except:
+                pass
+            print(f"[Worker {self.worker_id}] Main loop cancelled")
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Main loop error: {e}")
+            import traceback
+            traceback.print_exc()

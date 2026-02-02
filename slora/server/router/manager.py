@@ -800,22 +800,6 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         # 分配端口（必须在 _setup_zmq 之前）
         dp_manager._allocate_ports()
         
-        # 设置 ZMQ 通信（需要 worker_ports 已经分配）
-        dp_manager._setup_zmq()
-        
-        # 启动所有 Worker 和 Response Merger
-        asyncio.run(dp_manager.start_workers())
-        
-        # Requirement 6.5 & 8.1: 输出启动完成摘要
-        print("=" * 80)
-        print("[DataParallelRouter] Data Parallel Mode Started Successfully")
-        print("=" * 80)
-        print(f"[DataParallelRouter] Number of Workers: {dp_manager.num_workers}")
-        print(f"[DataParallelRouter] GPU IDs: {dp_manager.gpu_ids}")
-        print(f"[DataParallelRouter] Worker Ports: {dp_manager.worker_ports}")
-        print(f"[DataParallelRouter] All workers are ready and accepting requests")
-        print("=" * 80)
-        
     except Exception as e:
         import traceback
         import sys
@@ -823,11 +807,42 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         pipe_writer.send(err_str)
         raise
     
-    # 通知主进程初始化成功
-    pipe_writer.send('init ok')
-    
-    # 运行主循环
+    # 创建一个事件循环，所有异步操作都在这个循环中运行
+    # 这样可以确保 ZMQ 异步 context 和 sockets 在同一个事件循环中使用
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(dp_manager.run())
+    
+    async def run_all():
+        """在同一个事件循环中运行所有异步操作"""
+        try:
+            # 设置 ZMQ 通信（需要 worker_ports 已经分配）
+            dp_manager._setup_zmq()
+            
+            # 启动所有 Worker 和 Response Merger
+            await dp_manager.start_workers()
+            
+            # Requirement 6.5 & 8.1: 输出启动完成摘要
+            print("=" * 80)
+            print("[DataParallelRouter] Data Parallel Mode Started Successfully")
+            print("=" * 80)
+            print(f"[DataParallelRouter] Number of Workers: {dp_manager.num_workers}")
+            print(f"[DataParallelRouter] GPU IDs: {dp_manager.gpu_ids}")
+            print(f"[DataParallelRouter] Worker Ports: {dp_manager.worker_ports}")
+            print(f"[DataParallelRouter] All workers are ready and accepting requests")
+            print("=" * 80)
+            
+            # 发送 'init ok' 信号，通知主进程可以启动 HTTP Server
+            pipe_writer.send('init ok')
+            
+            # 运行主循环
+            await dp_manager.run()
+            
+        except Exception as e:
+            import traceback
+            import sys
+            err_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+            pipe_writer.send(err_str)
+            raise
+    
+    loop.run_until_complete(run_all())
     return

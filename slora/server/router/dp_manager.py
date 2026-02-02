@@ -122,6 +122,10 @@ class DataParallelRouterManager:
             'start_time': None,  # 将在 run() 中设置
         }
         
+        # Worker 就绪状态
+        self.workers_ready = False
+        self.ready_port = None  # 用于接收 Worker 就绪信号的端口
+        
         print(f"[DataParallelRouterManager] Configuration:")
         print(f"[DataParallelRouterManager]   Number of workers: {self.num_workers}")
         print(f"[DataParallelRouterManager]   GPU IDs: {self.gpu_ids}")
@@ -278,15 +282,37 @@ class DataParallelRouterManager:
             RuntimeError: 如果任何 Worker 启动失败
         
         Note:
-            这是一个异步方法，会等待一段时间让 Worker 初始化。
-            实际的就绪检测将在后续 Phase 中实现（通过心跳机制）。
+            这是一个异步方法，会等待所有 Worker 发送就绪信号。
         """
         import sys
+        import socket
         
         print(f"[DataParallelRouterManager] ========== Starting Workers ==========")
         
-        # 注意：端口已经在外部分配（_allocate_ports 在 _setup_zmq 之前调用）
-        # 这里不再调用 _allocate_ports()
+        # 分配一个端口用于接收 Worker 就绪信号
+        def find_free_port(start_port, exclude_ports):
+            port = start_port
+            while port < start_port + 100:
+                if port in exclude_ports:
+                    port += 1
+                    continue
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.bind(('127.0.0.1', port))
+                        return port
+                except OSError:
+                    port += 1
+            raise RuntimeError(f"Failed to find free port starting from {start_port}")
+        
+        exclude_ports = set(self.worker_ports) | {self.router_port, self.response_port, self.detoken_port}
+        self.ready_port = find_free_port(51000, exclude_ports)
+        print(f"[DataParallelRouterManager] Ready signal port: {self.ready_port}")
+        
+        # 创建 ZMQ socket 接收就绪信号
+        ready_context = zmq.Context()
+        ready_receiver = ready_context.socket(zmq.PULL)
+        ready_receiver.setsockopt(zmq.RCVTIMEO, 5000)  # 5秒超时
+        ready_receiver.bind(f"tcp://127.0.0.1:{self.ready_port}")
         
         # 启动 Response Merger 进程
         print(f"[DataParallelRouterManager] Starting Response Merger...")
@@ -305,24 +331,28 @@ class DataParallelRouterManager:
             
             print(f"[DataParallelRouterManager] Worker {i} process started (PID: {worker.pid})")
         
-        # 等待所有 Worker 就绪，同时检测启动失败
-        # Phase 1 简化实现：固定等待时间 + 进程状态检查
-        # Phase 2 将实现心跳机制进行实际的就绪检测
-        print(f"[DataParallelRouterManager] Waiting for workers to initialize...")
-        print(f"[DataParallelRouterManager] This may take a few minutes (loading models)...")
+        # 等待所有 Worker 发送就绪信号
+        print(f"[DataParallelRouterManager] Waiting for all workers to be ready...")
+        print(f"[DataParallelRouterManager] (This may take a few minutes while models are loading)")
         
-        # 分多次检查，每次等待 1 秒，总共等待 5 秒
-        for check_round in range(5):
-            await asyncio.sleep(1)
+        ready_workers = set()
+        max_wait_time = 600  # 最多等待 10 分钟
+        start_wait = asyncio.get_event_loop().time()
+        
+        while len(ready_workers) < self.num_workers:
+            # 检查是否超时
+            elapsed = asyncio.get_event_loop().time() - start_wait
+            if elapsed > max_wait_time:
+                print(f"[DataParallelRouterManager] ERROR: Timeout waiting for workers to be ready")
+                break
             
-            # 检查所有 Worker 进程状态
+            # 检查 Worker 进程状态
             failed_workers = []
             for i, worker in enumerate(self.workers):
-                if not worker.is_alive():
+                if not worker.is_alive() and i not in ready_workers:
                     exitcode = worker.exitcode
                     failed_workers.append((i, exitcode))
             
-            # 如果有 Worker 启动失败，终止所有进程并退出
             if failed_workers:
                 print(f"[DataParallelRouterManager] ========== Worker Startup Failed ==========")
                 for worker_id, exitcode in failed_workers:
@@ -330,39 +360,45 @@ class DataParallelRouterManager:
                           f"failed with exit code {exitcode}")
                 
                 # 终止所有 Worker 进程
-                print(f"[DataParallelRouterManager] Terminating all workers...")
                 for i, worker in enumerate(self.workers):
                     if worker.is_alive():
-                        print(f"[DataParallelRouterManager] Terminating worker {i}...")
                         worker.terminate()
                         worker.join(timeout=5)
-                        if worker.is_alive():
-                            print(f"[DataParallelRouterManager] Force killing worker {i}...")
-                            worker.kill()
                 
-                # 终止 Response Merger 进程
-                if self.merger_process and self.merger_process.is_alive():
-                    print(f"[DataParallelRouterManager] Terminating Response Merger...")
-                    self.merger_process.terminate()
-                    self.merger_process.join(timeout=5)
-                    if self.merger_process.is_alive():
-                        print(f"[DataParallelRouterManager] Force killing Response Merger...")
-                        self.merger_process.kill()
-                
-                # 抛出异常并退出
-                error_msg = f"Worker startup failed. Failed workers: {failed_workers}"
-                print(f"[DataParallelRouterManager] {error_msg}")
-                print(f"[DataParallelRouterManager] ==========================================")
-                raise RuntimeError(error_msg)
+                ready_receiver.close()
+                ready_context.term()
+                raise RuntimeError(f"Worker startup failed: {failed_workers}")
             
-            print(f"[DataParallelRouterManager] Health check {check_round + 1}/5: All workers alive")
+            # 尝试接收就绪信号
+            try:
+                msg = ready_receiver.recv_json()
+                worker_id = msg.get('worker_id')
+                if worker_id is not None and worker_id not in ready_workers:
+                    ready_workers.add(worker_id)
+                    print(f"[DataParallelRouterManager] Worker {worker_id} is READY ({len(ready_workers)}/{self.num_workers})")
+            except zmq.Again:
+                # 超时，继续等待
+                await asyncio.sleep(0.1)
+                continue
         
-        print(f"[DataParallelRouterManager] ========== All Workers Ready ==========")
+        ready_receiver.close()
+        ready_context.term()
+        
+        if len(ready_workers) < self.num_workers:
+            raise RuntimeError(f"Only {len(ready_workers)}/{self.num_workers} workers became ready")
+        
+        self.workers_ready = True
+        
+        # 输出醒目的就绪信息
+        print("")
+        print("=" * 80)
+        print("[DataParallelRouterManager] ★★★ ALL WORKERS READY ★★★")
+        print("=" * 80)
         print(f"[DataParallelRouterManager] Successfully started {self.num_workers} worker(s)")
         for i in range(self.num_workers):
-            print(f"[DataParallelRouterManager] Worker {i}: GPU {self.gpu_ids[i]}, "
-                  f"PID {self.workers[i].pid}, Port {self.worker_ports[i]}")
-        print(f"[DataParallelRouterManager] =======================================")
+            print(f"[DataParallelRouterManager]   Worker {i}: GPU {self.gpu_ids[i]}, PID {self.workers[i].pid}")
+        print("=" * 80)
+        print("")
     
     def _start_response_merger(self) -> None:
         """
@@ -494,7 +530,7 @@ class DataParallelRouterManager:
         proc = mp.Process(
             target=run_gpu_worker_process,
             args=(worker_id, gpu_id, self.args, 
-                  self.worker_ports[worker_id], self.response_port),
+                  self.worker_ports[worker_id], self.response_port, self.ready_port),
             name=f"GPUWorker-{worker_id}"
         )
         proc.start()
@@ -603,10 +639,15 @@ class DataParallelRouterManager:
         Note:
             这是一个后台任务，在主循环启动时创建。
             当前实现只记录日志，不进行自动重启（Phase 2 功能）。
+            只有在所有 Worker 就绪后才开始检查。
         """
         import time
         
-        print(f"[DataParallelRouterManager] Starting worker health check task (interval: 10s)")
+        # 等待所有 Worker 就绪
+        while not self.workers_ready:
+            await asyncio.sleep(1)
+        
+        print(f"[DataParallelRouterManager] Worker health check started (interval: 10s)")
         
         while True:
             try:
@@ -664,10 +705,15 @@ class DataParallelRouterManager:
         
         Note:
             这是一个后台任务，在主循环启动时创建。
+            只有在所有 Worker 就绪后才开始输出统计。
         """
         import time
         
-        print(f"[DataParallelRouterManager] Starting statistics reporting task (interval: 10s)")
+        # 等待所有 Worker 就绪
+        while not self.workers_ready:
+            await asyncio.sleep(1)
+        
+        print(f"[DataParallelRouterManager] Statistics reporting started (interval: 10s)")
         
         while True:
             try:
@@ -802,7 +848,7 @@ class DataParallelRouterManager:
 
 
 def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace,
-                           request_port: int, response_port: int) -> None:
+                           request_port: int, response_port: int, ready_port: int) -> None:
     """
     Worker 进程的入口函数
     
@@ -815,6 +861,7 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
         args: 命令行参数
         request_port: 接收请求的端口
         response_port: 发送响应的端口
+        ready_port: 发送就绪信号的端口
     
     Requirements:
         - 7.1: Worker 启动失败时记录详细错误日志
@@ -823,32 +870,66 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
     Note:
         这个函数必须在模块级别定义，因为 multiprocessing 需要能够 pickle 它。
         任何异常都会导致进程以非零退出码退出，通知 Router Manager 启动失败。
+        
+        重要：Router Manager 会等待所有 Worker 发送就绪信号后才开始路由请求，
+        因此不需要在模型加载期间缓存请求。
     """
     import sys
     import traceback
     from slora.server.router.gpu_worker import GPUWorker
     
+    # 强制 stdout 无缓冲，确保日志及时输出
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
+    
+    def send_ready_signal(ready_port: int, worker_id: int):
+        """发送就绪信号到 Router Manager"""
+        import zmq
+        context = zmq.Context()
+        sender = context.socket(zmq.PUSH)
+        sender.setsockopt(zmq.LINGER, 1000)
+        sender.connect(f"tcp://127.0.0.1:{ready_port}")
+        sender.send_json({'worker_id': worker_id, 'status': 'ready'})
+        sender.close()
+        context.term()
+    
     try:
         print(f"[Worker {worker_id}] Starting worker process on GPU {gpu_id}...")
+        sys.stdout.flush()
         
         # 创建 Worker 实例
         print(f"[Worker {worker_id}] Creating GPUWorker instance...")
+        sys.stdout.flush()
         worker = GPUWorker(worker_id, gpu_id, args)
-        
-        # 设置 ZMQ 通信
-        print(f"[Worker {worker_id}] Setting up ZMQ communication...")
-        worker._setup_zmq(request_port, response_port)
         
         # 初始化请求队列
         print(f"[Worker {worker_id}] Setting up request queue...")
+        sys.stdout.flush()
         worker._setup_request_queue()
         
         # 初始化模型 RPC（Task 2.9.1）
         # 使用 RPC 方式加载模型，而不是直接加载
         print(f"[Worker {worker_id}] Initializing model RPC...")
+        sys.stdout.flush()
         asyncio.run(worker._init_model_rpc())
         
+        print(f"[Worker {worker_id}] Model loading complete")
+        sys.stdout.flush()
+        
+        # 设置 ZMQ 通信
+        print(f"[Worker {worker_id}] Setting up ZMQ communication...")
+        sys.stdout.flush()
+        worker._setup_zmq(request_port, response_port)
+        
+        # 发送就绪信号
+        # Router Manager 收到所有 Worker 的就绪信号后才开始路由请求
+        print(f"[Worker {worker_id}] Sending ready signal...")
+        sys.stdout.flush()
+        send_ready_signal(ready_port, worker_id)
+        
         print(f"[Worker {worker_id}] Worker initialization complete, starting main loop...")
+        sys.stdout.flush()
         
         # 运行主循环
         asyncio.run(worker.run())
