@@ -109,7 +109,8 @@ class Batch:
             if req.stop_sequences_matched():
                 req.has_generate_finished = True
                 has_new_finish = True
-            if req.output_ids[-1] == eos_id and req.sample_params.ignore_eos == False:
+            # 检查是否有输出 token，避免空列表访问
+            if len(req.output_ids) > 0 and req.output_ids[-1] == eos_id and req.sample_params.ignore_eos == False:
                 req.has_generate_finished = True
                 has_new_finish = True
             if len(req.output_ids) >= req.max_output_len or req.aborted:

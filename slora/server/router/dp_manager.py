@@ -25,6 +25,8 @@ import multiprocessing as mp
 from typing import List, Optional
 
 from slora.server.router.round_robin_router import RoundRobinRouter
+from slora.server.io_struct import AbortReq, Req, ReqDetokenizationState
+from slora.server.sampling_params import SamplingParams
 
 
 class DataParallelRouterManager:
@@ -109,6 +111,7 @@ class DataParallelRouterManager:
         self.context = None
         self.request_receiver = None
         self.request_senders = []
+        self.send_to_detokenization = None  # 发送到 detokenization 的 socket
         
         # 请求统计（Requirement 8.2）
         self.stats = {
@@ -211,17 +214,8 @@ class DataParallelRouterManager:
                 # 解析逗号分隔的 GPU ID
                 gpu_ids = [int(x.strip()) for x in gpu_ids_str.split(',')]
                 
-                # 验证 GPU ID 有效性
-                if not torch.cuda.is_available():
-                    raise ValueError("CUDA is not available")
-                
-                num_available_gpus = torch.cuda.device_count()
-                for gpu_id in gpu_ids:
-                    if gpu_id < 0 or gpu_id >= num_available_gpus:
-                        raise ValueError(
-                            f"Invalid GPU ID {gpu_id}. "
-                            f"Available GPUs: 0-{num_available_gpus-1}"
-                        )
+                # 注意：不在这里验证 CUDA 可用性，因为子进程可能还没有初始化 CUDA
+                # Worker 进程会在启动时设置 CUDA_VISIBLE_DEVICES 并验证
                 
                 print(f"[DataParallelRouterManager] Using specified GPU IDs: {gpu_ids}")
                 return gpu_ids
@@ -291,8 +285,8 @@ class DataParallelRouterManager:
         
         print(f"[DataParallelRouterManager] ========== Starting Workers ==========")
         
-        # 分配端口
-        self._allocate_ports()
+        # 注意：端口已经在外部分配（_allocate_ports 在 _setup_zmq 之前调用）
+        # 这里不再调用 _allocate_ports()
         
         # 启动 Response Merger 进程
         print(f"[DataParallelRouterManager] Starting Response Merger...")
@@ -404,6 +398,7 @@ class DataParallelRouterManager:
         创建 ZMQ context 和 sockets：
         1. PULL socket: 从 API Server 接收请求
         2. PUSH sockets: 向每个 Worker 发送请求
+        3. PUSH socket: 向 Detokenization 发送初始请求状态
         
         配置超时参数以防止通信阻塞。
         
@@ -414,10 +409,12 @@ class DataParallelRouterManager:
         Note:
             Router Manager 使用 PULL socket 接收请求（多对一）
             Router Manager 使用多个 PUSH socket 向不同 Worker 发送请求（一对多）
+            Router Manager 使用 PUSH socket 向 Detokenization 发送初始状态
             
             通信模式：
             - API Server → Router Manager: PUSH/PULL
             - Router Manager → Workers: PUSH/PULL (每个 Worker 一个 PUSH socket)
+            - Router Manager → Detokenization: PUSH/PULL
             
             超时配置：
             - RCVTIMEO: 30000ms (30秒) - 接收超时
@@ -434,11 +431,22 @@ class DataParallelRouterManager:
         self.request_receiver.setsockopt(zmq.RCVTIMEO, 30000)
         # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
         self.request_receiver.setsockopt(zmq.LINGER, 0)
+        # 设置 RCVHWM 为 0 表示无限制，防止消息丢失
+        self.request_receiver.setsockopt(zmq.RCVHWM, 0)
         
         self.request_receiver.bind(f"tcp://127.0.0.1:{self.router_port}")
         
         print(f"[DataParallelRouterManager] ZMQ PULL socket bound to port {self.router_port} "
               f"(receiving from API Server, timeout=30s)")
+        
+        # 创建 PUSH socket 发送到 Detokenization
+        self.send_to_detokenization = self.context.socket(zmq.PUSH)
+        self.send_to_detokenization.setsockopt(zmq.SNDTIMEO, 30000)
+        self.send_to_detokenization.setsockopt(zmq.LINGER, 0)
+        self.send_to_detokenization.connect(f"tcp://127.0.0.1:{self.detoken_port}")
+        
+        print(f"[DataParallelRouterManager] ZMQ PUSH socket connected to detokenization port {self.detoken_port} "
+              f"(timeout=30s)")
         
         # 为每个 Worker 创建 PUSH socket
         self.request_senders = []
@@ -449,11 +457,14 @@ class DataParallelRouterManager:
             sender.setsockopt(zmq.SNDTIMEO, 30000)
             # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
             sender.setsockopt(zmq.LINGER, 0)
+            # 设置 SNDHWM (Send High Water Mark) 为 0 表示无限制
+            # 这样可以防止消息在队列满时被丢弃
+            sender.setsockopt(zmq.SNDHWM, 0)
             
             sender.bind(f"tcp://127.0.0.1:{port}")
             self.request_senders.append(sender)
             print(f"[DataParallelRouterManager] ZMQ PUSH socket bound to port {port} "
-                  f"(sending to Worker {i}, timeout=30s)")
+                  f"(sending to Worker {i}, timeout=30s, HWM=unlimited)")
         
         print(f"[DataParallelRouterManager] ZMQ communication setup complete: "
               f"{len(self.request_senders)} worker sockets created with timeout=30s")
@@ -520,16 +531,15 @@ class DataParallelRouterManager:
         worker_id = None
         max_retries = 3
         retry_count = 0
+        request_id_short = request.get('request_id', 'unknown')[:8]
         
         while retry_count < max_retries:
             try:
                 # 使用 Round Robin Router 选择 Worker
                 worker_id = self.router.select_worker()
                 
-                # DEBUG 级别记录路由决策（Requirement 8.4）
-                if hasattr(self.args, 'log_level') and self.args.log_level == 'DEBUG':
-                    print(f"[DataParallelRouterManager] DEBUG: Routing request {request.get('request_id')} "
-                          f"to Worker {worker_id} (attempt {retry_count + 1}/{max_retries})")
+                # 打印路由日志（精简版）
+                print(f"[Router] {request_id_short}... -> Worker {worker_id}")
                 
                 # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
                 await self.request_senders[worker_id].send_json(request)
@@ -731,11 +741,57 @@ class DataParallelRouterManager:
         while True:
             try:
                 # 从 API Server 接收请求
-                request = await self.request_receiver.recv_json()
+                # HTTP Server 使用 send_pyobj 发送 Python 对象（pickle 序列化）
+                recv_req = await self.request_receiver.recv_pyobj()
                 
-                # 路由请求到 Worker
-                await self.route_request(request)
+                # 处理不同类型的请求
+                if isinstance(recv_req, tuple) and len(recv_req) == 4:
+                    # 正常请求：(adapter_dir, prompt_ids, sampling_params, request_id)
+                    adapter_dir, prompt_ids, sampling_params, request_id = recv_req
+                    
+                    # 创建 Req 对象（与张量并行模式一致）
+                    req = Req(adapter_dir, request_id, prompt_ids, sampling_params)
+                    
+                    # 立即发送初始状态到 detokenization（与张量并行模式一致）
+                    # 这样 detokenization 进程就知道有新请求了
+                    self.send_to_detokenization.send_pyobj(req.to_req_detokenization_state())
+                    
+                    # 转换 sampling_params 为 dict（如果它是对象）
+                    if hasattr(sampling_params, '__dict__'):
+                        sampling_params_dict = sampling_params.__dict__
+                    else:
+                        sampling_params_dict = sampling_params
+                    
+                    # 转换为 dict 格式供 route_request 使用
+                    request = {
+                        'request_id': request_id,
+                        'adapter_dir': adapter_dir,
+                        'prompt_ids': prompt_ids,
+                        'sampling_params': sampling_params_dict
+                    }
+                    
+                    # 路由请求到 Worker
+                    await self.route_request(request)
+                    
+                elif isinstance(recv_req, AbortReq):
+                    # Abort 请求
+                    abort_req = recv_req
+                    request_id = abort_req.req_id
+                    
+                    # 发送 abort 到 detokenization（与张量并行模式一致）
+                    self.send_to_detokenization.send_pyobj(abort_req)
+                    
+                    # TODO: Phase 1 暂不支持向 Worker 发送 abort
+                    # Phase 2 需要实现向 Worker 转发 abort 请求
+                    print(f"[DataParallelRouterManager] Received AbortReq for request_id={request_id} "
+                          f"(forwarded to detokenization, worker abort not yet implemented)")
+                else:
+                    print(f"[DataParallelRouterManager] WARNING: Unknown request type: {type(recv_req)}")
                 
+            except zmq.error.Again:
+                # ZMQ 超时是正常的，不需要打印错误
+                # 继续处理下一个请求
+                continue
             except Exception as e:
                 # 记录错误但继续运行
                 print(f"[DataParallelRouterManager] ERROR in main loop: {str(e)}")

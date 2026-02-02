@@ -2,8 +2,8 @@ from collections import namedtuple
 import itertools
 
 BASE_MODEL = {
-        "S1": "huggyllama/llama-7b",
-        "S2": "huggyllama/llama-7b",
+        "S1": "/home/hzheng/models/llama-7b",  # 修改为本地路径
+        "S2": "/home/hzheng/models/llama-7b",  # 修改为本地路径
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
         "Real": "/home/hzheng/models/llama-7b",
@@ -261,11 +261,11 @@ debug_suite = {
     "default": BenchmarkConfig(
         num_adapters = [100],
         alpha = [1],
-        req_rate = [2],
+        req_rate = [1],
         cv = [1],
         duration = [60],
-        input_range = [[8,258]],
-        output_range = [[8,512]],
+        input_range = [[8,128]],
+        output_range = [[8,128]],
     ),
 
     "debug": BenchmarkConfig(

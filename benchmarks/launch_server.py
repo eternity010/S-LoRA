@@ -25,6 +25,15 @@ if __name__ == "__main__":
     parser.add_argument("--enable-abort", action="store_true")
     parser.add_argument("--vllm-mem-ratio", type=float, default=0.95)
     
+    # 数据并行相关参数
+    parser.add_argument("--parallel-mode", type=str, default="tensor", 
+                        choices=["tensor", "data"],
+                        help="并行模式: tensor (张量并行) 或 data (数据并行)")
+    parser.add_argument("--num-workers", type=int, default=None,
+                        help="数据并行模式下的 Worker 数量")
+    parser.add_argument("--gpu-ids", type=str, default=None,
+                        help="数据并行模式下使用的 GPU ID，逗号分隔，如 '0,1,2'")
+    
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
                         help="请求完成时触发淘汰的内存使用率阈值 (0-1)")
@@ -84,6 +93,14 @@ if __name__ == "__main__":
         # cmd += " --no-kernel"
         if args.bmm:
             cmd += " --bmm"
+        
+        # 添加数据并行参数
+        if args.parallel_mode:
+            cmd += f" --parallel-mode {args.parallel_mode}"
+        if args.num_workers:
+            cmd += f" --num-workers {args.num_workers}"
+        if args.gpu_ids:
+            cmd += f" --gpu-ids {args.gpu_ids}"
         
         # 添加阈值淘汰参数
         cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"

@@ -706,7 +706,8 @@ def _start_tensor_parallel_router(args, router_port, detokenization_port,
     
     except Exception as e:
         import traceback
-        err_str = '\n'.join(traceback.format_exception(e))
+        import sys
+        err_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
         pipe_writer.send(err_str)
         router.clean_up()
         raise
@@ -740,8 +741,30 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
     
     try:
         # 分配 response_port（用于 Worker 发送响应到 Response Merger）
-        # 使用 alloc_can_use_network_port 分配一个可用端口
-        response_port = alloc_can_use_network_port(num=1, used_nccl_port=None)[0]
+        # 简单方案：使用 router_port + 1（如果被占用则继续尝试）
+        import socket
+        
+        def find_free_port(start_port, exclude_ports):
+            """查找可用端口"""
+            port = start_port
+            while port < start_port + 100:  # 最多尝试 100 个端口
+                if port in exclude_ports:
+                    port += 1
+                    continue
+                try:
+                    # 尝试绑定端口
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.bind(('127.0.0.1', port))
+                        return port
+                except OSError:
+                    port += 1
+            raise RuntimeError(f"Failed to find free port starting from {start_port}")
+        
+        # 查找可用的 response_port
+        response_port = find_free_port(
+            router_port + 1, 
+            exclude_ports={router_port, detokenization_port}
+        )
         
         print(f"[DataParallelRouter] Allocated response_port: {response_port}")
         print(f"[DataParallelRouter] Router port: {router_port}")
@@ -774,7 +797,10 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
             detoken_port=detokenization_port
         )
         
-        # 设置 ZMQ 通信
+        # 分配端口（必须在 _setup_zmq 之前）
+        dp_manager._allocate_ports()
+        
+        # 设置 ZMQ 通信（需要 worker_ports 已经分配）
         dp_manager._setup_zmq()
         
         # 启动所有 Worker 和 Response Merger
@@ -792,7 +818,8 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         
     except Exception as e:
         import traceback
-        err_str = '\n'.join(traceback.format_exception(e))
+        import sys
+        err_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
         pipe_writer.send(err_str)
         raise
     

@@ -34,19 +34,57 @@ benchmarks/
 - `--no-mem-pool`: 禁用内存池（共享内存）
 - `--bmm`: 使用 BMM 模式
 - `--enable-abort`: 启用请求中止功能
+- `--parallel-mode`: 并行模式（`tensor`/`data`）⭐ 新增
+- `--num-workers`: 数据并行模式下的 Worker 数量 ⭐ 新增
+- `--gpu-ids`: 数据并行模式下使用的 GPU ID（逗号分隔）⭐ 新增
 
 **使用示例**：
-# 使用 GPU 0 和 1
-export CUDA_VISIBLE_DEVICES=2
 
+#### 张量并行模式（默认）
 ```bash
-# 启动 S-LoRA 服务器
+# 启动 S-LoRA 服务器（张量并行）
 python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
 python run_exp.py --debug --model-setting Real
 
 # 使用虚拟权重测试
 python launch_server.py --num-adapter 100 --num-token 10000 --dummy
 python run_exp.py --debug
+```
+
+#### 数据并行模式 ⭐ 新增
+```bash
+# 使用 3 个 GPU 启动数据并行模式
+python launch_server.py \
+    --model-setting Real \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --dummy \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2
+
+# 快速测试（debug 模式）
+python launch_server.py \
+    --device debug \
+    --dummy \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2
+
+# 使用所有可用 GPU（自动检测）
+python launch_server.py \
+    --model-setting Real \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --parallel-mode data \
+    --num-workers 4
+```
+
+#### 指定 GPU 使用（张量并行）
+```bash
+# 使用 GPU 0 和 1
+export CUDA_VISIBLE_DEVICES=0,1
+python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
 ```
 
 ### 2. `run_exp.py` - 基准测试主脚本
@@ -134,6 +172,7 @@ python run_exp_peft.py --backend peft --suite a10g --mode synthetic
 
 ### 1. 启动服务器
 
+#### 张量并行模式（默认）
 ```bash
 cd benchmarks
 
@@ -142,6 +181,30 @@ python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
 
 # 虚拟权重（无需模型文件）
 python launch_server.py --num-adapter 100 --num-token 10000 --dummy
+```
+
+#### 数据并行模式 ⭐ 新增
+```bash
+cd benchmarks
+
+# 使用 3 个 GPU（推荐用于 3090）
+python launch_server.py \
+    --model-setting Real \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2 \
+    --dummy
+
+# 使用 4 个 GPU（推荐用于 A100）
+python launch_server.py \
+    --model-setting Real \
+    --num-adapter 200 \
+    --num-token 10000 \
+    --parallel-mode data \
+    --num-workers 4 \
+    --gpu-ids 0,1,2,3
 ```
 
 ### 2. 运行测试
@@ -177,6 +240,47 @@ python run_exp.py --debug --model-setting Real
 
 ## 🔍 关键概念
 
+### 并行模式对比 ⭐ 新增
+
+#### 张量并行（Tensor Parallelism）
+- **适用场景**：单个大模型无法放入单张 GPU
+- **架构**：模型切分到多个 GPU，协同处理每个请求
+- **优点**：支持超大模型，单请求延迟低
+- **缺点**：吞吐量受限于 GPU 间通信
+
+**启动示例**：
+```bash
+# 使用 4 个 GPU 进行张量并行
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
+```
+
+#### 数据并行（Data Parallelism）⭐ 新增
+- **适用场景**：模型可放入单张 GPU，需要高吞吐量
+- **架构**：每个 GPU 加载完整模型，独立处理请求
+- **优点**：高吞吐量（2.5x ~ 3x），GPU 独立工作，易扩展
+- **缺点**：显存占用高（每 GPU 一份模型）
+
+**启动示例**：
+```bash
+# 使用 3 个 GPU 进行数据并行
+python launch_server.py \
+    --model-setting Real \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2 \
+    --dummy
+```
+
+**性能对比**：
+| 特性 | 张量并行 | 数据并行 |
+|------|---------|---------|
+| 吞吐量 | 1x | 2.5x ~ 3x |
+| 延迟 | 低 | 中等 |
+| GPU 利用率 | 中等 | 高 |
+| 显存占用 | 低（模型切分） | 高（每 GPU 一份） |
+| 扩展性 | 受限于模型大小 | 易于扩展 |
+
 ### 请求结构
 
 ```python
@@ -200,11 +304,32 @@ Request(
 
 ## 📝 注意事项
 
+### 通用注意事项
 1. **服务器必须先启动**：运行 `run_exp.py` 前确保服务器已启动
 2. **模型路径**：使用 `Real` 模式需要确保模型文件存在
 3. **端口冲突**：默认使用 8000 端口，确保未被占用
 4. **内存限制**：根据 GPU 显存调整 `--num-token` 和适配器数量
 5. **跟踪数据格式**：真实模式需要符合 S-LoRA 的 JSONL 格式
+
+### 数据并行模式注意事项 ⭐ 新增
+6. **显存要求**：每个 GPU 需要能放下完整模型
+   - Llama-7B：推荐 24GB+ 显存（如 3090、4090、A100）
+   - Llama-13B：推荐 40GB+ 显存（如 A100 40GB）
+7. **Worker 数量选择**：
+   - 推荐 Worker 数量 = GPU 数量
+   - 最大不超过可用 GPU 数量
+8. **GPU ID 指定**：
+   - 使用 `--gpu-ids 0,1,2` 明确指定 GPU
+   - 或省略该参数自动使用所有可用 GPU
+9. **性能调优**：
+   - 增加 `--num-token` 可提高单 Worker 吞吐量
+   - 增加 Worker 数量可提高总体吞吐量
+   - 监控 GPU 利用率：`watch -n 1 nvidia-smi`
+
+### 故障排除
+- **Worker 启动失败**：检查 GPU 显存是否足够
+- **网络连接错误**：确保 ZMQ 端口未被占用
+- **性能不佳**：检查 GPU 利用率，调整批次大小
 
 ## 🔗 相关文件
 

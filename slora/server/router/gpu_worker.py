@@ -140,12 +140,15 @@ class GPUWorker:
         
         # 检查是否有 lora_dirs 参数
         if hasattr(self.args, 'lora_dirs') and self.args.lora_dirs:
+            lora_dirs = self.args.lora_dirs
             # 遍历所有 adapter 目录，读取配置并存储 rank
-            for lora_dir in self.args.lora_dirs:
+            for i, lora_dir in enumerate(lora_dirs):
                 try:
                     config, _ = get_lora_config(lora_dir, getattr(self.args, 'dummy', False))
                     self.lora_ranks[lora_dir] = config["r"]
-                    print(f"[Worker {self.worker_id}] Loaded adapter config: {lora_dir}, rank={config['r']}")
+                    # 只在第一个、最后一个和每20个 adapter 时输出，避免日志过多
+                    if i == 0 or i == len(lora_dirs) - 1 or (i + 1) % 20 == 0:
+                        print(f"[Worker {self.worker_id}] Loaded adapter config: {lora_dir}, rank={config['r']}")
                 except Exception as e:
                     print(f"[Worker {self.worker_id}] Warning: Failed to load adapter config from {lora_dir}: {e}")
                     # 如果加载失败，使用默认 rank
@@ -300,6 +303,9 @@ class GPUWorker:
         self.request_receiver.setsockopt(zmq.RCVTIMEO, 30000)
         # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
         self.request_receiver.setsockopt(zmq.LINGER, 0)
+        # 设置 RCVHWM (Receive High Water Mark) 为 0 表示无限制
+        # 这样可以防止消息在队列满时被丢弃
+        self.request_receiver.setsockopt(zmq.RCVHWM, 0)
         
         self.request_receiver.connect(f"tcp://127.0.0.1:{request_port}")
         
@@ -311,6 +317,8 @@ class GPUWorker:
         self.response_sender.setsockopt(zmq.SNDTIMEO, 30000)
         # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
         self.response_sender.setsockopt(zmq.LINGER, 0)
+        # 设置 SNDHWM 为 0 表示无限制，防止消息丢失
+        self.response_sender.setsockopt(zmq.SNDHWM, 0)
         
         self.response_sender.connect(f"tcp://127.0.0.1:{response_port}")
         
@@ -457,6 +465,7 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}]   Max total tokens: {self.args.max_total_token_num}")
             print(f"[Worker {self.worker_id}]   Batch max tokens: {self.args.batch_max_tokens}")
             print(f"[Worker {self.worker_id}]   Running max requests: {self.args.running_max_req_size}")
+            print(f"[Worker {self.worker_id}]   Dummy mode: {getattr(self.args, 'dummy', False)}")
             print(f"[Worker {self.worker_id}]   LoRA enabled: {not getattr(self.args, 'no_lora', False)}")
             
             if hasattr(self.args, 'lora_dirs') and self.args.lora_dirs:
@@ -582,6 +591,10 @@ class GPUWorker:
             prompt_ids=request['prompt_ids'],
             sample_params=sample_params
         )
+        
+        # DEBUG: 打印请求的 max_output_len
+        print(f"[Worker {self.worker_id}] New request: id={req.request_id[:8]}..., "
+              f"max_output_len={req.max_output_len}, ignore_eos={req.sample_params.ignore_eos}")
         
         return req
     
@@ -795,59 +808,82 @@ class GPUWorker:
         """
         try:
             # 使用 ReqQueue 生成新批次
-            # 传递 lora_ranks 和 actual_adapter_size 用于显存管理
             new_batch = self.req_queue.generate_new_batch(
                 self.current_batch,
                 self.lora_ranks,
                 actual_adapter_size=self.actual_adapter_memory_usage
             )
             
-            # DEBUG 级别记录批次信息（Requirement 8.5）
-            import os
-            if os.environ.get('DEBUG', '0') == '1':
-                if new_batch is not None:
-                    print(f"[Worker {self.worker_id}] DEBUG: Generated new batch:")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Batch ID: {new_batch.batch_id}")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(new_batch.reqs)} requests")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Adapter dirs: {new_batch.adapter_dirs}")
-                if self.current_batch is not None:
-                    print(f"[Worker {self.worker_id}] DEBUG: Current batch:")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Batch ID: {self.current_batch.batch_id}")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(self.current_batch.reqs)} requests")
-            
             if new_batch is not None:
-                # 加载批次所需的 adapters（借鉴 manager.py）
+                # 加载批次所需的 adapters
                 if not getattr(self.args, 'no_lora', False) and new_batch.adapter_dirs:
                     await self._load_adapters(new_batch.adapter_dirs)
+                
+                # 先对新批次执行 prefill
+                reqs_rpc = [req.to_rpc_obj() for req in new_batch.reqs]
+                await self.model_rpc.init_batch(new_batch.batch_id, reqs_rpc)
+                
+                # 执行 prefill，获取第一个 token
+                req_to_out_token_id = await self.model_rpc.prefill_batch(new_batch.batch_id)
+                
+                # 将第一个 token 添加到新批次的请求中
+                for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                    req = new_batch.id_to_reqs[req_id]
+                    req.output_ids.append(new_token_id)
+                    req.output_metadata_list.append(new_gen_metadata)
+                
+                # 标记新批次中已完成的请求
+                eos_id = getattr(self.args, 'eos_id', 2)
+                has_new_finished = new_batch.mark_finished_req(eos_id)
+                
+                # 处理新批次中已完成的请求
+                if has_new_finished:
+                    await self._handle_finish_req(new_batch, has_new_finished)
                 
                 # 合并到当前批次
                 if self.current_batch is None:
                     self.current_batch = new_batch
                 else:
-                    self.current_batch.merge(new_batch)
+                    if not new_batch.is_clear():
+                        await self.model_rpc.merge_batch(self.current_batch.batch_id, new_batch.batch_id)
+                        self.current_batch.merge(new_batch)
             
             # 执行推理
             if self.current_batch is not None and len(self.current_batch.reqs) > 0:
-                # DEBUG 级别记录推理开始（Requirement 8.5）
-                if os.environ.get('DEBUG', '0') == '1':
-                    print(f"[Worker {self.worker_id}] DEBUG: Starting inference for batch {self.current_batch.batch_id}")
-                    print(f"[Worker {self.worker_id}] DEBUG:   Batch size: {len(self.current_batch.reqs)} requests")
-                
                 try:
                     # 调用 model_rpc 执行实际推理
                     req_to_out_token_id = await self._infer_batch(self.current_batch)
                     
+                    # 获取 eos_id
+                    eos_id = getattr(self.args, 'eos_id', 2)
+                    
                     # 将输出 token 添加到请求中
-                    responses = []
                     for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
                         req = self.current_batch.id_to_reqs[req_id]
                         req.output_ids.append(new_token_id)
                         req.output_metadata_list.append(new_gen_metadata)
+                    
+                    # 标记已完成的请求
+                    has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
+                    
+                    # 打印完成的请求
+                    if has_new_finished_req:
+                        for req in self.current_batch.reqs:
+                            if req.has_generate_finished:
+                                print(f"[Worker {self.worker_id}] FINISHED: {req.request_id[:8]}... (output_len={len(req.output_ids)})")
+                    
+                    # 生成响应
+                    responses = []
+                    for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                        req = self.current_batch.id_to_reqs[req_id]
+                        
+                        # 判断请求是否完成（与 mark_finished_req 逻辑一致）
+                        is_finished = req.has_generate_finished
                         
                         # 生成响应（包含完整的输出序列）
                         output_ids = req.prompt_ids + req.output_ids
                         metadata = {
-                            'finish_reason': 'length' if len(req.output_ids) >= req.max_output_len else 'generating',
+                            'finish_reason': 'stop' if is_finished else 'generating',
                             'prompt_tokens': req.input_len,
                             'completion_tokens': len(req.output_ids),
                             'gen_metadata': new_gen_metadata
@@ -859,16 +895,11 @@ class GPUWorker:
                             'output_ids': output_ids,
                             'metadata': metadata,
                             'success': True,
-                            'error': None
+                            'error': None,
+                            'finished': is_finished  # 使用 mark_finished_req 设置的状态
                         })
                     
-                    # 标记已完成的请求
-                    # 需要 eos_id 来判断是否遇到结束符
-                    # 从 args 中获取 eos_id，如果没有则使用默认值 2（Llama 的 EOS）
-                    eos_id = getattr(self.args, 'eos_id', 2)
-                    has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
-                    
-                    # 处理已完成的请求
+                    # 处理已完成的请求（从批次中移除）
                     await self._handle_finish_req(self.current_batch, has_new_finished_req)
                     
                     return responses
@@ -996,43 +1027,40 @@ class GPUWorker:
     async def run(self) -> None:
         """
         主循环
-        
-        持续接收请求、处理请求批次并发送响应。
-        使用 ReqQueue 进行批处理管理。
-        包含完善的异常处理，确保单个错误不会终止服务。
-        
-        Requirements:
-            - 3.1: 持续监听 ZMQ PULL socket 接收请求
-            - 3.5: 生成包含 output_ids 和 metadata 的响应消息
-            - 7.3: 推理异常时记录详细错误日志
-            - 8.3: 输出 Worker 就绪日志
-        
-        Note:
-            这是一个无限循环，Worker 会一直运行直到进程被终止。
-            使用 ReqQueue 管理批处理，支持多个请求并发处理。
-            捕获所有异常但继续运行，确保服务不中断。
         """
-        print(f"Worker {self.worker_id} ready on GPU {self.gpu_id}")
+        print(f"[Worker {self.worker_id}] Ready on GPU {self.gpu_id}")
+        
+        import time
+        last_heartbeat_time = time.time()
+        received_count = 0  # 请求计数器
         
         while True:
             try:
+                # 每 10 秒打印一次心跳
+                now = time.time()
+                if now - last_heartbeat_time >= 10:
+                    queue_size = len(self.req_queue.waiting_req_list) if self.req_queue else 0
+                    batch_size = len(self.current_batch.reqs) if self.current_batch else 0
+                    print(f"[Worker {self.worker_id}] Heartbeat: received={received_count}, queue={queue_size}, batch={batch_size}")
+                    last_heartbeat_time = now
+                
                 # 尝试接收新请求并添加到队列（非阻塞）
-                try:
-                    request = await asyncio.wait_for(
-                        self._receive_request(), 
-                        timeout=0.01  # 10ms 超时
-                    )
-                    req_obj = self._convert_to_req_object(request)
-                    self.req_queue.append(req_obj)
-                except asyncio.TimeoutError:
-                    # 超时是正常的，继续处理现有批次
-                    pass
-                except Exception as recv_error:
-                    # 接收请求失败，记录错误但继续运行
-                    print(f"[Worker {self.worker_id}] Error receiving request:")
-                    print(f"[Worker {self.worker_id}]   Error type: {type(recv_error).__name__}")
-                    print(f"[Worker {self.worker_id}]   Error: {str(recv_error)}")
-                    # 继续处理现有批次
+                # 每次循环尝试接收多个请求，避免请求堆积
+                for _ in range(10):  # 每次循环最多接收 10 个请求
+                    try:
+                        request = await asyncio.wait_for(
+                            self._receive_request(), 
+                            timeout=0.001  # 1ms 超时
+                        )
+                        received_count += 1
+                        print(f"[Worker {self.worker_id}] Received #{received_count}: {request.get('request_id', 'unknown')[:8]}...")
+                        req_obj = self._convert_to_req_object(request)
+                        self.req_queue.append(req_obj)
+                    except asyncio.TimeoutError:
+                        break  # 没有更多请求，退出循环
+                    except Exception as recv_error:
+                        print(f"[Worker {self.worker_id}] Recv error: {recv_error}")
+                        break
                 
                 # 处理请求批次
                 responses = await self._process_requests()
@@ -1042,18 +1070,9 @@ class GPUWorker:
                     try:
                         await self._send_response(response)
                     except Exception as send_error:
-                        # 发送响应失败，记录错误但继续处理下一个响应
-                        print(f"[Worker {self.worker_id}] Error sending response:")
-                        print(f"[Worker {self.worker_id}]   Request ID: {response.get('request_id', 'unknown')}")
-                        print(f"[Worker {self.worker_id}]   Error type: {type(send_error).__name__}")
-                        print(f"[Worker {self.worker_id}]   Error: {str(send_error)}")
-                        # 继续发送下一个响应
+                        print(f"[Worker {self.worker_id}] Send error: {send_error}")
                 
             except Exception as e:
-                # 捕获主循环中的所有其他异常
-                print(f"[Worker {self.worker_id}] Unexpected error in main loop:")
-                print(f"[Worker {self.worker_id}]   Error type: {type(e).__name__}")
-                print(f"[Worker {self.worker_id}]   Error: {str(e)}")
+                print(f"[Worker {self.worker_id}] Loop error: {e}")
                 import traceback
                 traceback.print_exc()
-                # 继续运行，不因单个错误而终止

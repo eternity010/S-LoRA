@@ -103,6 +103,8 @@ class ResponseMerger:
         self.worker_receiver.setsockopt(zmq.RCVTIMEO, 30000)
         # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
         self.worker_receiver.setsockopt(zmq.LINGER, 0)
+        # 设置 RCVHWM 为 0 表示无限制，防止消息丢失
+        self.worker_receiver.setsockopt(zmq.RCVHWM, 0)
         
         self.worker_receiver.bind(f"tcp://127.0.0.1:{self.worker_response_port}")
         
@@ -114,6 +116,8 @@ class ResponseMerger:
         self.detoken_sender.setsockopt(zmq.SNDTIMEO, 30000)
         # 设置 LINGER 为 0，关闭时立即丢弃未发送消息
         self.detoken_sender.setsockopt(zmq.LINGER, 0)
+        # 设置 SNDHWM 为 0 表示无限制，防止消息丢失
+        self.detoken_sender.setsockopt(zmq.SNDHWM, 0)
         
         self.detoken_sender.connect(f"tcp://127.0.0.1:{self.detoken_port}")
         
@@ -130,14 +134,23 @@ class ResponseMerger:
             'request_id': str,
             'worker_id': int,
             'output_ids': List[int],
-            'metadata': dict,
+            'metadata': {
+                'finish_reason': str,
+                'prompt_tokens': int,
+                'completion_tokens': int,
+                'gen_metadata': dict  # 包含 id, logprob 等
+            },
             'success': bool,
-            'error': Optional[str]
+            'error': Optional[str],
+            'finished': bool
         }
         
         Detokenization 期望格式：
         BatchTokenIdOut 对象，包含：
         - reqs_infs: List[Tuple[req_id, new_token_id, gen_metadata, finished_state, abort_state]]
+        
+        注意：gen_metadata 应该是 Worker 返回的 metadata['gen_metadata']，
+        而不是整个 metadata 对象。这样 detokenization 进程才能正确处理。
         
         Args:
             response: Worker 响应字典
@@ -148,12 +161,6 @@ class ResponseMerger:
         Requirements:
             - 4.3: 根据 request_id 匹配原始请求
             - 4.5: 确保响应消息包含必要字段
-        
-        Note:
-            在 Phase 1 中，我们简化处理：
-            - 假设每个响应只包含一个 token（流式输出）
-            - finished_state 根据 success 和 output_ids 判断
-            - abort_state 在 Phase 1 中始终为 False
         """
         batch_out = BatchTokenIdOut()
         
@@ -161,18 +168,23 @@ class ResponseMerger:
         output_ids = response['output_ids']
         metadata = response.get('metadata', {})
         success = response['success']
+        finished = response.get('finished', False)
         
-        # 在 Phase 1 中，我们假设每个响应包含完整的 output_ids
+        # 提取真正的 gen_metadata（包含 id, logprob 等）
+        # 这是 detokenization 进程期望的格式
+        gen_metadata = metadata.get('gen_metadata', {})
+        
         # 对于流式输出，我们只取最后一个 token
         if output_ids and len(output_ids) > 0:
             new_token_id = output_ids[-1]
-            finished_state = not success or response.get('finished', False)
-            abort_state = False  # Phase 1 不支持 abort
+            # finished_state: 请求失败或已完成
+            finished_state = not success or finished
+            abort_state = False  # 数据并行模式暂不支持 abort
             
             batch_out.reqs_infs.append((
                 request_id,
                 new_token_id,
-                metadata,
+                gen_metadata,  # 使用正确的 gen_metadata
                 finished_state,
                 abort_state
             ))
@@ -182,48 +194,16 @@ class ResponseMerger:
     async def _forward_to_detokenization(self, response: Dict[str, Any]) -> None:
         """
         转发响应到 Detokenization 进程
-        
-        将 Worker 响应转换为 Detokenization 期望的格式，然后通过 ZMQ 发送。
-        添加详细的 DEBUG 级别日志。
-        
-        Args:
-            response: Worker 响应字典
-        
-        Requirements:
-            - 4.4: 将响应转发到 Detokenization 进程
-            - 8.5: DEBUG 级别记录响应信息
-        
-        Note:
-            使用 send_pyobj 发送 Python 对象（pickle 序列化）
-            这与现有的 Detokenization 进程期望的格式一致
         """
         # 转换为 Detokenization 格式
         detoken_msg = self._convert_to_detoken_format(response)
         
-        # DEBUG 级别记录响应详情（Requirement 8.5）
-        request_id = response['request_id']
-        worker_id = response['worker_id']
-        success = response['success']
-        output_ids = response.get('output_ids', [])
-        
-        # 基本日志（始终输出）
-        print(f"[ResponseMerger] Forwarding response: request_id={request_id}, "
-              f"worker_id={worker_id}, success={success}")
-        
-        # DEBUG 级别详细日志
-        # 可以通过环境变量 DEBUG=1 启用
-        import os
-        if os.environ.get('DEBUG', '0') == '1':
-            print(f"[ResponseMerger] DEBUG: Response details:")
-            print(f"[ResponseMerger] DEBUG:   Request ID: {request_id}")
-            print(f"[ResponseMerger] DEBUG:   Worker ID: {worker_id}")
-            print(f"[ResponseMerger] DEBUG:   Success: {success}")
-            print(f"[ResponseMerger] DEBUG:   Output IDs length: {len(output_ids)}")
-            if output_ids:
-                print(f"[ResponseMerger] DEBUG:   Last token: {output_ids[-1]}")
-            print(f"[ResponseMerger] DEBUG:   Metadata: {response.get('metadata', {})}")
-            if not success:
-                print(f"[ResponseMerger] DEBUG:   Error: {response.get('error', 'Unknown')}")
+        # 只在请求完成时打印日志
+        finished = response.get('finished', False)
+        if finished:
+            request_id = response['request_id']
+            worker_id = response['worker_id']
+            print(f"[ResponseMerger] FINISHED: req={request_id[:8]}..., worker={worker_id}")
         
         # 发送到 Detokenization
         await self.detoken_sender.send_pyobj(detoken_msg)
@@ -252,6 +232,10 @@ class ResponseMerger:
                 # 转发到 Detokenization
                 await self._forward_to_detokenization(response)
                 
+            except zmq.error.Again:
+                # ZMQ 超时是正常的，不需要打印错误
+                # 继续处理下一个响应
+                continue
             except Exception as e:
                 print(f"[ResponseMerger] Error processing response: {str(e)}")
                 import traceback

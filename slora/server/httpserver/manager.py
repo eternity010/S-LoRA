@@ -24,6 +24,8 @@ class HttpServerManager:
     ):
         context = zmq.asyncio.Context(2)
         self.send_to_router = context.socket(zmq.PUSH)
+        # 设置 SNDHWM 为 0 表示无限制，防止消息丢失
+        self.send_to_router.setsockopt(zmq.SNDHWM, 0)
         self.send_to_router.connect(f"tcp://127.0.0.1:{router_port}")
 
         self.recv_from_detokenization = context.socket(zmq.PULL)
@@ -64,10 +66,17 @@ class HttpServerManager:
         self.send_to_router.send_pyobj((adapter_dir, prompt_ids, sampling_params, request_id))
         event = asyncio.Event()
         self.req_id_to_out_inf[request_id] = ("", {}, False, event)
+        
+        timeout_count = 0
         while True:
             try:
                 await asyncio.wait_for(event.wait(), timeout=5)
+                timeout_count = 0  # 收到响应，重置计数
             except asyncio.TimeoutError:
+                timeout_count += 1
+                # 每 6 次超时（30秒）打印一次警告
+                if timeout_count % 6 == 0:
+                    print(f"[HttpServerManager] Request {request_id[:8]}... waiting (no response for {timeout_count * 5}s)")
                 pass
             event.clear()
             # request_id is aborted by the backend system for traffic control
@@ -75,11 +84,13 @@ class HttpServerManager:
                 yield "", {}, -1
                 break
             out_str, metadata, finished, _ = self.req_id_to_out_inf[request_id]
-            if len(metadata) != 0:
+            if len(metadata) != 0 or finished:
                 self.req_id_to_out_inf[request_id] = ("", {}, finished, event)
-                metadata["prompt_tokens"] = prompt_tokens
+                if len(metadata) != 0:
+                    metadata["prompt_tokens"] = prompt_tokens
                 yield out_str, metadata, finished
             if finished:
+                print(f"[HttpServerManager] Request {request_id[:8]}... completed")
                 try:
                     del self.req_id_to_out_inf[request_id]
                 except:
@@ -104,6 +115,8 @@ class HttpServerManager:
                 for req_id, text, metadata, finished, abort in recv_ans.reqs_infs:
                     try:
                         if not abort:
+                            if req_id not in self.req_id_to_out_inf:
+                                continue
                             _, _, _, event = self.req_id_to_out_inf[req_id]
                             self.req_id_to_out_inf[req_id] = (
                                 text,
@@ -117,7 +130,6 @@ class HttpServerManager:
                     except:
                         pass
             elif isinstance(recv_ans, BatchAbortReq):
-                print("abort reqs:", recv_ans.reqs)
                 for req_id in recv_ans.reqs:
                     try:
                         del self.req_id_to_out_inf[req_id]
