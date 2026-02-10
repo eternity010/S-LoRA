@@ -22,6 +22,7 @@ from slora.server.sampling_params import SamplingParams
 from slora.models.peft.lora_adapter import get_lora_config
 from slora.server.router.model_infer.model_rpc import start_model_process, ModelRpcClient
 from slora.server.input_params import InputParams
+from slora.server.router.worker_state_reporter import WorkerStateReporter
 
 
 class GPUWorker:
@@ -80,6 +81,9 @@ class GPUWorker:
         
         # 初始化 Adapter rank 配置（Phase 1 必需）
         self._setup_adapter_config()
+        
+        # 状态上报器（用于 Adapter-Aware Routing）
+        self.state_reporter: Optional[WorkerStateReporter] = None
     
     def _setup_gpu(self) -> None:
         """
@@ -158,6 +162,70 @@ class GPUWorker:
         self.lora_ranks[None] = 0
         
         print(f"[Worker {self.worker_id}] Adapter rank configuration initialized: {len(self.lora_ranks)} adapters")
+    
+    def _get_state_for_reporter(self) -> dict:
+        """
+        获取当前 Worker 状态（用于状态上报）
+        
+        Returns:
+            包含以下字段的字典：
+            - cached_adapters: 已缓存的 Adapter 目录集合
+            - queue_length: 当前队列长度
+            - gpu_memory_free: 可用 GPU 显存（bytes）
+        
+        Requirements: 1.1, 1.2
+        """
+        # 获取已缓存的 adapters
+        cached_adapters = set(self.adapter_cache.keys()) if self.adapter_cache else set()
+        
+        # 获取队列长度
+        queue_length = 0
+        if self.req_queue:
+            queue_length = len(self.req_queue.waiting_req_list)
+        if self.current_batch:
+            queue_length += len(self.current_batch.reqs)
+        
+        # 获取可用 GPU 显存
+        gpu_memory_free = 0
+        try:
+            if torch.cuda.is_available():
+                gpu_memory_free = torch.cuda.mem_get_info()[0]  # 返回 (free, total)
+        except Exception:
+            pass
+        
+        return {
+            'cached_adapters': cached_adapters,
+            'queue_length': queue_length,
+            'gpu_memory_free': gpu_memory_free
+        }
+    
+    def _setup_state_reporter(self, state_report_port: Optional[int] = None) -> None:
+        """
+        设置状态上报器
+        
+        Args:
+            state_report_port: Router 状态接收端口，如果为 None 则不启用上报
+        
+        Requirements: 1.1, 1.2, 1.3
+        """
+        if state_report_port is None:
+            print(f"[Worker {self.worker_id}] State reporter disabled (no port configured)")
+            return
+        
+        router_address = f"tcp://127.0.0.1:{state_report_port}"
+        
+        # 获取上报间隔（从 args 或使用默认值）
+        report_interval_ms = getattr(self.args, 'state_report_interval_ms', 100)
+        
+        self.state_reporter = WorkerStateReporter(
+            worker_id=self.worker_id,
+            report_interval_ms=report_interval_ms,
+            router_address=router_address,
+            state_getter=self._get_state_for_reporter
+        )
+        
+        print(f"[Worker {self.worker_id}] State reporter configured: "
+              f"address={router_address}, interval={report_interval_ms}ms")
     
     async def _update_actual_adapter_usage(self) -> None:
         """
@@ -252,8 +320,16 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}] Loaded {len(adapter_dirs)} adapters: "
                   f"{[d.split('/')[-1] for d in list(adapter_dirs)[:5]]}")
             
+            # 更新 adapter_cache（用于状态上报）
+            for adapter_dir in adapter_dirs:
+                self.adapter_cache[adapter_dir] = True
+            
             # 加载后更新实际占用
             await self._update_actual_adapter_usage()
+            
+            # 触发状态上报（Adapter 加载事件）
+            if self.state_reporter:
+                await self.state_reporter.report_now()
             
             # DEBUG 级别记录内存占用（Requirement 8.5）
             if os.environ.get('DEBUG', '0') == '1':
@@ -592,9 +668,11 @@ class GPUWorker:
             sample_params=sample_params
         )
         
-        # DEBUG: 打印请求的 max_output_len
-        print(f"[Worker {self.worker_id}] New request: id={req.request_id[:8]}..., "
-              f"max_output_len={req.max_output_len}, ignore_eos={req.sample_params.ignore_eos}")
+        # DEBUG 模式：打印请求详情
+        import os
+        if os.environ.get('DEBUG', '0') == '1':
+            print(f"[Worker {self.worker_id}] New request: id={req.request_id[:8]}..., "
+                  f"max_output_len={req.max_output_len}, ignore_eos={req.sample_params.ignore_eos}")
         
         return req
     
@@ -866,12 +944,6 @@ class GPUWorker:
                     # 标记已完成的请求
                     has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
                     
-                    # 打印完成的请求
-                    if has_new_finished_req:
-                        for req in self.current_batch.reqs:
-                            if req.has_generate_finished:
-                                print(f"[Worker {self.worker_id}] FINISHED: {req.request_id[:8]}... (output_len={len(req.output_ids)})")
-                    
                     # 生成响应
                     responses = []
                     for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
@@ -959,6 +1031,34 @@ class GPUWorker:
             
             return []
     
+    def _calculate_dynamic_evict_ratio(self, usage_ratio: float, threshold: float) -> float:
+        """
+        根据显存使用率动态计算淘汰比例
+        
+        线性插值：threshold(90%) → 20%, 95% → 40%, 100% → 60%
+        压力越大淘汰越多，避免固定比例的过度或不足淘汰。
+        """
+        # 超出阈值的部分，映射到 [0.2, 0.6]
+        # (usage - 0.9) / (1.0 - 0.9) * (0.6 - 0.2) + 0.2
+        excess = min(max(usage_ratio - threshold, 0.0), 1.0 - threshold)
+        ratio = excess / (1.0 - threshold) * 0.4 + 0.2
+        return min(ratio, 0.6)
+    
+    def _get_pending_adapter_counts(self) -> dict:
+        """
+        统计请求队列中等待各 adapter 的请求数
+        
+        Returns:
+            {adapter_dir: count} 队列中等待该 adapter 的请求数量
+        """
+        counts = {}
+        if self.req_queue and self.req_queue.waiting_req_list:
+            for req in self.req_queue.waiting_req_list:
+                adapter_dir = getattr(req, 'adapter_dir', None)
+                if adapter_dir is not None:
+                    counts[adapter_dir] = counts.get(adapter_dir, 0) + 1
+        return counts
+    
     async def _handle_finish_req(self, batch: Batch, has_new_finished_req: bool) -> None:
         """
         处理批次中已完成请求的逻辑
@@ -977,8 +1077,8 @@ class GPUWorker:
             - 3.5: 生成包含 output_ids 和 metadata 的响应消息
         
         Note:
-            借鉴 manager.py 的 _handle_finish_req 方法，简化为数据并行模式。
-            Phase 1 不实现复杂的淘汰策略，只做基本的请求计数管理。
+            借鉴 manager.py 的 _handle_finish_req 方法。
+            包含主动阈值淘汰机制，与张量并行模式保持一致。
         """
         if has_new_finished_req:
             # 记录完成的请求使用的适配器（在 filter_finished 之前）
@@ -988,19 +1088,66 @@ class GPUWorker:
                     if req.has_generate_finished:
                         finished_adapter_dirs.append(req.adapter_dir)
             
+            # 保存 filter_finished 之前的 adapter_dirs（用于淘汰时保护）
+            original_adapter_dirs = set(batch.adapter_dirs) if hasattr(batch, 'adapter_dirs') else set()
+            
             # 过滤掉已完成的请求，只保留未完成的请求
             # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
             batch.filter_finished()
 
             # 减少完成请求的适配器的当前请求计数
-            # 这对于 adapter 使用统计和淘汰策略很重要
             if finished_adapter_dirs and not getattr(self.args, 'no_lora', False):
                 await self.model_rpc.decrease_request_counts(finished_adapter_dirs)
+
+            # ===== 主动阈值淘汰：请求完成时 =====
+            # 动态淘汰比例：显存压力越大，淘汰越多
+            # 90% → 20%, 95% → 40%, 100% → 60%（线性插值）
+            if not getattr(self.args, 'no_lora', False) and self.model_rpc is not None:
+                try:
+                    threshold = getattr(self.args, 'evict_interval_threshold', 0.9)
+                    memory_info = await self.model_rpc.check_lora_memory()
+                    if memory_info:
+                        usage_ratio = memory_info.get('usage_ratio', 0.0)
+                        if usage_ratio >= threshold:
+                            dynamic_ratio = self._calculate_dynamic_evict_ratio(usage_ratio, threshold)
+                            # 统计队列中等待各 adapter 的请求数
+                            pending_counts = self._get_pending_adapter_counts()
+                            evict_result = await self.model_rpc.trigger_threshold_eviction(
+                                preserve_dirs=original_adapter_dirs,
+                                threshold=threshold,
+                                evict_ratio=dynamic_ratio,
+                                max_lora_ratio=getattr(self.args, 'max_lora_ratio', None),
+                                pending_adapter_counts=pending_counts
+                            )
+                            if evict_result and evict_result.get('evicted'):
+                                await self._update_actual_adapter_usage()
+                                if self.state_reporter:
+                                    await self.state_reporter.report_now()
+                except Exception as e:
+                    print(f"[Worker {self.worker_id}] Eviction error (interval): {e}")
 
             # 根据批次状态决定后续操作
             if batch.is_clear():
                 # 批次完全清空，移除 RPC 端的批次
                 await self.model_rpc.remove_batch(batch.batch_id)
+                
+                # ===== 主动阈值淘汰：批次空闲时 =====
+                # 批次清空后更激进地淘汰，不保护任何 adapter
+                if not getattr(self.args, 'no_lora', False) and self.model_rpc is not None:
+                    try:
+                        evict_result = await self.model_rpc.trigger_threshold_eviction(
+                            preserve_dirs=None,
+                            threshold=getattr(self.args, 'evict_idle_threshold', 0.8),
+                            evict_ratio=getattr(self.args, 'evict_idle_ratio', 0.7),
+                            max_lora_ratio=getattr(self.args, 'max_lora_ratio', None)
+                        )
+                        if evict_result and evict_result.get('evicted'):
+                            await self._update_actual_adapter_usage()
+                            if self.state_reporter:
+                                await self.state_reporter.report_now()
+                    except Exception as e:
+                        print(f"[Worker {self.worker_id}] Eviction error (idle): {e}")
+                
                 self.current_batch = None
             else:
                 # 批次还有未完成的请求，过滤 RPC 端的批次
@@ -1040,9 +1187,13 @@ class GPUWorker:
             - 这个协程会一直运行，直到 Worker 进程终止
         """
         import sys
+        import os
         
         print(f"[Worker {self.worker_id}] Request receiver loop started")
         sys.stdout.flush()
+        
+        # 检查是否启用 DEBUG 模式
+        debug_mode = os.environ.get('DEBUG', '0') == '1'
         
         while True:
             try:
@@ -1054,8 +1205,10 @@ class GPUWorker:
                 self._received_count += 1
                 request_id = request.get('request_id', 'unknown')
                 
-                print(f"[Worker {self.worker_id}] Received #{self._received_count}: {request_id[:8]}...")
-                sys.stdout.flush()
+                # DEBUG 模式：打印接收日志
+                if debug_mode:
+                    print(f"[Worker {self.worker_id}] Received #{self._received_count}: {request_id[:8]}...")
+                    sys.stdout.flush()
                 
                 # 转换为 Req 对象并存入队列
                 req_obj = self._convert_to_req_object(request)
@@ -1105,9 +1258,9 @@ class GPUWorker:
         
         while True:
             try:
-                # 每 10 秒打印一次心跳
+                # 每 30 秒打印一次心跳
                 now = time.time()
-                if now - last_heartbeat_time >= 10:
+                if now - last_heartbeat_time >= 30:
                     queue_size = len(self.req_queue.waiting_req_list) if self.req_queue else 0
                     batch_size = len(self.current_batch.reqs) if self.current_batch else 0
                     print(f"[Worker {self.worker_id}] Heartbeat: received={self._received_count}, queue={queue_size}, batch={batch_size}")
@@ -1146,11 +1299,13 @@ class GPUWorker:
         设计说明：
         - 接收协程 (_receive_requests_loop): 持续从 ZMQ 接收请求，存入本地队列
         - 处理协程 (_process_loop): 从本地队列取出请求，执行推理，发送响应
+        - 状态上报协程: 定期向 Router 上报 Worker 状态
         
         这种设计的优点：
         1. 接收和处理并行，不会因为处理慢而丢失消息
         2. 本地队列可控，为未来的多级队列、优先级调度做准备
         3. 更好的可观测性和调试能力
+        4. 状态上报支持智能路由决策
         """
         import sys
         print(f"[Worker {self.worker_id}] Ready on GPU {self.gpu_id}")
@@ -1158,6 +1313,11 @@ class GPUWorker:
         
         # 初始化接收计数器
         self._received_count = 0
+        
+        # 启动状态上报器（如果已配置）
+        if self.state_reporter:
+            await self.state_reporter.start()
+            print(f"[Worker {self.worker_id}] State reporter started")
         
         # 启动接收协程和处理协程
         receive_task = asyncio.create_task(self._receive_requests_loop())
@@ -1182,3 +1342,8 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}] Main loop error: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            # 停止状态上报器
+            if self.state_reporter:
+                await self.state_reporter.stop()
+                print(f"[Worker {self.worker_id}] State reporter stopped")

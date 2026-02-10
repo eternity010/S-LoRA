@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/router/worker_state_cache.py
+# hypothesis_version: 6.141.1
+
+[1000.0, 100, 300, 'avg_queue_length', 'cached_adapters', 'gpu_memory_free', 'healthy_workers', 'num_workers', 'queue_length', 'timestamp', 'total_queue_length', 'type', 'unhealthy_workers', 'worker_id', 'worker_state']

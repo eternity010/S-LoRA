@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/router/dp_manager.py
+# hypothesis_version: 6.141.1
+
+[0.01, 0.1, 1.0, 10.0, 100, 300, 600, 1000, 1024, 5000, 30000, 50000, 51000, 52000, '%Y-%m-%d %H:%M:%S', ',', '0', '1', '127.0.0.1', '=', 'DEBUG', 'ResponseMerger', '__dict__', 'adapter-aware', 'adapter_dir', 'batch_max_tokens', 'cached_adapters', 'failed_requests', 'gpu_ids', 'gpu_memory_free', 'heartbeat_timeout_ms', 'max_queue_length', 'max_total_token_num', 'model_dir', 'num_workers', 'prompt_ids', 'queue_length', 'ready', 'request_id', 'round-robin', 'routing_strategy', 'routing_w1', 'routing_w2', 'sampling_params', 'start_time', 'status', 'successful_requests', 'timestamp', 'total_requests', 'type', 'unknown', 'worker_id', 'worker_state', 'worker_states']

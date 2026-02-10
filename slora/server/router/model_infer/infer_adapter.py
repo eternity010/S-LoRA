@@ -27,9 +27,9 @@ class InferAdapter:
     adapter_scores: Dict[str, float]  # {adapter_dir: total_score} - 适配器综合分数
     score_update_counter: Dict[str, int]  # {adapter_dir: use_count} - 使用次数统计
     last_access_time: Dict[str, float]  # {adapter_dir: timestamp} - 最后访问时间
-    total_use_duration: Dict[str, float]  # {adapter_dir: duration} - 累计使用时长（秒）
     current_request_count: Dict[str, int]  # {adapter_dir: count} - 当前使用该适配器的请求数
     load_time: Dict[str, float]  # {adapter_dir: timestamp} - 适配器加载时间
+    pending_adapter_counts: Dict[str, int]  # {adapter_dir: count} - 队列中等待该适配器的请求数
 
     @classmethod
     def init(cls, mem_manager, prefetch_stream):
@@ -48,9 +48,9 @@ class InferAdapter:
             adapter_scores={},
             score_update_counter={},
             last_access_time={},
-            total_use_duration={},
             current_request_count={},
             load_time={},
+            pending_adapter_counts={},
         )
 
     def update_adapter_stats_batch(self, batch_adapter_dirs: List[str]):
@@ -87,17 +87,6 @@ class InferAdapter:
             # 更新当前请求数（增量）
             self.current_request_count[adapter_dir] = self.current_request_count.get(adapter_dir, 0) + count
     
-    def update_adapter_duration(self, adapter_dir: str, duration: float):
-        """
-        更新单个适配器的累计使用时长
-        
-        参数:
-            adapter_dir: 适配器目录
-            duration: 本次使用的时长（秒）
-        """
-        if adapter_dir is not None and adapter_dir in self.idx_map:
-            self.total_use_duration[adapter_dir] = self.total_use_duration.get(adapter_dir, 0) + duration
-    
     def decrease_request_count(self, adapter_dir: str, count: int = 1):
         """
         减少适配器的当前请求计数（请求完成时调用）
@@ -111,10 +100,9 @@ class InferAdapter:
             self.current_request_count[adapter_dir] = max(0, current_count - count)
     
     def calculate_adapter_score(self, adapter_dir: str, 
-                                weight_usage: float = 0.3,
-                                weight_recency: float = 0.3, 
-                                weight_duration: float = 0.2,
-                                weight_active: float = 0.2) -> float:
+                                weight_usage: float = 0.35,
+                                weight_recency: float = 0.35, 
+                                weight_pending: float = 0.3) -> float:
         """
         计算适配器的综合分数
         
@@ -122,8 +110,7 @@ class InferAdapter:
             adapter_dir: 适配器目录
             weight_usage: 使用次数权重
             weight_recency: 最近访问时间权重
-            weight_duration: 累计使用时长权重
-            weight_active: 当前活跃请求数权重
+            weight_pending: 队列等待请求数权重
         
         返回:
             综合分数（越高越重要，越不应被淘汰）
@@ -133,32 +120,32 @@ class InferAdapter:
         
         current_time = time.time()
         
-        # 1. 使用次数分数（归一化）
+        # 1. 使用次数分数（对数归一化，避免极端值压缩区分度）
         usage_count = self.score_update_counter.get(adapter_dir, 0)
         max_usage = max(self.score_update_counter.values()) if self.score_update_counter else 1
-        usage_score = usage_count / max_usage if max_usage > 0 else 0
+        log_max = np.log1p(max_usage)
+        usage_score = np.log1p(usage_count) / log_max if log_max > 0 else 0
         
         # 2. 最近访问时间分数（越近越高）
         last_access = self.last_access_time.get(adapter_dir, 0)
         time_since_access = current_time - last_access if last_access > 0 else float('inf')
-        # 使用指数衰减，1小时后分数降为0.37
-        recency_score = np.exp(-time_since_access / 60)
+        # 使用指数衰减，5分钟后分数降为0.37
+        recency_score = np.exp(-time_since_access / 300)
         
-        # 3. 累计使用时长分数（归一化）
-        total_duration = self.total_use_duration.get(adapter_dir, 0)
-        max_duration = max(self.total_use_duration.values()) if self.total_use_duration else 1
-        duration_score = total_duration / max_duration if max_duration > 0 else 0
-        
-        # 4. 当前活跃请求数分数（归一化）
-        active_requests = self.current_request_count.get(adapter_dir, 0)
-        max_active = max(self.current_request_count.values()) if self.current_request_count else 1
-        active_score = active_requests / max_active if max_active > 0 else 0
+        # 3. 队列等待请求数分数（对数归一化）
+        # 队列中有等待请求的 adapter 更不应该被淘汰，淘汰后马上又要加载
+        pending_count = self.pending_adapter_counts.get(adapter_dir, 0)
+        max_pending = max(self.pending_adapter_counts.values()) if self.pending_adapter_counts else 0
+        if max_pending > 0:
+            log_max_pending = np.log1p(max_pending)
+            pending_score = np.log1p(pending_count) / log_max_pending if log_max_pending > 0 else 0
+        else:
+            pending_score = 0
         
         # 综合分数
         total_score = (weight_usage * usage_score + 
                       weight_recency * recency_score + 
-                      weight_duration * duration_score + 
-                      weight_active * active_score)
+                      weight_pending * pending_score)
         
         # 更新缓存的分数
         self.adapter_scores[adapter_dir] = total_score
@@ -768,7 +755,6 @@ class InferAdapter:
                 self.adapter_scores[new_adapter.lora_dir] = 0.0
                 self.score_update_counter[new_adapter.lora_dir] = 0
                 self.last_access_time[new_adapter.lora_dir] = current_time
-                self.total_use_duration[new_adapter.lora_dir] = 0.0
                 self.current_request_count[new_adapter.lora_dir] = 0
         self.a_scaling = torch.cat((self.a_scaling, torch.tensor([adapter.scaling for adapter in new_adapters], dtype=torch.float16, device="cuda")))
 
@@ -877,7 +863,6 @@ class InferAdapter:
             self.adapter_scores.pop(adapter_dir, None)
             self.score_update_counter.pop(adapter_dir, None)
             self.last_access_time.pop(adapter_dir, None)
-            self.total_use_duration.pop(adapter_dir, None)
             self.current_request_count.pop(adapter_dir, None)
             self.load_time.pop(adapter_dir, None)
         

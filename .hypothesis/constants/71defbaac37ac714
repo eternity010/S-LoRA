@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/router/worker_state_reporter.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1000.0, 100, 1000, 'cached_adapters', 'error_count', 'gpu_memory_free', 'has_socket', 'last_report_time', 'queue_length', 'report_count', 'running', 'timestamp', 'type', 'worker_id', 'worker_state']

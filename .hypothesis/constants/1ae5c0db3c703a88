@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/router/worker_state.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.1, 1.0, 10.0, 1000.0, 100, 300, 'RoutingConfig', 'WorkerState', 'adapter-aware', 'cache_hit_rate', 'cache_hits', 'cache_misses', 'cached_adapters', 'cold_starts', 'gpu_memory_free', 'heartbeat_timeout_ms', 'is_healthy', 'last_heartbeat', 'max_queue_length', 'queue_length', 'round-robin', 'strategy', 'total_requests', 'w1', 'w2', 'worker_id']

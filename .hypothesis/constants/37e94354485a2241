@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/io_struct.py
+# hypothesis_version: 6.141.1
+
+['adapter_dir', 'input_id', 'output_len', 'request_id', 'sampling_param']

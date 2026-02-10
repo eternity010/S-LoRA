@@ -16,17 +16,25 @@ Requirements:
 """
 
 import os
+import time
 import torch
 import argparse
 import asyncio
 import zmq
 import zmq.asyncio
 import multiprocessing as mp
-from typing import List, Optional
+import logging
+from typing import List, Optional, Union
 
 from slora.server.router.round_robin_router import RoundRobinRouter
+from slora.server.router.adapter_aware_router import AdapterAwareRouter
+from slora.server.router.worker_state import WorkerState, RoutingConfig
+from slora.server.router.worker_state_cache import WorkerStateCache
 from slora.server.io_struct import AbortReq, Req, ReqDetokenizationState
 from slora.server.sampling_params import SamplingParams
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataParallelRouterManager:
@@ -50,7 +58,7 @@ class DataParallelRouterManager:
     """
     
     def __init__(self, args: argparse.Namespace, 
-                 router_port: int, response_port: int, detoken_port: int):
+                 router_port: int, response_port: int, detoken_port: int = None):
         """
         初始化 Data Parallel Router Manager
         
@@ -58,6 +66,10 @@ class DataParallelRouterManager:
             args: 命令行参数，包含：
                 - num_workers: Worker 数量（可选）
                 - gpu_ids: GPU ID 列表字符串（可选，如 "0,1,2"）
+                - routing_strategy: 路由策略 ('adapter-aware' or 'round-robin')
+                - routing_w1: 缓存亲和性权重（可选）
+                - routing_w2: 负载惩罚权重（可选）
+                - max_queue_length: 最大队列长度阈值（可选）
                 - 其他模型和推理相关参数
             router_port: 接收来自 API Server 的请求的端口
             response_port: 接收来自 Worker 的响应的端口
@@ -70,6 +82,8 @@ class DataParallelRouterManager:
             - 4.1: Worker 通过 ZMQ PUSH socket 发送响应消息
             - 4.2: Response Merger 通过 ZMQ PULL socket 接收响应
             - 8.1: 输出详细的启动信息
+            - 8.1 (Adapter-Aware): 支持路由策略选择参数
+            - 8.2 (Adapter-Aware): 支持 Round-Robin 回退
         
         Note:
             如果未指定 num_workers，将自动检测可用 GPU 数量。
@@ -104,14 +118,29 @@ class DataParallelRouterManager:
         # Response Merger 进程
         self.merger_process: Optional[mp.Process] = None
         
-        # 路由器
-        self.router = RoundRobinRouter(self.num_workers)
+        # 路由策略配置 (Requirements 8.1, 8.2)
+        self.routing_strategy = getattr(args, 'routing_strategy', 'round-robin')
+        
+        # 初始化路由器
+        self.router: Union[RoundRobinRouter, AdapterAwareRouter] = self._create_router()
+        
+        # Worker 状态缓存（用于 adapter-aware 路由）
+        self.worker_state_cache: Optional[WorkerStateCache] = None
+        if self.routing_strategy == 'adapter-aware':
+            routing_config = self._get_routing_config()
+            self.worker_state_cache = WorkerStateCache(
+                num_workers=self.num_workers,
+                heartbeat_interval_ms=routing_config.heartbeat_interval_ms,
+                heartbeat_timeout_ms=routing_config.heartbeat_timeout_ms
+            )
         
         # ZMQ 通信（将在 _setup_zmq 中初始化）
         self.context = None
         self.request_receiver = None
         self.request_senders = []
         self.send_to_detokenization = None  # 发送到 detokenization 的 socket
+        self.state_receiver = None  # 接收 Worker 状态上报的 socket
+        self.state_receiver_port = None  # 状态接收端口
         
         # 请求统计（Requirement 8.2）
         self.stats = {
@@ -129,12 +158,22 @@ class DataParallelRouterManager:
         print(f"[DataParallelRouterManager] Configuration:")
         print(f"[DataParallelRouterManager]   Number of workers: {self.num_workers}")
         print(f"[DataParallelRouterManager]   GPU IDs: {self.gpu_ids}")
+        print(f"[DataParallelRouterManager]   Routing strategy: {self.routing_strategy}")
         print(f"[DataParallelRouterManager]   Router port: {router_port}")
         print(f"[DataParallelRouterManager]   Response port: {response_port}")
         print(f"[DataParallelRouterManager]   Detoken port: {detoken_port}")
-        print(f"[DataParallelRouterManager]   Model directory: {args.model_dir}")
-        print(f"[DataParallelRouterManager]   Max total tokens: {args.max_total_token_num}")
-        print(f"[DataParallelRouterManager]   Batch max tokens: {args.batch_max_tokens}")
+        if hasattr(args, 'model_dir'):
+            print(f"[DataParallelRouterManager]   Model directory: {args.model_dir}")
+        if hasattr(args, 'max_total_token_num'):
+            print(f"[DataParallelRouterManager]   Max total tokens: {args.max_total_token_num}")
+        if hasattr(args, 'batch_max_tokens'):
+            print(f"[DataParallelRouterManager]   Batch max tokens: {args.batch_max_tokens}")
+        if self.routing_strategy == 'adapter-aware':
+            routing_config = self._get_routing_config()
+            print(f"[DataParallelRouterManager]   Routing w1 (cache affinity): {routing_config.w1}")
+            print(f"[DataParallelRouterManager]   Routing w2 (load penalty): {routing_config.w2}")
+            print(f"[DataParallelRouterManager]   Max queue length: {routing_config.max_queue_length}")
+            print(f"[DataParallelRouterManager]   Hot adapter threshold: {routing_config.hot_adapter_threshold} req/s")
         print(f"[DataParallelRouterManager] ==========================================")
     
     def _detect_gpus(self) -> int:
@@ -231,6 +270,54 @@ class DataParallelRouterManager:
             gpu_ids = list(range(self.num_workers))
             print(f"[DataParallelRouterManager] Using default GPU IDs: {gpu_ids}")
             return gpu_ids
+    
+    def _get_routing_config(self) -> RoutingConfig:
+        """
+        获取路由配置
+        
+        从命令行参数中提取路由配置参数，创建 RoutingConfig 实例。
+        
+        Returns:
+            RoutingConfig: 路由配置实例
+        
+        Requirements: 6.1-6.5
+        """
+        return RoutingConfig(
+            strategy=getattr(self.args, 'routing_strategy', 'round-robin'),
+            w1=getattr(self.args, 'routing_w1', 1.0),
+            w2=getattr(self.args, 'routing_w2', 0.1),
+            heartbeat_interval_ms=getattr(self.args, 'heartbeat_interval_ms', 100),
+            heartbeat_timeout_ms=getattr(self.args, 'heartbeat_timeout_ms', 300),
+            max_queue_length=getattr(self.args, 'max_queue_length', 100),
+            hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 10.0)
+        )
+    
+    def _create_router(self) -> Union[RoundRobinRouter, AdapterAwareRouter]:
+        """
+        创建路由器实例
+        
+        根据配置的路由策略创建相应的路由器。
+        
+        Returns:
+            路由器实例（RoundRobinRouter 或 AdapterAwareRouter）
+        
+        Requirements: 8.1, 8.2
+        """
+        if self.routing_strategy == 'adapter-aware':
+            routing_config = self._get_routing_config()
+            router = AdapterAwareRouter(
+                num_workers=self.num_workers,
+                config=routing_config
+            )
+            print(f"[DataParallelRouterManager] Created AdapterAwareRouter with config: "
+                  f"w1={routing_config.w1}, w2={routing_config.w2}, "
+                  f"max_queue={routing_config.max_queue_length}")
+            return router
+        else:
+            # 默认使用 Round-Robin 路由
+            router = RoundRobinRouter(self.num_workers)
+            print(f"[DataParallelRouterManager] Created RoundRobinRouter")
+            return router
     
     def _allocate_ports(self) -> None:
         """
@@ -435,28 +522,34 @@ class DataParallelRouterManager:
         1. PULL socket: 从 API Server 接收请求
         2. PUSH sockets: 向每个 Worker 发送请求
         3. PUSH socket: 向 Detokenization 发送初始请求状态
+        4. PULL socket: 接收 Worker 状态上报（仅 adapter-aware 模式）
         
         配置超时参数以防止通信阻塞。
         
         Requirements:
             - 2.3: 通过 ZMQ PUSH socket 发送请求消息
             - 7.4: 设置 socket 超时防止通信阻塞
+            - 1.4 (Adapter-Aware): 接收 Worker 状态上报
         
         Note:
             Router Manager 使用 PULL socket 接收请求（多对一）
             Router Manager 使用多个 PUSH socket 向不同 Worker 发送请求（一对多）
             Router Manager 使用 PUSH socket 向 Detokenization 发送初始状态
+            Router Manager 使用 PULL socket 接收 Worker 状态上报（adapter-aware 模式）
             
             通信模式：
             - API Server → Router Manager: PUSH/PULL
             - Router Manager → Workers: PUSH/PULL (每个 Worker 一个 PUSH socket)
             - Router Manager → Detokenization: PUSH/PULL
+            - Workers → Router Manager: PUSH/PULL (状态上报)
             
             超时配置：
             - RCVTIMEO: 30000ms (30秒) - 接收超时
             - SNDTIMEO: 30000ms (30秒) - 发送超时
             - LINGER: 0 - 关闭时立即丢弃未发送消息
         """
+        import socket
+        
         # 创建异步 ZMQ context
         self.context = zmq.asyncio.Context()
         
@@ -476,13 +569,14 @@ class DataParallelRouterManager:
               f"(receiving from API Server, timeout=30s)")
         
         # 创建 PUSH socket 发送到 Detokenization
-        self.send_to_detokenization = self.context.socket(zmq.PUSH)
-        self.send_to_detokenization.setsockopt(zmq.SNDTIMEO, 30000)
-        self.send_to_detokenization.setsockopt(zmq.LINGER, 0)
-        self.send_to_detokenization.connect(f"tcp://127.0.0.1:{self.detoken_port}")
-        
-        print(f"[DataParallelRouterManager] ZMQ PUSH socket connected to detokenization port {self.detoken_port} "
-              f"(timeout=30s)")
+        if self.detoken_port:
+            self.send_to_detokenization = self.context.socket(zmq.PUSH)
+            self.send_to_detokenization.setsockopt(zmq.SNDTIMEO, 30000)
+            self.send_to_detokenization.setsockopt(zmq.LINGER, 0)
+            self.send_to_detokenization.connect(f"tcp://127.0.0.1:{self.detoken_port}")
+            
+            print(f"[DataParallelRouterManager] ZMQ PUSH socket connected to detokenization port {self.detoken_port} "
+                  f"(timeout=30s)")
         
         # 为每个 Worker 创建 PUSH socket
         self.request_senders = []
@@ -502,8 +596,66 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager] ZMQ PUSH socket bound to port {port} "
                   f"(sending to Worker {i}, timeout=30s, HWM=unlimited)")
         
+        # 设置状态接收 socket（仅 adapter-aware 模式）
+        if self.routing_strategy == 'adapter-aware':
+            self._setup_state_receiver()
+        
         print(f"[DataParallelRouterManager] ZMQ communication setup complete: "
               f"{len(self.request_senders)} worker sockets created with timeout=30s")
+    
+    def _setup_state_receiver(self) -> None:
+        """
+        设置状态接收 socket
+        
+        创建 ZMQ PULL socket 用于接收 Worker 状态上报。
+        
+        Requirements: 1.4 (Adapter-Aware)
+        """
+        import socket as sock_module
+        
+        # 找一个可用端口
+        def find_free_port(start_port, exclude_ports):
+            port = start_port
+            while port < start_port + 100:
+                if port in exclude_ports:
+                    port += 1
+                    continue
+                try:
+                    with sock_module.socket(sock_module.AF_INET, sock_module.SOCK_STREAM) as s:
+                        s.bind(('127.0.0.1', port))
+                        return port
+                except OSError:
+                    port += 1
+            raise RuntimeError(f"Failed to find free port starting from {start_port}")
+        
+        exclude_ports = set(self.worker_ports) | {self.router_port, self.response_port}
+        if self.detoken_port:
+            exclude_ports.add(self.detoken_port)
+        if self.ready_port:
+            exclude_ports.add(self.ready_port)
+        
+        self.state_receiver_port = find_free_port(52000, exclude_ports)
+        
+        # 创建 PULL socket 接收 Worker 状态上报
+        self.state_receiver = self.context.socket(zmq.PULL)
+        self.state_receiver.setsockopt(zmq.RCVTIMEO, 100)  # 100ms 超时，非阻塞
+        self.state_receiver.setsockopt(zmq.LINGER, 0)
+        self.state_receiver.setsockopt(zmq.RCVHWM, 0)
+        self.state_receiver.bind(f"tcp://127.0.0.1:{self.state_receiver_port}")
+        
+        print(f"[DataParallelRouterManager] ZMQ PULL socket bound to port {self.state_receiver_port} "
+              f"(receiving Worker state reports)")
+    
+    def get_state_receiver_address(self) -> Optional[str]:
+        """
+        获取状态接收地址
+        
+        Returns:
+            状态接收地址，格式为 "tcp://host:port"，如果未启用则返回 None
+        """
+        if self.state_receiver_port:
+            return f"tcp://127.0.0.1:{self.state_receiver_port}"
+        return None
     
     def _start_worker(self, worker_id: int, gpu_id: int) -> mp.Process:
         """
@@ -540,7 +692,8 @@ class DataParallelRouterManager:
         """
         路由请求到 Worker
         
-        使用 Round Robin Router 选择一个 Worker，然后通过 ZMQ 发送请求。
+        根据配置的路由策略选择一个 Worker，然后通过 ZMQ 发送请求。
+        支持 Round-Robin 和 Adapter-Aware 两种路由策略。
         包含重试逻辑和超时处理。
         
         Args:
@@ -555,6 +708,7 @@ class DataParallelRouterManager:
             - 2.2: 按照 Worker ID 的顺序循环分配请求
             - 2.3: 通过 ZMQ PUSH socket 发送请求消息
             - 7.4: 实现重试逻辑（最多 3 次）
+            - 8.3 (Adapter-Aware): 保持现有 API 接口不变
         
         Raises:
             Exception: 如果发送请求失败（重试 3 次后）
@@ -568,14 +722,32 @@ class DataParallelRouterManager:
         max_retries = 3
         retry_count = 0
         request_id_short = request.get('request_id', 'unknown')[:8]
+        adapter_dir = request.get('adapter_dir', '')
         
         while retry_count < max_retries:
             try:
-                # 使用 Round Robin Router 选择 Worker
-                worker_id = self.router.select_worker()
+                # 根据路由策略选择 Worker
+                if self.routing_strategy == 'adapter-aware':
+                    # 使用 AdapterAwareRouter 选择 Worker
+                    # AdapterAwareRouter.select_worker 需要 adapter_dir 参数
+                    worker_id = self.router.select_worker(adapter_dir)
+                else:
+                    # 使用 Round Robin Router 选择 Worker
+                    worker_id = self.router.select_worker()
                 
-                # 打印路由日志（精简版）
-                print(f"[Router] {request_id_short}... -> Worker {worker_id}")
+                # DEBUG 模式：打印路由日志
+                if os.environ.get('DEBUG', '0') == '1':
+                    if self.routing_strategy == 'adapter-aware':
+                        # 获取更详细的路由信息
+                        cache_hit = False
+                        if hasattr(self.router, 'worker_states'):
+                            state = self.router.worker_states.get(worker_id)
+                            if state:
+                                cache_hit = state.has_adapter(adapter_dir)
+                        print(f"[Router] {request_id_short}... -> Worker {worker_id} "
+                              f"(adapter-aware, cache_hit={cache_hit})")
+                    else:
+                        print(f"[Router] {request_id_short}... -> Worker {worker_id} (round-robin)")
                 
                 # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
                 await self.request_senders[worker_id].send_json(request)
@@ -764,6 +936,7 @@ class DataParallelRouterManager:
             - 2.1: 新请求到达时使用 Round Robin Router 选择 Worker
             - 2.3: 通过 ZMQ 发送请求到选定的 Worker
             - 7.5: 定期检测 Worker 进程是否存活，记录进程退出日志
+            - 1.4 (Adapter-Aware): 接收并处理 Worker 状态上报
         
         Note:
             这是一个无限循环，会持续处理请求直到进程被终止。
@@ -784,6 +957,12 @@ class DataParallelRouterManager:
         stats_task = asyncio.create_task(self._print_statistics())
         print(f"[DataParallelRouterManager] Statistics reporting task started")
         
+        # 启动状态接收处理任务（仅 adapter-aware 模式）
+        state_receiver_task = None
+        if self.routing_strategy == 'adapter-aware' and self.state_receiver:
+            state_receiver_task = asyncio.create_task(self._process_worker_states())
+            print(f"[DataParallelRouterManager] Worker state receiver task started")
+        
         while True:
             try:
                 # 从 API Server 接收请求
@@ -800,7 +979,8 @@ class DataParallelRouterManager:
                     
                     # 立即发送初始状态到 detokenization（与张量并行模式一致）
                     # 这样 detokenization 进程就知道有新请求了
-                    self.send_to_detokenization.send_pyobj(req.to_req_detokenization_state())
+                    if self.send_to_detokenization:
+                        self.send_to_detokenization.send_pyobj(req.to_req_detokenization_state())
                     
                     # 转换 sampling_params 为 dict（如果它是对象）
                     if hasattr(sampling_params, '__dict__'):
@@ -825,12 +1005,13 @@ class DataParallelRouterManager:
                     request_id = abort_req.req_id
                     
                     # 发送 abort 到 detokenization（与张量并行模式一致）
-                    self.send_to_detokenization.send_pyobj(abort_req)
+                    if self.send_to_detokenization:
+                        self.send_to_detokenization.send_pyobj(abort_req)
                     
                     # TODO: Phase 1 暂不支持向 Worker 发送 abort
                     # Phase 2 需要实现向 Worker 转发 abort 请求
-                    print(f"[DataParallelRouterManager] Received AbortReq for request_id={request_id} "
-                          f"(forwarded to detokenization, worker abort not yet implemented)")
+                    # 注意：AbortReq 在正常请求完成后也会被调用（用于清理资源）
+                    # 因此不输出日志，避免冗余
                 else:
                     print(f"[DataParallelRouterManager] WARNING: Unknown request type: {type(recv_req)}")
                 
@@ -844,6 +1025,65 @@ class DataParallelRouterManager:
                 import traceback
                 traceback.print_exc()
                 # 继续处理下一个请求
+                continue
+    
+    async def _process_worker_states(self) -> None:
+        """
+        处理 Worker 状态上报
+        
+        持续接收 Worker 状态上报消息，更新路由器的 Worker 状态缓存。
+        
+        Requirements: 1.4 (Adapter-Aware)
+        """
+        print(f"[DataParallelRouterManager] Worker state processing started")
+        
+        while True:
+            try:
+                # 非阻塞接收状态消息
+                message = await self.state_receiver.recv_json()
+                
+                # 验证消息类型
+                if message.get('type') != 'worker_state':
+                    logger.warning(f"Unknown state message type: {message.get('type')}")
+                    continue
+                
+                worker_id = message.get('worker_id')
+                if worker_id is None or worker_id < 0 or worker_id >= self.num_workers:
+                    logger.warning(f"Invalid worker_id in state message: {worker_id}")
+                    continue
+                
+                # 创建 WorkerState 对象
+                state = WorkerState(
+                    worker_id=worker_id,
+                    cached_adapters=set(message.get('cached_adapters', [])),
+                    queue_length=message.get('queue_length', 0),
+                    gpu_memory_free=message.get('gpu_memory_free', 0),
+                    last_heartbeat=message.get('timestamp', time.time()),
+                    is_healthy=True
+                )
+                
+                # 更新路由器状态
+                if isinstance(self.router, AdapterAwareRouter):
+                    self.router.update_worker_state(worker_id, state)
+                
+                # 更新状态缓存
+                if self.worker_state_cache:
+                    self.worker_state_cache.update(worker_id, state)
+                
+                logger.debug(f"Updated worker {worker_id} state: "
+                            f"queue={state.queue_length}, "
+                            f"adapters={len(state.cached_adapters)}")
+                
+            except zmq.Again:
+                # 超时，继续循环
+                await asyncio.sleep(0.01)  # 短暂休眠避免 CPU 空转
+                continue
+            except asyncio.CancelledError:
+                logger.info("Worker state processing cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error processing worker state: {e}")
+                await asyncio.sleep(0.1)
                 continue
 
 

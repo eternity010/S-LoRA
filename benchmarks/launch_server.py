@@ -34,6 +34,19 @@ if __name__ == "__main__":
     parser.add_argument("--gpu-ids", type=str, default=None,
                         help="数据并行模式下使用的 GPU ID，逗号分隔，如 '0,1,2'")
     
+    # 路由策略相关参数（数据并行模式）
+    parser.add_argument("--routing-strategy", type=str, default="round-robin",
+                        choices=["round-robin", "adapter-aware"],
+                        help="路由策略: round-robin (轮询，默认) 或 adapter-aware (基于亲和性)")
+    parser.add_argument("--routing-w1", type=float, default=1.0,
+                        help="缓存亲和性权重 (默认: 1.0)")
+    parser.add_argument("--routing-w2", type=float, default=0.1,
+                        help="负载惩罚权重 (默认: 0.1)")
+    parser.add_argument("--max-queue-length", type=int, default=100,
+                        help="最大队列长度阈值 (默认: 100)")
+    parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,
+                        help="热点 Adapter 请求率阈值，单位 req/s (默认: 10.0)")
+    
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
                         help="请求完成时触发淘汰的内存使用率阈值 (0-1)")

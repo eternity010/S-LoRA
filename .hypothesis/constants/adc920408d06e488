@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/sampling_params.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1e-05, 1.0, 'do_sample', 'frequency_penalty', 'presence_penalty', 'temperature', 'top_k', 'top_p']

@@ -787,6 +787,19 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
             print(f"[DataParallelRouter] GPU IDs: {gpu_ids_str} (specified)")
         else:
             print(f"[DataParallelRouter] GPU IDs: Auto-assign (0, 1, 2, ...)")
+        
+        # 输出路由策略配置
+        routing_strategy = getattr(args, 'routing_strategy', 'round-robin')
+        print(f"[DataParallelRouter] Routing Strategy: {routing_strategy}")
+        if routing_strategy == 'adapter-aware':
+            routing_w1 = getattr(args, 'routing_w1', 1.0)
+            routing_w2 = getattr(args, 'routing_w2', 0.1)
+            max_queue_length = getattr(args, 'max_queue_length', 100)
+            hot_adapter_threshold = getattr(args, 'hot_adapter_threshold', 10.0)
+            print(f"[DataParallelRouter]   w1 (cache affinity): {routing_w1}")
+            print(f"[DataParallelRouter]   w2 (load penalty): {routing_w2}")
+            print(f"[DataParallelRouter]   max_queue_length: {max_queue_length}")
+            print(f"[DataParallelRouter]   hot_adapter_threshold: {hot_adapter_threshold} req/s")
         print("=" * 80)
         
         # 创建 DataParallelRouterManager 实例

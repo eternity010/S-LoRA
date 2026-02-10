@@ -72,6 +72,10 @@ server/
 │   ├── dp_manager.py         # 数据并行路由管理器 ⭐ 新增
 │   ├── gpu_worker.py         # GPU Worker 进程 ⭐ 新增
 │   ├── round_robin_router.py # 轮询路由器 ⭐ 新增
+│   ├── adapter_aware_router.py # 基于亲和性的智能路由器 ⭐ 新增
+│   ├── worker_state.py       # Worker 状态数据结构 ⭐ 新增
+│   ├── worker_state_cache.py # Worker 状态缓存 ⭐ 新增
+│   ├── worker_state_reporter.py # Worker 状态上报器 ⭐ 新增
 │   ├── response_merger.py    # 响应合并器 ⭐ 新增
 │   ├── req_queue.py          # 请求队列
 │   ├── vtc_req_queue.py      # VTC 公平调度队列
@@ -93,10 +97,14 @@ server/
 **功能说明**：
 - **api_server.py**: FastAPI 应用主入口，处理 HTTP 请求，支持张量并行和数据并行两种模式
 - **router/**: 请求调度核心，实现了多种调度策略（VTC、PEFT、PETs）
-  - **manager.py**: 张量并行路由管理器（原有）
-  - **dp_manager.py**: 数据并行路由管理器（新增）- 管理多个 GPU Worker，实现请求轮询分发
+  - **manager.py**: 张量并行路由管理器（原有），数据并行模式的启动入口
+  - **dp_manager.py**: 数据并行路由管理器（新增）- 管理多个 GPU Worker，支持轮询和智能路由
   - **gpu_worker.py**: GPU Worker 进程（新增）- 在单个 GPU 上独立处理请求，复用 ReqQueue 进行批处理
   - **round_robin_router.py**: 轮询路由器（新增）- 实现公平的请求分配策略
+  - **adapter_aware_router.py**: 智能路由器（新增）- 基于 Adapter 亲和性和负载的智能路由 ⭐ Phase 2
+  - **worker_state.py**: Worker 状态数据结构（新增）- 定义 WorkerState、RoutingStats、RoutingConfig ⭐ Phase 2
+  - **worker_state_cache.py**: Worker 状态缓存（新增）- 管理所有 Worker 的状态信息 ⭐ Phase 2
+  - **worker_state_reporter.py**: Worker 状态上报器（新增）- 定期上报 Worker 状态到路由管理器 ⭐ Phase 2
   - **response_merger.py**: 响应合并器（新增）- 收集所有 Worker 的响应并转发到 Detokenization
 - **tokenizer.py**: 管理不同模型的分词器
 - **sampling_params.py**: 控制生成参数（温度、top-p、top-k 等）
@@ -315,14 +323,30 @@ python -m slora.server.api_server \
     --parallel-mode tensor
 ```
 
-**数据并行**：
+**数据并行（轮询路由）**：
 ```bash
 python -m slora.server.api_server \
     --model-dir /path/to/model \
     --lora-dirs /path/to/adapters \
     --num-workers 4 \
     --gpu-ids 0,1,2,3 \
-    --parallel-mode data
+    --parallel-mode data \
+    --routing-strategy round-robin
+```
+
+**数据并行（智能路由）** ⭐ Phase 2：
+```bash
+python -m slora.server.api_server \
+    --model-dir /path/to/model \
+    --lora-dirs /path/to/adapters \
+    --num-workers 4 \
+    --gpu-ids 0,1,2,3 \
+    --parallel-mode data \
+    --routing-strategy adapter-aware \
+    --routing-w1 1.0 \
+    --routing-w2 0.1 \
+    --max-queue-length 100 \
+    --hot-adapter-threshold 10.0
 ```
 
 ---
@@ -437,6 +461,26 @@ bgmv_all.cu:
 ---
 
 ## 关键配置文件
+
+### 命令行参数
+
+#### 数据并行模式参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--parallel-mode` | 并行模式（tensor/data） | tensor |
+| `--num-workers` | Worker 数量 | 1 |
+| `--gpu-ids` | GPU ID 列表 | 自动检测 |
+
+#### 路由策略参数 ⭐ Phase 2
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--routing-strategy` | 路由策略（round-robin/adapter-aware） | round-robin |
+| `--routing-w1` | 缓存亲和性权重 | 1.0 |
+| `--routing-w2` | 负载惩罚权重 | 0.1 |
+| `--max-queue-length` | 最大队列长度阈值 | 100 |
+| `--hot-adapter-threshold` | 热点 Adapter 阈值（req/s） | 10.0 |
 
 ### setup.py
 
@@ -598,6 +642,12 @@ print(response.json())
 7. **并行推理**: 多个请求同时处理，吞吐量线性提升
 8. **复用 ReqQueue**: 每个 Worker 复用成熟的批处理逻辑
 
+#### 新增优化（智能路由）⭐ Phase 2
+9. **Adapter 亲和性路由**: 优先将请求路由到已缓存对应 Adapter 的 Worker
+10. **负载感知**: 考虑 Worker 队列长度，避免过载
+11. **热点 Adapter 分布**: 自动检测热点 Adapter 并分布到多个 Worker
+12. **冷启动优化**: 新 Adapter 优先路由到负载最低的 Worker
+
 ### 性能测试结果（Phase 1）
 
 **测试环境**：
@@ -709,7 +759,41 @@ A:
 #### Q12: 数据并行支持流式输出吗？
 A: 
 - Phase 1: 支持批量输出（请求完成后返回）
-- Phase 2 计划: 支持流式输出（逐 token 返回）
+- Phase 3 计划: 支持流式输出（逐 token 返回）
+
+### Adapter-Aware Routing 相关问题 ⭐ Phase 2
+
+#### Q13: 什么是 Adapter-Aware Routing？
+A: 
+- 一种智能路由策略，根据 Adapter 缓存亲和性和 Worker 负载来选择最优的 Worker
+- 评分公式: `score = w1 * cache_affinity - w2 * queue_length`
+- 优先将请求路由到已缓存对应 Adapter 的 Worker，减少 Adapter 加载开销
+
+#### Q14: 什么时候应该使用 Adapter-Aware Routing？
+A: 
+- ✅ 有大量不同的 Adapter 需要服务
+- ✅ Adapter 加载时间较长（大 rank 的 LoRA）
+- ✅ 请求有明显的 Adapter 局部性（某些 Adapter 被频繁访问）
+- ❌ Adapter 数量很少（轮询即可）
+- ❌ 所有 Adapter 访问频率均匀（轮询更简单）
+
+#### Q15: 如何调优 Adapter-Aware Routing 的参数？
+A: 
+- `--routing-w1`（缓存亲和性权重）: 增大会更倾向于选择已缓存 Adapter 的 Worker
+- `--routing-w2`（负载惩罚权重）: 增大会更倾向于选择负载低的 Worker
+- `--max-queue-length`: 队列超过此阈值的 Worker 会被排除
+- `--hot-adapter-threshold`: 请求率超过此阈值的 Adapter 会被分布到多个 Worker
+
+#### Q16: 默认使用哪种路由策略？
+A: 
+- 默认使用 `round-robin`（轮询）策略，保持向后兼容
+- 可通过 `--routing-strategy adapter-aware` 切换到智能路由
+
+#### Q17: 智能路由如何处理热点 Adapter？
+A: 
+- 系统会追踪每个 Adapter 的请求率（滑动窗口）
+- 当请求率超过 `--hot-adapter-threshold` 时，该 Adapter 被标记为热点
+- 热点 Adapter 的请求会被分布到多个 Worker，避免单点过载
 
 ---
 
@@ -747,6 +831,8 @@ A:
 ✅ **研究友好**: 易于扩展和实验  
 ✅ **双模式支持**: 张量并行 + 数据并行 ⭐  
 ✅ **灵活配置**: 支持多种 GPU 配置和调度策略  
+✅ **智能路由**: Adapter 亲和性路由，减少加载开销 ⭐ Phase 2  
+✅ **负载均衡**: 自动检测热点 Adapter 并分布到多个 Worker ⭐ Phase 2  
 
 ---
 
@@ -781,25 +867,59 @@ A:
 - 任务列表: `.kiro/specs/data-parallel-phase1/tasks.md`
 - 代码修改记录: `Phase1-代码修改记录.md`
 
-### Phase 2: 智能优化（计划中 ⏳）
+### Phase 2: Adapter-Aware Routing 智能路由（已完成 ✅）
 
-**预计时间**: 2025-Q1
+**完成时间**: 2026-02-06
 
-**计划功能**:
-- ⏳ 智能 Adapter 淘汰策略
-  - 基于阈值的淘汰
-  - LRU/LFU 缓存策略
-  - 热门 Adapter 保护
-- ⏳ 请求计数管理
-  - 跟踪每个 Adapter 的活跃请求数
-  - 动态调整淘汰优先级
-- ⏳ 高级监控工具
-  - LoRA 内存使用状态
-  - 淘汰结果摘要
-  - 性能指标仪表板
-- ⏳ 流式输出支持
-  - 逐 token 返回
-  - 降低首 token 延迟
+**已实现功能**:
+- ✅ AdapterAwareRouter（基于亲和性的智能路由器）
+  - 评分公式: `score = w1 * cache_affinity - w2 * queue_length`
+  - 缓存亲和性计算（已加载 Adapter 得分 1.0）
+  - 负载惩罚（队列长度越长得分越低）
+  - 平分时的 tie-breaking（选择 worker_id 最小的）
+- ✅ WorkerState 数据结构
+  - Worker 状态信息（队列长度、已加载 Adapter 列表）
+  - 路由统计信息（缓存命中率、冷启动次数）
+  - 路由配置（权重参数、阈值设置）
+- ✅ WorkerStateCache（Worker 状态缓存）
+  - 状态更新和查询
+  - 健康检查（心跳超时检测）
+  - Adapter-to-Worker 索引
+- ✅ WorkerStateReporter（Worker 状态上报器）
+  - 定期心跳上报
+  - 事件触发上报（Adapter 加载/卸载）
+- ✅ 热点 Adapter 处理
+  - 请求率追踪（滑动窗口）
+  - 热点检测和跨 Worker 分布
+- ✅ 队列阈值过滤（超限 Worker 自动排除）
+- ✅ 冷启动处理（新 Adapter 路由到负载最低的 Worker）
+- ✅ 路由统计和监控
+  - 缓存命中率计算
+  - 冷启动计数
+  - Worker 请求分布统计
+- ✅ 命令行参数支持
+  - `--routing-strategy`: 路由策略选择（round-robin | adapter-aware）
+  - `--routing-w1`: 缓存亲和性权重（默认 1.0）
+  - `--routing-w2`: 负载惩罚权重（默认 0.1）
+  - `--max-queue-length`: 最大队列长度阈值（默认 100）
+  - `--hot-adapter-threshold`: 热点 Adapter 阈值（默认 10.0 req/s）
+
+**新增文件**:
+- `slora/server/router/adapter_aware_router.py` - 智能路由器实现
+- `slora/server/router/worker_state.py` - Worker 状态数据结构
+- `slora/server/router/worker_state_cache.py` - Worker 状态缓存
+- `slora/server/router/worker_state_reporter.py` - Worker 状态上报器
+
+**修改文件**:
+- `slora/server/router/dp_manager.py` - 集成智能路由
+- `slora/server/router/manager.py` - 添加路由策略日志
+- `slora/server/api_server.py` - 添加命令行参数
+- `benchmarks/launch_server.py` - 添加命令行参数
+
+**文档**:
+- 设计文档: `.kiro/specs/adapter-aware-routing/design.md`
+- 需求文档: `.kiro/specs/adapter-aware-routing/requirements.md`
+- 任务列表: `.kiro/specs/adapter-aware-routing/tasks.md`
 
 ### Phase 3: 生产增强（计划中 ⏳）
 
@@ -852,17 +972,20 @@ A:
          ├─ Response Merger
          └─ API Server 集成
 
-2025-Q1 ⏳ Phase 2: 智能优化
-         ├─ Adapter 淘汰策略
-         ├─ 高级监控
-         └─ 流式输出
+2026-02 ✅ Phase 2: Adapter-Aware Routing
+         ├─ AdapterAwareRouter（智能路由器）
+         ├─ WorkerState 数据结构
+         ├─ WorkerStateCache（状态缓存）
+         ├─ WorkerStateReporter（状态上报）
+         ├─ 热点 Adapter 处理
+         └─ 命令行参数支持
 
-2025-Q2 ⏳ Phase 3: 生产增强
+2026-Q2 ⏳ Phase 3: 生产增强
          ├─ Worker 自动重启
          ├─ 动态扩缩容
          └─ 混合并行
 
-2025-Q3 ⏳ Phase 4: 性能极致
+2026-Q3 ⏳ Phase 4: 性能极致
          ├─ Pipeline 并行
          ├─ 预取优化
          └─ 多机多卡
@@ -870,11 +993,11 @@ A:
 
 ---
 
-**生成时间**: 2025-01-13  
-**项目版本**: 1.1.0 (新增数据并行支持)  
+**生成时间**: 2026-02-06  
+**项目版本**: 1.2.0 (新增 Adapter-Aware Routing 智能路由)  
 **维护者**: S-LoRA Team  
 
 ---
 
-*此文档由 AI 自动生成并更新，基于项目结构分析和 Phase 1 开发进度。*
+*此文档由 AI 自动生成并更新，基于项目结构分析和 Phase 2 开发进度。*
 

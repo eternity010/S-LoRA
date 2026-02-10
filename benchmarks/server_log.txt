@@ -1,964 +1,904 @@
-For some LLaMA-based models, initializing the fast tokenizer may take a long time. To eliminate the initialization time, consider using 'hf-internal-testing/llama-tokenizer' instead of the original tokenizer.
-[Router] Starting router process in DATA parallel mode
-[DataParallelRouter] Allocated response_port: 10003
-[DataParallelRouter] Router port: 10000
-[DataParallelRouter] Detokenization port: 10001
-================================================================================
-[DataParallelRouter] Starting Data Parallel Mode
-================================================================================
-[DataParallelRouter] Number of Workers: 3 (specified)
-[DataParallelRouter] GPU IDs: 1,2,3 (specified)
-================================================================================
-[DataParallelRouterManager] ========== Initialization Started ==========
-[DataParallelRouterManager] Using specified GPU IDs: [1, 2, 3]
-[DataParallelRouterManager] Configuration:
-[DataParallelRouterManager]   Number of workers: 3
-[DataParallelRouterManager]   GPU IDs: [1, 2, 3]
-[DataParallelRouterManager]   Router port: 10000
-[DataParallelRouterManager]   Response port: 10003
-[DataParallelRouterManager]   Detoken port: 10001
-[DataParallelRouterManager]   Model directory: /home/hzheng/models/llama-7b
-[DataParallelRouterManager]   Max total tokens: 10000
-[DataParallelRouterManager]   Batch max tokens: 3072
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] Allocated ports for workers: [50000, 50001, 50002]
-[DataParallelRouterManager] ZMQ PULL socket bound to port 10000 (receiving from API Server, timeout=30s)
-[DataParallelRouterManager] ZMQ PUSH socket connected to detokenization port 10001 (timeout=30s)
-[DataParallelRouterManager] ZMQ PUSH socket bound to port 50000 (sending to Worker 0, timeout=30s, HWM=unlimited)
-[DataParallelRouterManager] ZMQ PUSH socket bound to port 50001 (sending to Worker 1, timeout=30s, HWM=unlimited)
-[DataParallelRouterManager] ZMQ PUSH socket bound to port 50002 (sending to Worker 2, timeout=30s, HWM=unlimited)
-[DataParallelRouterManager] ZMQ communication setup complete: 3 worker sockets created with timeout=30s
-[DataParallelRouterManager] ========== Starting Workers ==========
-[DataParallelRouterManager] Ready signal port: 51000
-[DataParallelRouterManager] Starting Response Merger...
-[DataParallelRouterManager] Started Response Merger process (worker_response_port=10003, detoken_port=10001)
-[DataParallelRouterManager] Starting 3 worker(s)...
-[DataParallelRouterManager] Starting Worker 0...
-[DataParallelRouterManager]   GPU ID: 1
-[DataParallelRouterManager]   Request port: 50000
-[DataParallelRouterManager]   Response port: 10003
-[DataParallelRouterManager] Worker 0 process started (PID: 44382)
-[DataParallelRouterManager] Starting Worker 1...
-[DataParallelRouterManager]   GPU ID: 2
-[DataParallelRouterManager]   Request port: 50001
-[DataParallelRouterManager]   Response port: 10003
-[DataParallelRouterManager] Worker 1 process started (PID: 44383)
-[DataParallelRouterManager] Starting Worker 2...
-[DataParallelRouterManager]   GPU ID: 3
-[DataParallelRouterManager]   Request port: 50002
-[DataParallelRouterManager]   Response port: 10003
-[Worker 2] Starting worker process on GPU 3...
-[Worker 2] Creating GPUWorker instance...
-[Worker 0] Starting worker process on GPU 1...
-[Worker 0] Creating GPUWorker instance...
-[Worker 1] Starting worker process on GPU 2...
-[Worker 1] Creating GPUWorker instance...
-[Worker 1] ========== GPU Environment Setup ==========
-[Worker 1] Physical GPU ID: 2
-[Worker 1] GPU Name: NVIDIA GeForce RTX 3090
-[Worker 1] Total Memory: 23.69 GB
-[Worker 1] Compute Capability: 8.6
-[Worker 1] CUDA_VISIBLE_DEVICES: 2
-[Worker 1] PyTorch Device: cuda:0
-[Worker 1] ==========================================
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-0, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-19, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-39, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-59, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-79, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-99, rank=8
-[Worker 1] Loaded adapter config: dummy-lora-7b-rank-8-100, rank=8
-[Worker 1] Adapter rank configuration initialized: 102 adapters
-[Worker 1] Setting up request queue...
-[Worker 1] Request queue initialized: max_total_tokens=10000, batch_max_tokens=3072, running_max_req_size=1000
-[Worker 1] Initializing model RPC...
-[Worker 1] ========== Model Loading Started ==========
-[Worker 1] Step 1/3: Creating Model RPC client...
-[Worker 1] Model RPC client created (took 0.00s)
-[Worker 1] Step 2/3: Preparing model initialization parameters...
-[Worker 1] Model configuration:
-[Worker 1]   Model directory: /home/hzheng/models/llama-7b
-[Worker 1]   Max total tokens: 10000
-[Worker 1]   Batch max tokens: 3072
-[Worker 1]   Running max requests: 1000
-[Worker 1]   Dummy mode: True
-[Worker 1]   LoRA enabled: True
-[Worker 1]   Adapter directories: 101 adapters
-[Worker 1] Step 3/3: Loading model weights...
-[Worker 2] ========== GPU Environment Setup ==========
-[Worker 2] Physical GPU ID: 3
-[Worker 2] GPU Name: NVIDIA GeForce RTX 3090
-[Worker 2] Total Memory: 23.69 GB
-[Worker 2] Compute Capability: 8.6
-[Worker 2] CUDA_VISIBLE_DEVICES: 3
-[Worker 2] PyTorch Device: cuda:0
-[Worker 2] ==========================================
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-0, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-19, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-39, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-59, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-79, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-99, rank=8
-[Worker 2] Loaded adapter config: dummy-lora-7b-rank-8-100, rank=8
-[Worker 2] Adapter rank configuration initialized: 102 adapters
-[Worker 2] Setting up request queue...
-[Worker 2] Request queue initialized: max_total_tokens=10000, batch_max_tokens=3072, running_max_req_size=1000
-[Worker 2] Initializing model RPC...
-[Worker 2] ========== Model Loading Started ==========
-[Worker 2] Step 1/3: Creating Model RPC client...
-[Worker 2] Model RPC client created (took 0.00s)
-[Worker 2] Step 2/3: Preparing model initialization parameters...
-[Worker 2] Model configuration:
-[Worker 2]   Model directory: /home/hzheng/models/llama-7b
-[Worker 2]   Max total tokens: 10000
-[Worker 2]   Batch max tokens: 3072
-[Worker 2]   Running max requests: 1000
-[Worker 2]   Dummy mode: True
-[Worker 2]   LoRA enabled: True
-[Worker 2]   Adapter directories: 101 adapters
-[Worker 2] Step 3/3: Loading model weights...
-[Worker 0] ========== GPU Environment Setup ==========
-[Worker 0] Physical GPU ID: 1
-[Worker 0] GPU Name: NVIDIA GeForce RTX 3090
-[Worker 0] Total Memory: 23.69 GB
-[Worker 0] Compute Capability: 8.6
-[Worker 0] CUDA_VISIBLE_DEVICES: 1
-[Worker 0] PyTorch Device: cuda:0
-[Worker 0] ==========================================
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-0, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-19, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-39, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-59, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-79, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-99, rank=8
-[Worker 0] Loaded adapter config: dummy-lora-7b-rank-8-100, rank=8
-[Worker 0] Adapter rank configuration initialized: 102 adapters
-[Worker 0] Setting up request queue...
-[Worker 0] Request queue initialized: max_total_tokens=10000, batch_max_tokens=3072, running_max_req_size=1000
-[Worker 0] Initializing model RPC...
-[Worker 0] ========== Model Loading Started ==========
-[Worker 0] Step 1/3: Creating Model RPC client...
-[Worker 0] Model RPC client created (took 0.00s)
-[Worker 0] Step 2/3: Preparing model initialization parameters...
-[Worker 0] Model configuration:
-[Worker 0]   Model directory: /home/hzheng/models/llama-7b
-[Worker 0]   Max total tokens: 10000
-[Worker 0]   Batch max tokens: 3072
-[Worker 0]   Running max requests: 1000
-[Worker 0]   Dummy mode: True
-[Worker 0]   LoRA enabled: True
-[Worker 0]   Adapter directories: 101 adapters
-[Worker 0] Step 3/3: Loading model weights...
-load model llama-7b:   0%|          | 0/32 [00:00<?, ?it/s]load model llama-7b:   0%|          | 0/32 [00:00<?, ?it/s]load model llama-7b:   0%|          | 0/32 [00:00<?, ?it/s]load model llama-7b: 100%|██████████| 32/32 [00:00<00:00, 564.61it/s]
-load model llama-7b: 100%|██████████| 32/32 [00:00<00:00, 561.84it/s]
-load model llama-7b: 100%|██████████| 32/32 [00:00<00:00, 564.72it/s]
-load adapters:   0%|          | 0/101 [00:00<?, ?it/s]load adapters:   0%|          | 0/101 [00:00<?, ?it/s]load adapters:   1%|          | 1/101 [00:00<00:15,  6.49it/s]load adapters:   0%|          | 0/101 [00:00<?, ?it/s]load adapters:   1%|          | 1/101 [00:00<01:07,  1.48it/s]load adapters:   2%|▏         | 2/101 [00:01<00:58,  1.69it/s]load adapters:   1%|          | 1/101 [00:00<01:28,  1.13it/s]load adapters:   2%|▏         | 2/101 [00:01<01:18,  1.27it/s]load adapters:   2%|▏         | 2/101 [00:01<01:14,  1.33it/s]load adapters:   3%|▎         | 3/101 [00:01<01:09,  1.42it/s]load adapters:   3%|▎         | 3/101 [00:02<01:21,  1.20it/s]load adapters:   3%|▎         | 3/101 [00:02<01:20,  1.21it/s]load adapters:   4%|▍         | 4/101 [00:02<01:20,  1.20it/s]load adapters:   4%|▍         | 4/101 [00:03<01:20,  1.20it/s]load adapters:   4%|▍         | 4/101 [00:03<01:24,  1.14it/s]load adapters:   5%|▍         | 5/101 [00:03<01:21,  1.18it/s]load adapters:   5%|▍         | 5/101 [00:04<01:24,  1.14it/s]load adapters:   5%|▍         | 5/101 [00:04<01:23,  1.15it/s]load adapters:   6%|▌         | 6/101 [00:04<01:24,  1.13it/s]load adapters:   6%|▌         | 6/101 [00:05<01:24,  1.13it/s]load adapters:   7%|▋         | 7/101 [00:05<01:16,  1.23it/s]load adapters:   6%|▌         | 6/101 [00:05<01:21,  1.16it/s]load adapters:   7%|▋         | 7/101 [00:06<01:25,  1.09it/s]load adapters:   8%|▊         | 8/101 [00:06<01:18,  1.18it/s]load adapters:   7%|▋         | 7/101 [00:06<01:24,  1.11it/s]load adapters:   8%|▊         | 8/101 [00:07<01:24,  1.10it/s]load adapters:   9%|▉         | 9/101 [00:07<01:18,  1.17it/s]load adapters:   8%|▊         | 8/101 [00:06<01:24,  1.11it/s]load adapters:   9%|▉         | 9/101 [00:07<01:24,  1.09it/s]load adapters:  10%|▉         | 10/101 [00:08<01:18,  1.15it/s]load adapters:   9%|▉         | 9/101 [00:07<01:23,  1.11it/s]load adapters:  11%|█         | 11/101 [00:08<01:18,  1.15it/s]load adapters:  10%|▉         | 10/101 [00:08<01:25,  1.07it/s]load adapters:  10%|▉         | 10/101 [00:08<01:24,  1.08it/s]load adapters:  12%|█▏        | 12/101 [00:09<01:17,  1.16it/s]load adapters:  11%|█         | 11/101 [00:09<01:24,  1.07it/s]load adapters:  11%|█         | 11/101 [00:09<01:22,  1.09it/s]load adapters:  13%|█▎        | 13/101 [00:10<01:13,  1.19it/s]load adapters:  12%|█▏        | 12/101 [00:10<01:23,  1.06it/s]load adapters:  12%|█▏        | 12/101 [00:10<01:23,  1.07it/s]load adapters:  14%|█▍        | 14/101 [00:11<01:14,  1.17it/s]load adapters:  13%|█▎        | 13/101 [00:11<01:23,  1.05it/s]load adapters:  13%|█▎        | 13/101 [00:11<01:22,  1.07it/s]load adapters:  15%|█▍        | 15/101 [00:12<01:12,  1.19it/s]load adapters:  14%|█▍        | 14/101 [00:12<01:22,  1.05it/s]load adapters:  14%|█▍        | 14/101 [00:12<01:22,  1.05it/s]load adapters:  16%|█▌        | 16/101 [00:13<01:14,  1.14it/s]load adapters:  15%|█▍        | 15/101 [00:13<01:22,  1.05it/s]load adapters:  15%|█▍        | 15/101 [00:13<01:21,  1.05it/s]load adapters:  17%|█▋        | 17/101 [00:14<01:11,  1.18it/s]load adapters:  16%|█▌        | 16/101 [00:14<01:18,  1.08it/s]load adapters:  16%|█▌        | 16/101 [00:14<01:21,  1.04it/s]load adapters:  18%|█▊        | 18/101 [00:15<01:13,  1.13it/s]load adapters:  17%|█▋        | 17/101 [00:15<01:19,  1.06it/s]load adapters:  17%|█▋        | 17/101 [00:15<01:21,  1.04it/s]load adapters:  19%|█▉        | 19/101 [00:15<01:14,  1.11it/s]load adapters:  18%|█▊        | 18/101 [00:16<01:18,  1.05it/s]load adapters:  18%|█▊        | 18/101 [00:16<01:19,  1.05it/s]load adapters:  20%|█▉        | 20/101 [00:17<01:16,  1.05it/s]load adapters:  19%|█▉        | 19/101 [00:17<01:19,  1.03it/s]load adapters:  19%|█▉        | 19/101 [00:17<01:15,  1.09it/s]load adapters:  21%|██        | 21/101 [00:17<01:15,  1.06it/s]load adapters:  20%|█▉        | 20/101 [00:18<01:10,  1.14it/s]load adapters:  20%|█▉        | 20/101 [00:18<01:16,  1.06it/s]load adapters:  22%|██▏       | 22/101 [00:18<01:13,  1.08it/s]load adapters:  21%|██        | 21/101 [00:19<01:11,  1.12it/s]load adapters:  21%|██        | 21/101 [00:19<01:17,  1.04it/s]load adapters:  23%|██▎       | 23/101 [00:19<01:11,  1.09it/s]load adapters:  22%|██▏       | 22/101 [00:19<01:10,  1.12it/s]load adapters:  22%|██▏       | 22/101 [00:20<01:15,  1.05it/s]load adapters:  24%|██▍       | 24/101 [00:20<01:10,  1.09it/s]load adapters:  23%|██▎       | 23/101 [00:20<01:12,  1.08it/s]load adapters:  23%|██▎       | 23/101 [00:21<01:14,  1.05it/s]load adapters:  25%|██▍       | 25/101 [00:21<01:09,  1.09it/s]load adapters:  24%|██▍       | 24/101 [00:21<01:05,  1.18it/s]load adapters:  24%|██▍       | 24/101 [00:22<01:13,  1.05it/s]load adapters:  26%|██▌       | 26/101 [00:22<01:08,  1.10it/s]load adapters:  25%|██▍       | 25/101 [00:22<01:05,  1.17it/s]load adapters:  27%|██▋       | 27/101 [00:23<01:05,  1.14it/s]load adapters:  25%|██▍       | 25/101 [00:23<01:12,  1.05it/s]load adapters:  26%|██▌       | 26/101 [00:23<01:08,  1.10it/s]load adapters:  28%|██▊       | 28/101 [00:24<01:06,  1.10it/s]load adapters:  26%|██▌       | 26/101 [00:24<01:12,  1.03it/s]load adapters:  27%|██▋       | 27/101 [00:24<01:07,  1.10it/s]load adapters:  29%|██▊       | 29/101 [00:25<01:04,  1.12it/s]load adapters:  27%|██▋       | 27/101 [00:25<01:13,  1.01it/s]load adapters:  28%|██▊       | 28/101 [00:25<01:07,  1.08it/s]load adapters:  30%|██▉       | 30/101 [00:25<01:01,  1.15it/s]load adapters:  28%|██▊       | 28/101 [00:26<01:12,  1.01it/s]load adapters:  31%|███       | 31/101 [00:26<00:53,  1.30it/s]load adapters:  29%|██▊       | 29/101 [00:26<01:07,  1.07it/s]load adapters:  29%|██▊       | 29/101 [00:27<01:10,  1.02it/s]load adapters:  32%|███▏      | 32/101 [00:27<00:57,  1.20it/s]load adapters:  30%|██▉       | 30/101 [00:27<01:08,  1.04it/s]load adapters:  30%|██▉       | 30/101 [00:28<01:08,  1.04it/s]load adapters:  33%|███▎      | 33/101 [00:28<00:59,  1.15it/s]load adapters:  31%|███       | 31/101 [00:28<01:08,  1.03it/s]load adapters:  31%|███       | 31/101 [00:28<01:03,  1.10it/s]load adapters:  34%|███▎      | 34/101 [00:29<01:00,  1.11it/s]load adapters:  32%|███▏      | 32/101 [00:29<01:06,  1.04it/s]load adapters:  32%|███▏      | 32/101 [00:29<01:04,  1.07it/s]load adapters:  35%|███▍      | 35/101 [00:30<00:59,  1.11it/s]load adapters:  33%|███▎      | 33/101 [00:30<01:01,  1.10it/s]load adapters:  33%|███▎      | 33/101 [00:30<01:03,  1.07it/s]load adapters:  36%|███▌      | 36/101 [00:31<00:56,  1.15it/s]load adapters:  34%|███▎      | 34/101 [00:31<01:00,  1.11it/s]load adapters:  34%|███▎      | 34/101 [00:31<01:03,  1.06it/s]load adapters:  37%|███▋      | 37/101 [00:32<00:57,  1.11it/s]load adapters:  35%|███▍      | 35/101 [00:31<01:00,  1.09it/s]load adapters:  35%|███▍      | 35/101 [00:32<01:03,  1.04it/s]load adapters:  38%|███▊      | 38/101 [00:32<00:56,  1.11it/s]load adapters:  36%|███▌      | 36/101 [00:32<01:01,  1.06it/s]load adapters:  39%|███▊      | 39/101 [00:33<00:51,  1.21it/s]load adapters:  36%|███▌      | 36/101 [00:33<01:04,  1.01it/s]load adapters:  37%|███▋      | 37/101 [00:33<00:58,  1.10it/s]load adapters:  40%|███▉      | 40/101 [00:34<00:50,  1.20it/s]load adapters:  37%|███▋      | 37/101 [00:34<01:01,  1.05it/s]load adapters:  38%|███▊      | 38/101 [00:34<00:56,  1.12it/s]load adapters:  41%|████      | 41/101 [00:35<00:50,  1.20it/s]load adapters:  38%|███▊      | 38/101 [00:35<01:00,  1.04it/s]load adapters:  39%|███▊      | 39/101 [00:35<00:57,  1.08it/s]load adapters:  42%|████▏     | 42/101 [00:36<00:50,  1.16it/s]load adapters:  39%|███▊      | 39/101 [00:36<00:59,  1.04it/s]load adapters:  40%|███▉      | 40/101 [00:36<00:57,  1.07it/s]load adapters:  43%|████▎     | 43/101 [00:37<00:50,  1.16it/s]load adapters:  40%|███▉      | 40/101 [00:37<00:59,  1.03it/s]load adapters:  41%|████      | 41/101 [00:37<00:56,  1.06it/s]load adapters:  44%|████▎     | 44/101 [00:38<00:51,  1.10it/s]load adapters:  41%|████      | 41/101 [00:38<00:58,  1.03it/s]load adapters:  42%|████▏     | 42/101 [00:38<00:54,  1.08it/s]load adapters:  45%|████▍     | 45/101 [00:38<00:49,  1.12it/s]load adapters:  42%|████▏     | 42/101 [00:39<00:56,  1.05it/s]load adapters:  43%|████▎     | 43/101 [00:39<00:55,  1.05it/s]load adapters:  46%|████▌     | 46/101 [00:39<00:48,  1.12it/s]load adapters:  43%|████▎     | 43/101 [00:40<00:52,  1.09it/s]load adapters:  44%|████▎     | 44/101 [00:40<00:54,  1.05it/s]load adapters:  47%|████▋     | 47/101 [00:40<00:49,  1.10it/s]load adapters:  44%|████▎     | 44/101 [00:41<00:52,  1.09it/s]load adapters:  45%|████▍     | 45/101 [00:41<00:53,  1.05it/s]load adapters:  48%|████▊     | 48/101 [00:41<00:50,  1.05it/s]load adapters:  45%|████▍     | 45/101 [00:42<00:50,  1.11it/s]load adapters:  46%|████▌     | 46/101 [00:42<00:52,  1.06it/s]load adapters:  49%|████▊     | 49/101 [00:42<00:49,  1.05it/s]load adapters:  46%|████▌     | 46/101 [00:42<00:49,  1.12it/s]load adapters:  47%|████▋     | 47/101 [00:42<00:44,  1.21it/s]load adapters:  50%|████▉     | 50/101 [00:43<00:46,  1.10it/s]load adapters:  47%|████▋     | 47/101 [00:43<00:48,  1.11it/s]load adapters:  48%|████▊     | 48/101 [00:43<00:47,  1.13it/s]load adapters:  50%|█████     | 51/101 [00:44<00:45,  1.09it/s]load adapters:  48%|████▊     | 48/101 [00:44<00:48,  1.10it/s]load adapters:  49%|████▊     | 49/101 [00:44<00:47,  1.09it/s]load adapters:  51%|█████▏    | 52/101 [00:45<00:45,  1.08it/s]load adapters:  49%|████▊     | 49/101 [00:45<00:46,  1.11it/s]load adapters:  50%|████▉     | 50/101 [00:45<00:42,  1.19it/s]load adapters:  52%|█████▏    | 53/101 [00:46<00:45,  1.05it/s]load adapters:  50%|████▉     | 50/101 [00:46<00:46,  1.10it/s]load adapters:  50%|█████     | 51/101 [00:46<00:43,  1.16it/s]load adapters:  53%|█████▎    | 54/101 [00:47<00:44,  1.07it/s]load adapters:  51%|█████▏    | 52/101 [00:47<00:41,  1.19it/s]load adapters:  50%|█████     | 51/101 [00:47<00:48,  1.03it/s]load adapters:  54%|█████▍    | 55/101 [00:48<00:43,  1.07it/s]load adapters:  52%|█████▏    | 53/101 [00:48<00:41,  1.15it/s]load adapters:  51%|█████▏    | 52/101 [00:48<00:47,  1.03it/s]load adapters:  55%|█████▌    | 56/101 [00:49<00:40,  1.12it/s]load adapters:  53%|█████▎    | 54/101 [00:49<00:41,  1.13it/s]load adapters:  52%|█████▏    | 53/101 [00:49<00:46,  1.04it/s]load adapters:  56%|█████▋    | 57/101 [00:50<00:41,  1.06it/s]load adapters:  54%|█████▍    | 55/101 [00:49<00:38,  1.18it/s]load adapters:  53%|█████▎    | 54/101 [00:50<00:45,  1.04it/s]load adapters:  57%|█████▋    | 58/101 [00:51<00:38,  1.11it/s]load adapters:  55%|█████▌    | 56/101 [00:50<00:39,  1.14it/s]load adapters:  54%|█████▍    | 55/101 [00:51<00:43,  1.05it/s]load adapters:  58%|█████▊    | 59/101 [00:51<00:38,  1.08it/s]load adapters:  56%|█████▋    | 57/101 [00:51<00:38,  1.15it/s]load adapters:  55%|█████▌    | 56/101 [00:52<00:42,  1.05it/s]load adapters:  57%|█████▋    | 58/101 [00:52<00:38,  1.13it/s]load adapters:  59%|█████▉    | 60/101 [00:52<00:38,  1.07it/s]load adapters:  56%|█████▋    | 57/101 [00:53<00:41,  1.05it/s]load adapters:  58%|█████▊    | 59/101 [00:53<00:38,  1.10it/s]load adapters:  60%|██████    | 61/101 [00:53<00:37,  1.06it/s]load adapters:  57%|█████▋    | 58/101 [00:54<00:41,  1.03it/s]load adapters:  59%|█████▉    | 60/101 [00:54<00:37,  1.08it/s]load adapters:  61%|██████▏   | 62/101 [00:54<00:37,  1.05it/s]load adapters:  58%|█████▊    | 59/101 [00:55<00:38,  1.08it/s]load adapters:  60%|██████    | 61/101 [00:55<00:34,  1.14it/s]load adapters:  62%|██████▏   | 63/101 [00:55<00:35,  1.08it/s]load adapters:  59%|█████▉    | 60/101 [00:56<00:38,  1.06it/s]load adapters:  63%|██████▎   | 64/101 [00:56<00:32,  1.15it/s]load adapters:  61%|██████▏   | 62/101 [00:56<00:36,  1.08it/s]load adapters:  60%|██████    | 61/101 [00:57<00:37,  1.05it/s]load adapters:  64%|██████▍   | 65/101 [00:57<00:32,  1.11it/s]load adapters:  62%|██████▏   | 63/101 [00:57<00:35,  1.07it/s]load adapters:  61%|██████▏   | 62/101 [00:58<00:35,  1.10it/s]load adapters:  65%|██████▌   | 66/101 [00:58<00:31,  1.10it/s]load adapters:  63%|██████▎   | 64/101 [00:58<00:34,  1.08it/s]load adapters:  62%|██████▏   | 63/101 [00:58<00:34,  1.10it/s]load adapters:  66%|██████▋   | 67/101 [00:59<00:30,  1.10it/s]load adapters:  64%|██████▍   | 65/101 [00:59<00:32,  1.09it/s]load adapters:  63%|██████▎   | 64/101 [00:59<00:32,  1.15it/s]load adapters:  67%|██████▋   | 68/101 [01:00<00:30,  1.08it/s]load adapters:  65%|██████▌   | 66/101 [00:59<00:32,  1.09it/s]load adapters:  64%|██████▍   | 65/101 [01:00<00:32,  1.12it/s]load adapters:  68%|██████▊   | 69/101 [01:01<00:29,  1.07it/s]load adapters:  66%|██████▋   | 67/101 [01:00<00:31,  1.07it/s]load adapters:  65%|██████▌   | 66/101 [01:01<00:30,  1.14it/s]load adapters:  69%|██████▉   | 70/101 [01:02<00:28,  1.07it/s]load adapters:  67%|██████▋   | 68/101 [01:02<00:32,  1.03it/s]load adapters:  66%|██████▋   | 67/101 [01:02<00:30,  1.12it/s]load adapters:  70%|███████   | 71/101 [01:03<00:28,  1.07it/s]load adapters:  68%|██████▊   | 69/101 [01:02<00:30,  1.04it/s]load adapters:  67%|██████▋   | 68/101 [01:03<00:27,  1.19it/s]load adapters:  68%|██████▊   | 69/101 [01:03<00:24,  1.28it/s]load adapters:  71%|███████▏  | 72/101 [01:03<00:26,  1.09it/s]load adapters:  69%|██████▉   | 70/101 [01:03<00:29,  1.05it/s]load adapters:  69%|██████▉   | 70/101 [01:04<00:25,  1.23it/s]load adapters:  72%|███████▏  | 73/101 [01:04<00:26,  1.07it/s]load adapters:  70%|███████   | 71/101 [01:04<00:29,  1.03it/s]load adapters:  70%|███████   | 71/101 [01:05<00:25,  1.19it/s]load adapters:  73%|███████▎  | 74/101 [01:05<00:25,  1.07it/s]load adapters:  71%|███████▏  | 72/101 [01:05<00:28,  1.01it/s]load adapters:  71%|███████▏  | 72/101 [01:06<00:24,  1.17it/s]load adapters:  74%|███████▍  | 75/101 [01:06<00:25,  1.04it/s]load adapters:  72%|███████▏  | 73/101 [01:06<00:27,  1.02it/s]load adapters:  72%|███████▏  | 73/101 [01:07<00:23,  1.17it/s]load adapters:  75%|███████▌  | 76/101 [01:07<00:23,  1.05it/s]load adapters:  73%|███████▎  | 74/101 [01:07<00:26,  1.03it/s]load adapters:  73%|███████▎  | 74/101 [01:08<00:23,  1.14it/s]load adapters:  76%|███████▌  | 77/101 [01:08<00:22,  1.09it/s]load adapters:  74%|███████▍  | 75/101 [01:08<00:24,  1.06it/s]load adapters:  74%|███████▍  | 75/101 [01:09<00:24,  1.08it/s]load adapters:  77%|███████▋  | 78/101 [01:09<00:21,  1.07it/s]load adapters:  75%|███████▌  | 76/101 [01:09<00:23,  1.06it/s]load adapters:  75%|███████▌  | 76/101 [01:10<00:23,  1.08it/s]load adapters:  78%|███████▊  | 79/101 [01:10<00:20,  1.07it/s]load adapters:  76%|███████▌  | 77/101 [01:10<00:22,  1.05it/s]load adapters:  76%|███████▌  | 77/101 [01:11<00:22,  1.08it/s]load adapters:  79%|███████▉  | 80/101 [01:11<00:19,  1.07it/s]load adapters:  77%|███████▋  | 78/101 [01:11<00:21,  1.06it/s]load adapters:  77%|███████▋  | 78/101 [01:12<00:20,  1.10it/s]load adapters:  80%|████████  | 81/101 [01:12<00:18,  1.06it/s]load adapters:  78%|███████▊  | 79/101 [01:12<00:19,  1.13it/s]load adapters:  78%|███████▊  | 79/101 [01:12<00:21,  1.01it/s]load adapters:  81%|████████  | 82/101 [01:13<00:18,  1.05it/s]load adapters:  79%|███████▉  | 80/101 [01:13<00:18,  1.16it/s]load adapters:  79%|███████▉  | 80/101 [01:13<00:20,  1.02it/s]load adapters:  82%|████████▏ | 83/101 [01:14<00:17,  1.04it/s]load adapters:  80%|████████  | 81/101 [01:14<00:17,  1.15it/s]load adapters:  80%|████████  | 81/101 [01:14<00:19,  1.02it/s]load adapters:  83%|████████▎ | 84/101 [01:15<00:16,  1.03it/s]load adapters:  81%|████████  | 82/101 [01:15<00:16,  1.16it/s]load adapters:  81%|████████  | 82/101 [01:15<00:18,  1.03it/s]load adapters:  84%|████████▍ | 85/101 [01:16<00:15,  1.05it/s]load adapters:  82%|████████▏ | 83/101 [01:16<00:15,  1.17it/s]load adapters:  82%|████████▏ | 83/101 [01:16<00:17,  1.02it/s]load adapters:  83%|████████▎ | 84/101 [01:17<00:14,  1.19it/s]load adapters:  85%|████████▌ | 86/101 [01:17<00:14,  1.04it/s]load adapters:  83%|████████▎ | 84/101 [01:17<00:16,  1.04it/s]load adapters:  84%|████████▍ | 85/101 [01:17<00:13,  1.16it/s]load adapters:  86%|████████▌ | 87/101 [01:18<00:13,  1.04it/s]load adapters:  84%|████████▍ | 85/101 [01:18<00:15,  1.04it/s]load adapters:  85%|████████▌ | 86/101 [01:18<00:12,  1.18it/s]load adapters:  87%|████████▋ | 88/101 [01:19<00:12,  1.03it/s]load adapters:  85%|████████▌ | 86/101 [01:19<00:14,  1.05it/s]load adapters:  86%|████████▌ | 87/101 [01:19<00:12,  1.16it/s]load adapters:  88%|████████▊ | 89/101 [01:20<00:11,  1.09it/s]load adapters:  86%|████████▌ | 87/101 [01:20<00:13,  1.04it/s]load adapters:  87%|████████▋ | 88/101 [01:20<00:11,  1.12it/s]load adapters:  89%|████████▉ | 90/101 [01:20<00:09,  1.12it/s]load adapters:  88%|████████▊ | 89/101 [01:21<00:10,  1.10it/s]load adapters:  87%|████████▋ | 88/101 [01:21<00:12,  1.02it/s]load adapters:  90%|█████████ | 91/101 [01:21<00:09,  1.09it/s]load adapters:  89%|████████▉ | 90/101 [01:22<00:10,  1.10it/s]load adapters:  88%|████████▊ | 89/101 [01:22<00:11,  1.02it/s]load adapters:  91%|█████████ | 92/101 [01:22<00:08,  1.07it/s]load adapters:  89%|████████▉ | 90/101 [01:23<00:10,  1.04it/s]load adapters:  90%|█████████ | 91/101 [01:23<00:09,  1.06it/s]load adapters:  92%|█████████▏| 93/101 [01:23<00:07,  1.07it/s]load adapters:  90%|█████████ | 91/101 [01:24<00:09,  1.05it/s]load adapters:  91%|█████████ | 92/101 [01:24<00:08,  1.07it/s]load adapters:  93%|█████████▎| 94/101 [01:24<00:06,  1.13it/s]load adapters:  92%|█████████▏| 93/101 [01:25<00:07,  1.11it/s]load adapters:  94%|█████████▍| 95/101 [01:25<00:05,  1.09it/s]load adapters:  91%|█████████ | 92/101 [01:25<00:08,  1.03it/s]load adapters:  93%|█████████▎| 94/101 [01:26<00:06,  1.16it/s]load adapters:  92%|█████████▏| 93/101 [01:26<00:07,  1.06it/s]load adapters:  95%|█████████▌| 96/101 [01:26<00:04,  1.07it/s]load adapters:  94%|█████████▍| 95/101 [01:26<00:05,  1.12it/s]load adapters:  93%|█████████▎| 94/101 [01:26<00:06,  1.08it/s]load adapters:  96%|█████████▌| 97/101 [01:27<00:03,  1.06it/s]load adapters:  95%|█████████▌| 96/101 [01:27<00:04,  1.11it/s]load adapters:  94%|█████████▍| 95/101 [01:27<00:05,  1.09it/s]load adapters:  97%|█████████▋| 98/101 [01:28<00:02,  1.11it/s]load adapters:  96%|█████████▌| 97/101 [01:28<00:03,  1.10it/s]load adapters:  95%|█████████▌| 96/101 [01:28<00:04,  1.11it/s]load adapters:  98%|█████████▊| 99/101 [01:29<00:01,  1.10it/s]load adapters:  97%|█████████▋| 98/101 [01:29<00:02,  1.08it/s]load adapters:  96%|█████████▌| 97/101 [01:29<00:03,  1.10it/s]load adapters:  99%|█████████▉| 100/101 [01:30<00:00,  1.11it/s]load adapters:  98%|█████████▊| 99/101 [01:30<00:01,  1.05it/s]load adapters:  97%|█████████▋| 98/101 [01:30<00:02,  1.09it/s]load adapters: 100%|██████████| 101/101 [01:31<00:00,  1.09it/s]load adapters: 100%|██████████| 101/101 [01:31<00:00,  1.11it/s]
-[Worker 1] Model size: 25.10 GB
-[Worker 1] Model weights loaded (took 91.51s)
-[Worker 1] ========== Model Loading Complete ==========
-[Worker 1] Total initialization time: 91.51s
-[Worker 1] Model RPC initialized successfully on GPU 2
-[Worker 1] Model loading complete
-[Worker 1] Setting up ZMQ communication...
-[Worker 1] ZMQ communication setup complete: request_port=50001, response_port=10003, timeout=30s
-[Worker 1] Sending ready signal...
-[Worker 1] Worker initialization complete, starting main loop...
-[Worker 1] Ready on GPU 2
-[Worker 1] Started receive and process loops
-[Worker 1] Request receiver loop started
-[Worker 1] Process loop started
-load adapters:  99%|█████████▉| 100/101 [01:31<00:00,  1.37it/s]load adapters:  98%|█████████▊| 99/101 [01:30<00:01,  1.41it/s]load adapters: 100%|██████████| 101/101 [01:31<00:00,  1.11it/s]
-[Worker 2] Model size: 25.10 GB
-[Worker 2] Model weights loaded (took 91.66s)
-[Worker 2] ========== Model Loading Complete ==========
-[Worker 2] Total initialization time: 91.66s
-[Worker 2] Model RPC initialized successfully on GPU 3
-[Worker 2] Model loading complete
-[Worker 2] Setting up ZMQ communication...
-[Worker 2] ZMQ communication setup complete: request_port=50002, response_port=10003, timeout=30s
-[Worker 2] Sending ready signal...
-[Worker 2] Worker initialization complete, starting main loop...
-[Worker 2] Ready on GPU 3
-[Worker 2] Started receive and process loops
-[Worker 2] Request receiver loop started
-[Worker 2] Process loop started
-load adapters: 100%|██████████| 101/101 [01:30<00:00,  2.41it/s]load adapters: 100%|██████████| 101/101 [01:30<00:00,  1.11it/s]
-[Worker 0] Model size: 25.10 GB
-[Worker 0] Model weights loaded (took 91.71s)
-[Worker 0] ========== Model Loading Complete ==========
-[Worker 0] Total initialization time: 91.71s
-[Worker 0] Model RPC initialized successfully on GPU 1
-[Worker 0] Model loading complete
-[Worker 0] Setting up ZMQ communication...
-[Worker 0] ZMQ communication setup complete: request_port=50000, response_port=10003, timeout=30s
-[Worker 0] Sending ready signal...
-[Worker 0] Worker initialization complete, starting main loop...
-INFO:     Started server process [43707]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-[Worker 0] Ready on GPU 1
-[Worker 0] Started receive and process loops
-[Worker 0] Request receiver loop started
-[Worker 0] Process loop started
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[DataParallelRouterManager] Worker 2 process started (PID: 44384)
-[DataParallelRouterManager] Waiting for all workers to be ready...
-[DataParallelRouterManager] (This may take a few minutes while models are loading)
-[DataParallelRouterManager] Worker 1 is READY (1/3)
-[DataParallelRouterManager] Worker 2 is READY (2/3)
-[DataParallelRouterManager] Worker 0 is READY (3/3)
-
-================================================================================
-[DataParallelRouterManager] ★★★ ALL WORKERS READY ★★★
-================================================================================
-[DataParallelRouterManager] Successfully started 3 worker(s)
-[DataParallelRouterManager]   Worker 0: GPU 1, PID 44382
-[DataParallelRouterManager]   Worker 1: GPU 2, PID 44383
-[DataParallelRouterManager]   Worker 2: GPU 3, PID 44384
-================================================================================
-
-================================================================================
-[DataParallelRouter] Data Parallel Mode Started Successfully
-================================================================================
-[DataParallelRouter] Number of Workers: 3
-[DataParallelRouter] GPU IDs: [1, 2, 3]
-[DataParallelRouter] Worker Ports: [50000, 50001, 50002]
-[DataParallelRouter] All workers are ready and accepting requests
-================================================================================
-[DataParallelRouterManager] Starting main loop, listening on port 10000
-[DataParallelRouterManager] Worker health check task started
-[DataParallelRouterManager] Statistics reporting task started
-[DataParallelRouterManager] Worker health check started (interval: 10s)
-[DataParallelRouterManager] Statistics reporting started (interval: 10s)
+[Worker 0] New request: id=e32763b0..., max_output_len=41, ignore_eos=True
+[Worker 0] Received #156: d7a67e1c...
+[Worker 0] New request: id=d7a67e1c..., max_output_len=73, ignore_eos=True
+[ResponseMerger] FINISHED: req=2f843118..., worker=0
+[Worker 0] Received #157: 3c0325f4...
+[Worker 0] New request: id=3c0325f4..., max_output_len=50, ignore_eos=True
+[Worker 0] Received #158: e30609cb...
+[Worker 0] New request: id=e30609cb..., max_output_len=122, ignore_eos=True
+[HttpServerManager] Request 2f843118... completed
+[DataParallelRouterManager] Received AbortReq for request_id=2f843118032748ddaf84fa7b626362a3 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 56 in total
+[Worker 0] Loaded 6 adapters: ['dummy-lora-7b-rank-8-24', 'dummy-lora-7b-rank-8-84', 'dummy-lora-7b-rank-8-50', 'dummy-lora-7b-rank-8-9', 'dummy-lora-7b-rank-8-89']
+[Worker 0] Updated actual adapter usage: 1792 cells
+INFO:     127.0.0.1:33418 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 20f3a713... -> Worker 1
+INFO:     127.0.0.1:33432 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] fe1c252e... -> Worker 2
+INFO:     127.0.0.1:33434 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] c9e09e47... -> Worker 0
+[Worker 1] FINISHED: f2707daa... (output_len=81)
+[ResponseMerger] FINISHED: req=f2707daa..., worker=1
+[HttpServerManager] Request f2707daa... completed
+[DataParallelRouterManager] Received AbortReq for request_id=f2707daa2f6a48598bd86a1d69bff38a (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: 54ceb869... (output_len=24)
+[ResponseMerger] FINISHED: req=54ceb869..., worker=0
+[HttpServerManager] Request 54ceb869... completed
+[DataParallelRouterManager] Received AbortReq for request_id=54ceb8696e784796b02795d930d5fab7 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33442 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 9261abdd... -> Worker 1
+INFO:     127.0.0.1:33456 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 134be8f8... -> Worker 2
+[Worker 1] FINISHED: a9b7ce78... (output_len=95)
+[ResponseMerger] FINISHED: req=a9b7ce78..., worker=1
+[HttpServerManager] Request a9b7ce78... completed
+[DataParallelRouterManager] Received AbortReq for request_id=a9b7ce7864304c819cfd1a96e3ed981f (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: e32763b0... (output_len=41)
+[ResponseMerger] FINISHED: req=e32763b0..., worker=0
+[HttpServerManager] Request e32763b0... completed
+[DataParallelRouterManager] Received AbortReq for request_id=e32763b048334be1b80ea7dc3d4dd59d (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33470 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 25902151... -> Worker 0
+INFO:     127.0.0.1:33476 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] b2b3935a... -> Worker 1
+[Worker 0] FINISHED: 3c0325f4... (output_len=50)
+[ResponseMerger] FINISHED: req=3c0325f4..., worker=0
+[HttpServerManager] Request 3c0325f4... completed
+[DataParallelRouterManager] Received AbortReq for request_id=3c0325f4171a4291bda3a7a8b8101690 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: 677df55d... (output_len=113)
+[Worker 1] Received #155: 05c7a042...
+[Worker 1] New request: id=05c7a042..., max_output_len=13, ignore_eos=True
+[Worker 1] Received #156: a1eb495d...
+[Worker 1] New request: id=a1eb495d..., max_output_len=84, ignore_eos=True
+[Worker 1] Received #157: ce47b037...
+[Worker 1] New request: id=ce47b037..., max_output_len=119, ignore_eos=True
+[Worker 1] Received #158: 20f3a713...
+[Worker 1] New request: id=20f3a713..., max_output_len=118, ignore_eos=True
+[ResponseMerger] FINISHED: req=677df55d..., worker=1
+[Worker 1] Received #159: 9261abdd...
+[Worker 1] New request: id=9261abdd..., max_output_len=87, ignore_eos=True
+[Worker 1] Received #160: b2b3935a...
+[Worker 1] New request: id=b2b3935a..., max_output_len=125, ignore_eos=True
+[HttpServerManager] Request 677df55d... completed
+[DataParallelRouterManager] Received AbortReq for request_id=677df55dbb384f7bbb0599cc3270b578 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: d653255e... (output_len=60)
+[ResponseMerger] FINISHED: req=d653255e..., worker=2
+load 0 adapters, 57 in total
+[Worker 1] Loaded 6 adapters: ['dummy-lora-7b-rank-8-63', 'dummy-lora-7b-rank-8-36', 'dummy-lora-7b-rank-8-64', 'dummy-lora-7b-rank-8-97', 'dummy-lora-7b-rank-8-57']
+[Worker 1] Updated actual adapter usage: 1824 cells
+[HttpServerManager] Request d653255e... completed
+[DataParallelRouterManager] Received AbortReq for request_id=d653255eadb74c40b2a029a04b239b7c (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33486 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] c9a708f6... -> Worker 2
+INFO:     127.0.0.1:33498 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 09fc4ccd... -> Worker 0
+INFO:     127.0.0.1:33508 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 9d2dec10... -> Worker 1
+[Worker 2] FINISHED: e36e91c1... (output_len=76)
+[ResponseMerger] FINISHED: req=e36e91c1..., worker=2
+[HttpServerManager] Request e36e91c1... completed
+[DataParallelRouterManager] Received AbortReq for request_id=e36e91c1ba6f455eba4872b17cf7bc92 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: 05c7a042... (output_len=13)
+[ResponseMerger] FINISHED: req=05c7a042..., worker=1
+[HttpServerManager] Request 05c7a042... completed
+[DataParallelRouterManager] Received AbortReq for request_id=05c7a04206ee48d68565782d9812b607 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: d7a67e1c... (output_len=73)
+[ResponseMerger] FINISHED: req=d7a67e1c..., worker=0
+[HttpServerManager] Request d7a67e1c... completed
+[DataParallelRouterManager] Received AbortReq for request_id=d7a67e1c5774466fa3b5eb55428ac0fb (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: f01d0a87... (output_len=82)
+[ResponseMerger] FINISHED: req=f01d0a87..., worker=2
+[HttpServerManager] Request f01d0a87... completed
+[DataParallelRouterManager] Received AbortReq for request_id=f01d0a8744864a95956cffb6dccd7e8b (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33516 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 72cdcb36... -> Worker 2
+INFO:     127.0.0.1:33526 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 488a6f0b... -> Worker 0
+INFO:     127.0.0.1:33540 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] fd0157af... -> Worker 1
+INFO:     127.0.0.1:33546 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 541a1fd6... -> Worker 2
+[Worker 0] FINISHED: bc57ce8c... (output_len=91)
+[ResponseMerger] FINISHED: req=bc57ce8c..., worker=0
+[HttpServerManager] Request bc57ce8c... completed
+[DataParallelRouterManager] Received AbortReq for request_id=bc57ce8c30404d7996b849dd203a7b72 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33548 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 08c503e8... -> Worker 0
+INFO:     127.0.0.1:33556 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] a7acbaf3... -> Worker 1
+[Worker 2] FINISHED: 6d27f639... (output_len=114)
+[Worker 2] Received #158: fe1c252e...
+[Worker 2] New request: id=fe1c252e..., max_output_len=30, ignore_eos=True
+[Worker 2] Received #159: 134be8f8...
+[Worker 2] New request: id=134be8f8..., max_output_len=102, ignore_eos=True
+[Worker 2] Received #160: c9a708f6...
+[Worker 2] New request: id=c9a708f6..., max_output_len=23, ignore_eos=True
+[Worker 2] Received #161: 72cdcb36...
+[Worker 2] New request: id=72cdcb36..., max_output_len=111, ignore_eos=True
+[Worker 2] Received #162: 541a1fd6...
+[Worker 2] New request: id=541a1fd6..., max_output_len=32, ignore_eos=True
+[ResponseMerger] FINISHED: req=6d27f639..., worker=2
+[HttpServerManager] Request 6d27f639... completed
+[DataParallelRouterManager] Received AbortReq for request_id=6d27f63989f442eabe023c94b6d7ee60 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 58 in total
+[Worker 2] Loaded 5 adapters: ['dummy-lora-7b-rank-8-49', 'dummy-lora-7b-rank-8-92', 'dummy-lora-7b-rank-8-17', 'dummy-lora-7b-rank-8-28', 'dummy-lora-7b-rank-8-91']
+[Worker 2] Updated actual adapter usage: 1856 cells
+INFO:     127.0.0.1:33568 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 8898ac73... -> Worker 2
+[Worker 0] FINISHED: e30609cb... (output_len=122)
+[Worker 0] Received #159: c9e09e47...
+[Worker 0] New request: id=c9e09e47..., max_output_len=62, ignore_eos=True
+[Worker 0] Received #160: 25902151...
+[Worker 0] New request: id=25902151..., max_output_len=82, ignore_eos=True
+[Worker 0] Received #161: 09fc4ccd...
+[Worker 0] New request: id=09fc4ccd..., max_output_len=15, ignore_eos=True
+[Worker 0] Received #162: 488a6f0b...
+[Worker 0] New request: id=488a6f0b..., max_output_len=11, ignore_eos=True
+[Worker 0] Received #163: 08c503e8...
+[Worker 0] New request: id=08c503e8..., max_output_len=74, ignore_eos=True
+[ResponseMerger] FINISHED: req=e30609cb..., worker=0
+[HttpServerManager] Request e30609cb... completed
+[DataParallelRouterManager] Received AbortReq for request_id=e30609cb996f48fdbddce1b996875eb0 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 57 in total
+[Worker 0] Loaded 5 adapters: ['dummy-lora-7b-rank-8-19', 'dummy-lora-7b-rank-8-94', 'dummy-lora-7b-rank-8-2', 'dummy-lora-7b-rank-8-42', 'dummy-lora-7b-rank-8-37']
+[Worker 0] Updated actual adapter usage: 1824 cells
+INFO:     127.0.0.1:33584 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 482f57cd... -> Worker 0
+[Worker 2] FINISHED: c9a708f6... (output_len=23)
+[ResponseMerger] FINISHED: req=c9a708f6..., worker=2
+[HttpServerManager] Request c9a708f6... completed
+[DataParallelRouterManager] Received AbortReq for request_id=c9a708f611a5445399fd8e834311b942 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33588 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 6918056a... -> Worker 1
+[Worker 0] FINISHED: 488a6f0b... (output_len=11)
+[ResponseMerger] FINISHED: req=488a6f0b..., worker=0
+[HttpServerManager] Request 488a6f0b... completed
+[DataParallelRouterManager] Received AbortReq for request_id=488a6f0b62524bd698b96e3c19b731fc (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: 09fc4ccd... (output_len=15)
+[ResponseMerger] FINISHED: req=09fc4ccd..., worker=0
+[HttpServerManager] Request 09fc4ccd... completed
+[DataParallelRouterManager] Received AbortReq for request_id=09fc4ccd298a41b3871aed109cd4f6a0 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: fe1c252e... (output_len=30)
+[ResponseMerger] FINISHED: req=fe1c252e..., worker=2
+[HttpServerManager] Request fe1c252e... completed
+[DataParallelRouterManager] Received AbortReq for request_id=fe1c252ef9ad4ae7981c820f444b4535 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: 541a1fd6... (output_len=32)
+[ResponseMerger] FINISHED: req=541a1fd6..., worker=2
+[HttpServerManager] Request 541a1fd6... completed
+[DataParallelRouterManager] Received AbortReq for request_id=541a1fd6252d4243b95c11e515754e5b (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: a1eb495d... (output_len=84)
+[ResponseMerger] FINISHED: req=a1eb495d..., worker=1
+[HttpServerManager] Request a1eb495d... completed
+[DataParallelRouterManager] Received AbortReq for request_id=a1eb495d6c604f25869af1d160eccdeb (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: 9261abdd... (output_len=87)
+[ResponseMerger] FINISHED: req=9261abdd..., worker=1
+[HttpServerManager] Request 9261abdd... completed
+[DataParallelRouterManager] Received AbortReq for request_id=9261abddc2c64501b07a67644b27f000 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33592 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] fcab731a... -> Worker 2
+[Worker 1] FINISHED: 20f3a713... (output_len=118)
+[ResponseMerger] FINISHED: req=20f3a713..., worker=1
+[HttpServerManager] Request 20f3a713... completed
+[DataParallelRouterManager] Received AbortReq for request_id=20f3a713e5164cec85893c3fc736d490 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: ce47b037... (output_len=119)
+[ResponseMerger] FINISHED: req=ce47b037..., worker=1
+INFO:     127.0.0.1:33608 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] d030c61b... -> Worker 0
+[HttpServerManager] Request ce47b037... completed
+[DataParallelRouterManager] Received AbortReq for request_id=ce47b03770a54b0d949b551d8df37d86 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: c9e09e47... (output_len=62)
+[ResponseMerger] FINISHED: req=c9e09e47..., worker=0
+[HttpServerManager] Request c9e09e47... completed
+[DataParallelRouterManager] Received AbortReq for request_id=c9e09e4732bf4ab691171adeda49488f (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: b2b3935a... (output_len=125)
+[Worker 1] Received #161: 9d2dec10...
+[Worker 1] New request: id=9d2dec10..., max_output_len=11, ignore_eos=True
+[Worker 1] Received #162: fd0157af...
+[Worker 1] New request: id=fd0157af..., max_output_len=63, ignore_eos=True
+[Worker 1] Received #163: a7acbaf3...
+[Worker 1] New request: id=a7acbaf3..., max_output_len=103, ignore_eos=True
+[Worker 1] Received #164: 6918056a...
+[Worker 1] New request: id=6918056a..., max_output_len=100, ignore_eos=True
+[ResponseMerger] FINISHED: req=b2b3935a..., worker=1
+[HttpServerManager] Request b2b3935a... completed
+[DataParallelRouterManager] Received AbortReq for request_id=b2b3935a0a56437f9cf9ba4ca1e38180 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 58 in total
+[Worker 1] Loaded 4 adapters: ['dummy-lora-7b-rank-8-1', 'dummy-lora-7b-rank-8-95', 'dummy-lora-7b-rank-8-96', 'dummy-lora-7b-rank-8-29']
+[Worker 1] Updated actual adapter usage: 1856 cells
+[Worker 0] FINISHED: 08c503e8... (output_len=74)
+[ResponseMerger] FINISHED: req=08c503e8..., worker=0
+[HttpServerManager] Request 08c503e8... completed
+[DataParallelRouterManager] Received AbortReq for request_id=08c503e8bb9247deba24b55a99eb8e3c (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33612 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 900d85da... -> Worker 1
+[Worker 1] FINISHED: 9d2dec10... (output_len=11)
+[ResponseMerger] FINISHED: req=9d2dec10..., worker=1
+[HttpServerManager] Request 9d2dec10... completed
+[DataParallelRouterManager] Received AbortReq for request_id=9d2dec100aab4f6db6abba29f8e2b77d (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33622 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 6a8b6cfb... -> Worker 2
+[Worker 0] FINISHED: 25902151... (output_len=82)
+[Worker 0] Received #164: 482f57cd...
+[Worker 0] New request: id=482f57cd..., max_output_len=34, ignore_eos=True
+[Worker 0] Received #165: d030c61b...
+[Worker 0] New request: id=d030c61b..., max_output_len=57, ignore_eos=True
+[ResponseMerger] FINISHED: req=25902151..., worker=0
+[HttpServerManager] Request 25902151... completed
+[DataParallelRouterManager] Received AbortReq for request_id=25902151ed464f07ab0d5bd028f6cc9a (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 58 in total
+[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-85']
+[Worker 0] Updated actual adapter usage: 1856 cells
+INFO:     127.0.0.1:33624 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 3589a815... -> Worker 0
+[Worker 2] FINISHED: 134be8f8... (output_len=102)
+[ResponseMerger] FINISHED: req=134be8f8..., worker=2
+[HttpServerManager] Request 134be8f8... completed
+[DataParallelRouterManager] Received AbortReq for request_id=134be8f88ea84b8d9fe350f74321667a (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33628 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] af0ba839... -> Worker 1
+INFO:     127.0.0.1:33640 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 7ce42f1c... -> Worker 2
+INFO:     127.0.0.1:33642 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 8e29848a... -> Worker 0
+[Worker 2] FINISHED: 72cdcb36... (output_len=111)
+[Worker 2] Received #163: 8898ac73...
+[Worker 2] New request: id=8898ac73..., max_output_len=74, ignore_eos=True
+[Worker 2] Received #164: fcab731a...
+[Worker 2] New request: id=fcab731a..., max_output_len=39, ignore_eos=True
+[Worker 2] Received #165: 6a8b6cfb...
+[Worker 2] New request: id=6a8b6cfb..., max_output_len=58, ignore_eos=True
+[Worker 2] Received #166: 7ce42f1c...
+[Worker 2] New request: id=7ce42f1c..., max_output_len=12, ignore_eos=True
+[ResponseMerger] FINISHED: req=72cdcb36..., worker=2
+[HttpServerManager] Request 72cdcb36... completed
+[DataParallelRouterManager] Received AbortReq for request_id=72cdcb363dce4a269afc1d46dca2f0e7 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 59 in total
+[Worker 2] Loaded 4 adapters: ['dummy-lora-7b-rank-8-69', 'dummy-lora-7b-rank-8-96', 'dummy-lora-7b-rank-8-38', 'dummy-lora-7b-rank-8-16']
+[Worker 2] Updated actual adapter usage: 1888 cells
+INFO:     127.0.0.1:33656 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 9a6d077d... -> Worker 1
+INFO:     127.0.0.1:33668 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 4fb8306e... -> Worker 2
+[Worker 2] FINISHED: 7ce42f1c... (output_len=12)
+[ResponseMerger] FINISHED: req=7ce42f1c..., worker=2
+[HttpServerManager] Request 7ce42f1c... completed
+[DataParallelRouterManager] Received AbortReq for request_id=7ce42f1c66fd4a0c8b803cfcf6b924df (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33678 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] f4f64945... -> Worker 0
+[Worker 0] FINISHED: 482f57cd... (output_len=34)
+[ResponseMerger] FINISHED: req=482f57cd..., worker=0
+[HttpServerManager] Request 482f57cd... completed
+[DataParallelRouterManager] Received AbortReq for request_id=482f57cd2dfd42c7a10181b2450f8800 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: fd0157af... (output_len=63)
+[ResponseMerger] FINISHED: req=fd0157af..., worker=1
+[HttpServerManager] Request fd0157af... completed
+[DataParallelRouterManager] Received AbortReq for request_id=fd0157af35dc4c4ea65e810d72022a78 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33682 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] fceedb34... -> Worker 1
+[Worker 2] FINISHED: fcab731a... (output_len=39)
+[ResponseMerger] FINISHED: req=fcab731a..., worker=2
+[HttpServerManager] Request fcab731a... completed
+[DataParallelRouterManager] Received AbortReq for request_id=fcab731ac99f42a4b363536b132b855b (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33694 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 8c574304... -> Worker 2
+[Worker 0] FINISHED: d030c61b... (output_len=57)
+[Worker 0] Received #166: 3589a815...
+[Worker 0] New request: id=3589a815..., max_output_len=26, ignore_eos=True
+[Worker 0] Received #167: 8e29848a...
+[Worker 0] New request: id=8e29848a..., max_output_len=89, ignore_eos=True
+[Worker 0] Received #168: f4f64945...
+[Worker 0] New request: id=f4f64945..., max_output_len=68, ignore_eos=True
+[ResponseMerger] FINISHED: req=d030c61b..., worker=0
+[HttpServerManager] Request d030c61b... completed
+[DataParallelRouterManager] Received AbortReq for request_id=d030c61b77be4ad49947dda2e40680f8 (forwarded to detokenization, worker abort not yet implemented)
+load 3 adapters, 61 in total
+[Worker 0] Loaded 3 adapters: ['dummy-lora-7b-rank-8-55', 'dummy-lora-7b-rank-8-99', 'dummy-lora-7b-rank-8-57']
+[Worker 0] Updated actual adapter usage: 1952 cells
 [DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
+[DataParallelRouterManager] Total Requests: 504
+[DataParallelRouterManager] Successful Requests: 504
 [DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 10.01s
+[DataParallelRouterManager] Average Throughput: 2.52 req/s
+[DataParallelRouterManager] Running Time: 200.06s
 [DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
+[DataParallelRouterManager]   Worker 0 (GPU 1): 168 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 168 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 168 requests (33.3%)
 [DataParallelRouterManager] ==========================================
+INFO:     127.0.0.1:33706 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 09fa177b... -> Worker 0
+[Worker 2] FINISHED: 6a8b6cfb... (output_len=58)
+[ResponseMerger] FINISHED: req=6a8b6cfb..., worker=2
+[HttpServerManager] Request 6a8b6cfb... completed
+[DataParallelRouterManager] Received AbortReq for request_id=6a8b6cfb886849b3b5840fe820c61ccc (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33710 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] b4341d53... -> Worker 1
+[Worker 1] FINISHED: 6918056a... (output_len=100)
+[ResponseMerger] FINISHED: req=6918056a..., worker=1
+[HttpServerManager] Request 6918056a... completed
+[Worker 0] FINISHED: 3589a815... (output_len=26)
+[DataParallelRouterManager] Received AbortReq for request_id=6918056ad72e443fa5a5bd27387d06ec (forwarded to detokenization, worker abort not yet implemented)
+[ResponseMerger] FINISHED: req=3589a815..., worker=0
+[HttpServerManager] Request 3589a815... completed
+[DataParallelRouterManager] Received AbortReq for request_id=3589a815c6d14465a7c1ae4231524bf0 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: a7acbaf3... (output_len=103)
+[Worker 1] Received #165: 900d85da...
+[Worker 1] New request: id=900d85da..., max_output_len=68, ignore_eos=True
+[Worker 1] Received #166: af0ba839...
+[Worker 1] New request: id=af0ba839..., max_output_len=28, ignore_eos=True
+[Worker 1] Received #167: 9a6d077d...
+[Worker 1] New request: id=9a6d077d..., max_output_len=99, ignore_eos=True
+[Worker 1] Received #168: fceedb34...
+[Worker 1] New request: id=fceedb34..., max_output_len=29, ignore_eos=True
+[Worker 1] Received #169: b4341d53...
+[Worker 1] New request: id=b4341d53..., max_output_len=8, ignore_eos=True
+[ResponseMerger] FINISHED: req=a7acbaf3..., worker=1
+[HttpServerManager] Request a7acbaf3... completed
+[DataParallelRouterManager] Received AbortReq for request_id=a7acbaf3c3654125be9d325bf0e2ad1e (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 59 in total
+[Worker 1] Loaded 5 adapters: ['dummy-lora-7b-rank-8-93', 'dummy-lora-7b-rank-8-9', 'dummy-lora-7b-rank-8-74', 'dummy-lora-7b-rank-8-31', 'dummy-lora-7b-rank-8-14']
+[Worker 1] Updated actual adapter usage: 1888 cells
+[Worker 2] FINISHED: 8898ac73... (output_len=74)
+[Worker 2] Received #167: 4fb8306e...
+[Worker 2] New request: id=4fb8306e..., max_output_len=49, ignore_eos=True
+[Worker 2] Received #168: 8c574304...
+[Worker 2] New request: id=8c574304..., max_output_len=28, ignore_eos=True
+[ResponseMerger] FINISHED: req=8898ac73..., worker=2
+[HttpServerManager] Request 8898ac73... completed
+[DataParallelRouterManager] Received AbortReq for request_id=8898ac736c644f76b54832480dd299d9 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 60 in total
+[Worker 2] Loaded 2 adapters: ['dummy-lora-7b-rank-8-51', 'dummy-lora-7b-rank-8-61']
+[Worker 2] Updated actual adapter usage: 1920 cells
+[Worker 1] FINISHED: b4341d53... (output_len=8)
+[ResponseMerger] FINISHED: req=b4341d53..., worker=1
+[HttpServerManager] Request b4341d53... completed
+[DataParallelRouterManager] Received AbortReq for request_id=b4341d53cc1b498f9533e184e910d4e3 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: 8c574304... (output_len=28)
+[ResponseMerger] FINISHED: req=8c574304..., worker=2
+[HttpServerManager] Request 8c574304... completed
+[DataParallelRouterManager] Received AbortReq for request_id=8c5743047c4a48b3a5c5db816ab45d27 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33720 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 4bd4eb57... -> Worker 2
+[Worker 1] FINISHED: af0ba839... (output_len=28)
+[ResponseMerger] FINISHED: req=af0ba839..., worker=1
+[HttpServerManager] Request af0ba839... completed
+[DataParallelRouterManager] Received AbortReq for request_id=af0ba8396cf14814ad7a70c5f6da7d21 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: fceedb34... (output_len=29)
+[ResponseMerger] FINISHED: req=fceedb34..., worker=1
+[HttpServerManager] Request fceedb34... completed
+[DataParallelRouterManager] Received AbortReq for request_id=fceedb349bcc4eca8b63a24d1646843d (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:33730 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 6d0c77d2... -> Worker 0
+[Worker 0] FINISHED: f4f64945... (output_len=68)
+[ResponseMerger] FINISHED: req=f4f64945..., worker=0
+[HttpServerManager] Request f4f64945... completed
+[DataParallelRouterManager] Received AbortReq for request_id=f4f64945497442189e20ac2c6d08dc13 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: 4fb8306e... (output_len=49)
+[Worker 2] Received #169: 4bd4eb57...
+[Worker 2] New request: id=4bd4eb57..., max_output_len=12, ignore_eos=True
+[ResponseMerger] FINISHED: req=4fb8306e..., worker=2
+[HttpServerManager] Request 4fb8306e... completed
+[DataParallelRouterManager] Received AbortReq for request_id=4fb8306ef0194104aeeb841c2d9546b1 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 60 in total
+[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-69']
+[Worker 2] Updated actual adapter usage: 1920 cells
+INFO:     127.0.0.1:47976 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 8ca90c11... -> Worker 1
+[Worker 0] FINISHED: 8e29848a... (output_len=89)
+[Worker 0] Received #169: 09fa177b...
+[Worker 0] New request: id=09fa177b..., max_output_len=77, ignore_eos=True
+[Worker 0] Received #170: 6d0c77d2...
+[Worker 0] New request: id=6d0c77d2..., max_output_len=112, ignore_eos=True
+[ResponseMerger] FINISHED: req=8e29848a..., worker=0
+[HttpServerManager] Request 8e29848a... completed
+[DataParallelRouterManager] Received AbortReq for request_id=8e29848ac6b84a068c3b865164ceb643 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 61 in total
+[Worker 0] Loaded 2 adapters: ['dummy-lora-7b-rank-8-87', 'dummy-lora-7b-rank-8-70']
+[Worker 0] Updated actual adapter usage: 1952 cells
+[Worker 2] FINISHED: 4bd4eb57... (output_len=12)
+[ResponseMerger] FINISHED: req=4bd4eb57..., worker=2
+[HttpServerManager] Request 4bd4eb57... completed
+[DataParallelRouterManager] Received AbortReq for request_id=4bd4eb570de244e996e7967096c77557 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: 900d85da... (output_len=68)
+[ResponseMerger] FINISHED: req=900d85da..., worker=1
+[HttpServerManager] Request 900d85da... completed
+[DataParallelRouterManager] Received AbortReq for request_id=900d85da91ea4b0d8c9fbc556cc9705f (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:47984 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 07d1b7b4... -> Worker 2
+[Worker 2] Received #170: 07d1b7b4...
+[Worker 2] New request: id=07d1b7b4..., max_output_len=97, ignore_eos=True
+load 1 adapters, 61 in total
+[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-29']
+[Worker 2] Updated actual adapter usage: 1952 cells
+[Worker 1] FINISHED: 9a6d077d... (output_len=99)
+[Worker 1] Received #170: 8ca90c11...
+[Worker 1] New request: id=8ca90c11..., max_output_len=19, ignore_eos=True
+[ResponseMerger] FINISHED: req=9a6d077d..., worker=1
+INFO:     127.0.0.1:47998 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 148b9f3e... -> Worker 0
+[HttpServerManager] Request 9a6d077d... completed
+[DataParallelRouterManager] Received AbortReq for request_id=9a6d077dd9224bbd87b3a2fca76daf29 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 60 in total
+[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-35']
+[Worker 1] Updated actual adapter usage: 1920 cells
+INFO:     127.0.0.1:48012 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 6254ff54... -> Worker 1
+INFO:     127.0.0.1:48018 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] d684afbb... -> Worker 2
+INFO:     127.0.0.1:48030 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 1bf92f6f... -> Worker 0
+INFO:     127.0.0.1:48044 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] caa4e08f... -> Worker 1
+INFO:     127.0.0.1:48052 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] b6dab0ae... -> Worker 2
+[Worker 1] FINISHED: 8ca90c11... (output_len=19)
+[Worker 1] Received #171: 6254ff54...
+[Worker 1] New request: id=6254ff54..., max_output_len=41, ignore_eos=True
+[Worker 1] Received #172: caa4e08f...
+[Worker 1] New request: id=caa4e08f..., max_output_len=97, ignore_eos=True
+[ResponseMerger] FINISHED: req=8ca90c11..., worker=1
+[HttpServerManager] Request 8ca90c11... completed
+[DataParallelRouterManager] Received AbortReq for request_id=8ca90c1112224b3586461632b8e589e1 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 60 in total
+[Worker 1] Loaded 2 adapters: ['dummy-lora-7b-rank-8-81', 'dummy-lora-7b-rank-8-51']
+[Worker 1] Updated actual adapter usage: 1920 cells
+INFO:     127.0.0.1:48056 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] e854e4a3... -> Worker 0
+[Worker 0] FINISHED: 09fa177b... (output_len=77)
+[ResponseMerger] FINISHED: req=09fa177b..., worker=0
+[HttpServerManager] Request 09fa177b... completed
+[DataParallelRouterManager] Received AbortReq for request_id=09fa177bc75e418fb01c10b642d81184 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:48060 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] d45f64de... -> Worker 1
+INFO:     127.0.0.1:48062 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] af75c4a1... -> Worker 2
+[Worker 1] FINISHED: 6254ff54... (output_len=41)
+[ResponseMerger] FINISHED: req=6254ff54..., worker=1
+[HttpServerManager] Request 6254ff54... completed
+[DataParallelRouterManager] Received AbortReq for request_id=6254ff54dcd3453aaf53f7c4b11acee8 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:48066 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] f0d83bc6... -> Worker 0
+[Worker 0] FINISHED: 6d0c77d2... (output_len=112)
+[Worker 0] Received #171: 148b9f3e...
+[Worker 0] New request: id=148b9f3e..., max_output_len=53, ignore_eos=True
+[Worker 0] Received #172: 1bf92f6f...
+[Worker 0] New request: id=1bf92f6f..., max_output_len=85, ignore_eos=True
+[Worker 0] Received #173: e854e4a3...
+[Worker 0] New request: id=e854e4a3..., max_output_len=34, ignore_eos=True
+[Worker 0] Received #174: f0d83bc6...
+[Worker 0] New request: id=f0d83bc6..., max_output_len=54, ignore_eos=True
+[ResponseMerger] FINISHED: req=6d0c77d2..., worker=0
+[HttpServerManager] Request 6d0c77d2... completed
+[DataParallelRouterManager] Received AbortReq for request_id=6d0c77d23e2d41b2b4c35818d8a97b32 (forwarded to detokenization, worker abort not yet implemented)
+load 2 adapters, 63 in total
+[Worker 0] Loaded 3 adapters: ['dummy-lora-7b-rank-8-79', 'dummy-lora-7b-rank-8-80', 'dummy-lora-7b-rank-8-91']
+[Worker 0] Updated actual adapter usage: 2016 cells
+[Worker 2] FINISHED: 07d1b7b4... (output_len=97)
+[Worker 2] Received #171: d684afbb...
+[Worker 2] New request: id=d684afbb..., max_output_len=56, ignore_eos=True
+[Worker 2] Received #172: b6dab0ae...
+[Worker 2] New request: id=b6dab0ae..., max_output_len=52, ignore_eos=True
+[Worker 2] Received #173: af75c4a1...
+[Worker 2] New request: id=af75c4a1..., max_output_len=33, ignore_eos=True
+[ResponseMerger] FINISHED: req=07d1b7b4..., worker=2
+[HttpServerManager] Request 07d1b7b4... completed
+[DataParallelRouterManager] Received AbortReq for request_id=07d1b7b40bd34a8da80283657c54bc17 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 62 in total
+[Worker 2] Loaded 3 adapters: ['dummy-lora-7b-rank-8-70', 'dummy-lora-7b-rank-8-50', 'dummy-lora-7b-rank-8-86']
+[Worker 2] Updated actual adapter usage: 1984 cells
+INFO:     127.0.0.1:48076 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 8b44a3e3... -> Worker 1
+INFO:     127.0.0.1:48082 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 1f6796dd... -> Worker 2
+INFO:     127.0.0.1:48092 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 7171d0a9... -> Worker 0
+[Worker 0] FINISHED: e854e4a3... (output_len=34)
+[ResponseMerger] FINISHED: req=e854e4a3..., worker=0
+[HttpServerManager] Request e854e4a3... completed
+[DataParallelRouterManager] Received AbortReq for request_id=e854e4a3712d4fcfbe8f2bdb8dac4511 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: af75c4a1... (output_len=33)
+[ResponseMerger] FINISHED: req=af75c4a1..., worker=2
+[HttpServerManager] Request af75c4a1... completed
+[DataParallelRouterManager] Received AbortReq for request_id=af75c4a1436942c4af039a9ec970c683 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:48098 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 1ffebb5e... -> Worker 1
+INFO:     127.0.0.1:48104 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 4cfe0989... -> Worker 2
+[Worker 1] FINISHED: caa4e08f... (output_len=97)
+[Worker 1] Received #173: d45f64de...
+[Worker 1] New request: id=d45f64de..., max_output_len=80, ignore_eos=True
+[Worker 1] Received #174: 8b44a3e3...
+[Worker 1] New request: id=8b44a3e3..., max_output_len=93, ignore_eos=True
+[Worker 1] Received #175: 1ffebb5e...
+[Worker 1] New request: id=1ffebb5e..., max_output_len=101, ignore_eos=True
+[ResponseMerger] FINISHED: req=caa4e08f..., worker=1
+[HttpServerManager] Request caa4e08f... completed
+[DataParallelRouterManager] Received AbortReq for request_id=caa4e08fe362407ca68a4d6a4ebc1d80 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 60 in total
+[Worker 1] Loaded 3 adapters: ['dummy-lora-7b-rank-8-9', 'dummy-lora-7b-rank-8-89', 'dummy-lora-7b-rank-8-64']
+[Worker 1] Updated actual adapter usage: 1920 cells
+[Worker 0] FINISHED: 148b9f3e... (output_len=53)
+[ResponseMerger] FINISHED: req=148b9f3e..., worker=0
+[HttpServerManager] Request 148b9f3e... completed
+[DataParallelRouterManager] Received AbortReq for request_id=148b9f3effd74688a943a0efb36a7cef (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: f0d83bc6... (output_len=54)
+[ResponseMerger] FINISHED: req=f0d83bc6..., worker=0
+[HttpServerManager] Request f0d83bc6... completed
+[DataParallelRouterManager] Received AbortReq for request_id=f0d83bc629d945ae9306665cf0ec33e9 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: b6dab0ae... (output_len=52)
+[ResponseMerger] FINISHED: req=b6dab0ae..., worker=2
+[HttpServerManager] Request b6dab0ae... completed
+[DataParallelRouterManager] Received AbortReq for request_id=b6dab0ae38464e259d0171f7f497a8bf (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: d684afbb... (output_len=56)
+[Worker 2] Received #174: 1f6796dd...
+[Worker 2] New request: id=1f6796dd..., max_output_len=118, ignore_eos=True
+[Worker 2] Received #175: 4cfe0989...
+[Worker 2] New request: id=4cfe0989..., max_output_len=114, ignore_eos=True
+[ResponseMerger] FINISHED: req=d684afbb..., worker=2
+INFO:     127.0.0.1:48110 - "POST /generate_stream HTTP/1.1" 200 OK
+[HttpServerManager] Request d684afbb... completed
+[Router] 615b6558... -> Worker 0
+[DataParallelRouterManager] Received AbortReq for request_id=d684afbb824c439bb2442d93f27f10d4 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 63 in total
+[Worker 2] Loaded 2 adapters: ['dummy-lora-7b-rank-8-57', 'dummy-lora-7b-rank-8-33']
+[Worker 2] Updated actual adapter usage: 2016 cells
+INFO:     127.0.0.1:48114 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] efb85173... -> Worker 1
+INFO:     127.0.0.1:48116 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] eba2d0de... -> Worker 2
+INFO:     127.0.0.1:48128 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 45dc336f... -> Worker 0
+INFO:     127.0.0.1:48134 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] bff7ebac... -> Worker 1
+[Worker 0] FINISHED: 1bf92f6f... (output_len=85)
+[Worker 0] Received #175: 7171d0a9...
+[Worker 0] New request: id=7171d0a9..., max_output_len=63, ignore_eos=True
+[Worker 0] Received #176: 615b6558...
+[Worker 0] New request: id=615b6558..., max_output_len=70, ignore_eos=True
+[Worker 0] Received #177: 45dc336f...
+[Worker 0] New request: id=45dc336f..., max_output_len=88, ignore_eos=True
+[ResponseMerger] FINISHED: req=1bf92f6f..., worker=0
+[HttpServerManager] Request 1bf92f6f... completed
+[DataParallelRouterManager] Received AbortReq for request_id=1bf92f6ffab949499f280b5bb56cb228 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 63 in total
+[Worker 0] Loaded 3 adapters: ['dummy-lora-7b-rank-8-28', 'dummy-lora-7b-rank-8-3', 'dummy-lora-7b-rank-8-37']
+[Worker 0] Updated actual adapter usage: 2016 cells
+INFO:     127.0.0.1:48140 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 2e9873a0... -> Worker 2
+INFO:     127.0.0.1:48142 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 37f6311f... -> Worker 0
+INFO:     127.0.0.1:48156 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 0a0610bd... -> Worker 1
+INFO:     127.0.0.1:48162 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 2fdb58e1... -> Worker 2
+[Worker 1] FINISHED: d45f64de... (output_len=80)
+[ResponseMerger] FINISHED: req=d45f64de..., worker=1
+[HttpServerManager] Request d45f64de... completed
+[DataParallelRouterManager] Received AbortReq for request_id=d45f64dee7b74cf6a6ba040478afd4b3 (forwarded to detokenization, worker abort not yet implemented)
+INFO:     127.0.0.1:48168 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 89fe912a... -> Worker 0
+[Worker 1] FINISHED: 8b44a3e3... (output_len=93)
+[ResponseMerger] FINISHED: req=8b44a3e3..., worker=1
+[HttpServerManager] Request 8b44a3e3... completed
+[DataParallelRouterManager] Received AbortReq for request_id=8b44a3e333474345ab7de1e5c925cf5d (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: 7171d0a9... (output_len=63)
+[ResponseMerger] FINISHED: req=7171d0a9..., worker=0
+[HttpServerManager] Request 7171d0a9... completed
+[DataParallelRouterManager] Received AbortReq for request_id=7171d0a9514241118aea87c3a9f7e3c1 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: 1ffebb5e... (output_len=101)
+[Worker 1] Received #176: efb85173...
+[Worker 1] New request: id=efb85173..., max_output_len=55, ignore_eos=True
+[Worker 1] Received #177: bff7ebac...
+[Worker 1] New request: id=bff7ebac..., max_output_len=33, ignore_eos=True
+[Worker 1] Received #178: 0a0610bd...
+[Worker 1] New request: id=0a0610bd..., max_output_len=15, ignore_eos=True
+[ResponseMerger] FINISHED: req=1ffebb5e..., worker=1
+[HttpServerManager] Request 1ffebb5e... completed
+[DataParallelRouterManager] Received AbortReq for request_id=1ffebb5e12644cd9b98b2a69964ecfbd (forwarded to detokenization, worker abort not yet implemented)
+load 2 adapters, 62 in total
+[Worker 0] FINISHED: 615b6558... (output_len=70)
+[ResponseMerger] FINISHED: req=615b6558..., worker=0
+[Worker 1] Loaded 3 adapters: ['dummy-lora-7b-rank-8-59', 'dummy-lora-7b-rank-8-82', 'dummy-lora-7b-rank-8-46']
+[HttpServerManager] Request 615b6558... completed
+[DataParallelRouterManager] Received AbortReq for request_id=615b655878fd42e392f06d4b9269540a (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] Updated actual adapter usage: 1984 cells
+INFO:     127.0.0.1:48172 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] e059f515... -> Worker 1
+INFO:     127.0.0.1:48178 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] 7975a177... -> Worker 2
+INFO:     127.0.0.1:48182 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] f6c27452... -> Worker 0
+[Worker 2] FINISHED: 4cfe0989... (output_len=114)
+[Worker 1] FINISHED: 0a0610bd... (output_len=15)
+[ResponseMerger] FINISHED: req=4cfe0989..., worker=2
+[ResponseMerger] FINISHED: req=0a0610bd..., worker=1
+[Worker 0] FINISHED: 45dc336f... (output_len=88)
+[HttpServerManager] Request 4cfe0989... completed
+[Worker 0] Received #178: 37f6311f...
+[Worker 0] New request: id=37f6311f..., max_output_len=8, ignore_eos=True
+[Worker 0] Received #179: 89fe912a...
+[Worker 0] New request: id=89fe912a..., max_output_len=106, ignore_eos=True
+[Worker 0] Received #180: f6c27452...
+[Worker 0] New request: id=f6c27452..., max_output_len=54, ignore_eos=True
+[ResponseMerger] FINISHED: req=45dc336f..., worker=0
+[DataParallelRouterManager] Received AbortReq for request_id=4cfe0989222c4fe29712c4dd132bfa62 (forwarded to detokenization, worker abort not yet implemented)
+[HttpServerManager] Request 0a0610bd... completed
+[HttpServerManager] Request 45dc336f... completed
+[DataParallelRouterManager] Received AbortReq for request_id=0a0610bd66ad4a6bbb85cbb048ac48a5 (forwarded to detokenization, worker abort not yet implemented)
+[DataParallelRouterManager] Received AbortReq for request_id=45dc336f8859442fa0afc5ad8653b001 (forwarded to detokenization, worker abort not yet implemented)
+load 2 adapters, 65 in total
+[Worker 0] Loaded 3 adapters: ['dummy-lora-7b-rank-8-12', 'dummy-lora-7b-rank-8-21', 'dummy-lora-7b-rank-8-3']
+[Worker 0] Updated actual adapter usage: 2080 cells
+[Worker 2] FINISHED: 1f6796dd... (output_len=118)
+[Worker 2] Received #176: eba2d0de...
+[Worker 2] New request: id=eba2d0de..., max_output_len=68, ignore_eos=True
+[Worker 2] Received #177: 2e9873a0...
+[Worker 2] New request: id=2e9873a0..., max_output_len=43, ignore_eos=True
+[Worker 2] Received #178: 2fdb58e1...
+[Worker 2] New request: id=2fdb58e1..., max_output_len=120, ignore_eos=True
+[Worker 2] Received #179: 7975a177...
+[Worker 2] New request: id=7975a177..., max_output_len=86, ignore_eos=True
+[ResponseMerger] FINISHED: req=1f6796dd..., worker=2
+[HttpServerManager] Request 1f6796dd... completed
+[DataParallelRouterManager] Received AbortReq for request_id=1f6796dddfa9477cbbb5db3fa6a8b0d6 (forwarded to detokenization, worker abort not yet implemented)
+load 1 adapters, 64 in total
+[Worker 2] Loaded 4 adapters: ['dummy-lora-7b-rank-8-36', 'dummy-lora-7b-rank-8-76', 'dummy-lora-7b-rank-8-54', 'dummy-lora-7b-rank-8-3']
+[Worker 2] Updated actual adapter usage: 2048 cells
+[Worker 0] FINISHED: 37f6311f... (output_len=8)
+[ResponseMerger] FINISHED: req=37f6311f..., worker=0
+[HttpServerManager] Request 37f6311f... completed
+[DataParallelRouterManager] Received AbortReq for request_id=37f6311fe2014536a8d27275c6ea20ae (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: bff7ebac... (output_len=33)
+[ResponseMerger] FINISHED: req=bff7ebac..., worker=1
+[HttpServerManager] Request bff7ebac... completed
+[DataParallelRouterManager] Received AbortReq for request_id=bff7ebac2bf54700ac0e2646b2f2c054 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] Heartbeat: received=179, queue=0, batch=4
+INFO:     127.0.0.1:48198 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] a4c376ee... -> Worker 1
+INFO:     127.0.0.1:48206 - "POST /generate_stream HTTP/1.1" 200 OK
+[Router] af3b4865... -> Worker 2
+[Worker 1] Heartbeat: received=178, queue=0, batch=1
+[Worker 1] FINISHED: efb85173... (output_len=55)
+[Worker 1] Received #179: e059f515...
+[Worker 1] New request: id=e059f515..., max_output_len=59, ignore_eos=True
+[Worker 1] Received #180: a4c376ee...
+[Worker 1] New request: id=a4c376ee..., max_output_len=63, ignore_eos=True
+[ResponseMerger] FINISHED: req=efb85173..., worker=1
+[HttpServerManager] Request efb85173... completed
+[DataParallelRouterManager] Received AbortReq for request_id=efb851733db042dbbec8aaa7b97df2ef (forwarded to detokenization, worker abort not yet implemented)
+load 2 adapters, 64 in total
+[Worker 1] Loaded 2 adapters: ['dummy-lora-7b-rank-8-62', 'dummy-lora-7b-rank-8-52']
+[Worker 1] Updated actual adapter usage: 2048 cells
 [DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
 [DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 20.02s
+[DataParallelRouterManager] Average Throughput: 2.57 req/s
+[DataParallelRouterManager] Running Time: 210.06s
 [DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
 [DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 30.02s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 40.03s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 50.04s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 60.04s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 70.05s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 80.06s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 90.06s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 100.07s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-[Worker 1] Heartbeat: received=0, queue=0, batch=0
-[Worker 2] Heartbeat: received=0, queue=0, batch=0
-[Worker 0] Heartbeat: received=0, queue=0, batch=0
-llama-7b: 12.06 GB
-peak working mem for (bs=20, seqlen=512): 0.70 GB
-peak working mem for (bs=100, seqlen=512): 3.52 GB
-all adapters (101) estimated size: 1.58 GB
-avg adapter estimated size: 16.00 MB
-INFO:     127.0.0.1:40100 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #1: a294f11d...
-[Worker 0] New request: id=a294f11d..., max_output_len=8, ignore_eos=True
-load 1 adapters, 1 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-37']
-[Worker 0] Updated actual adapter usage: 32 cells
-[Worker 0] FINISHED: a294f11d... (output_len=8)
-[HttpServerManager] Request a294f11d... completed
-INFO:     127.0.0.1:45378 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #1: 7cd1e2d5...
-[Worker 1] New request: id=7cd1e2d5..., max_output_len=12, ignore_eos=True
-load 1 adapters, 1 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-95']
-[Worker 1] Updated actual adapter usage: 32 cells
-[Worker 1] FINISHED: 7cd1e2d5... (output_len=12)
-[HttpServerManager] Request 7cd1e2d5... completed
-INFO:     127.0.0.1:45394 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #1: 8d23b567...
-[Worker 2] New request: id=8d23b567..., max_output_len=97, ignore_eos=True
-INFO:     127.0.0.1:45408 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #2: 6065730f...
-[Worker 0] New request: id=6065730f..., max_output_len=126, ignore_eos=True
-load 1 adapters, 1 in total
-load 1 adapters, 2 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-59']
-[Worker 0] Updated actual adapter usage: 64 cells
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-73']
-[Worker 2] Updated actual adapter usage: 32 cells
-INFO:     127.0.0.1:45418 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #2: a9b57e9e...
-[Worker 1] New request: id=a9b57e9e..., max_output_len=21, ignore_eos=True
-load 1 adapters, 2 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-15']
-[Worker 1] Updated actual adapter usage: 64 cells
-[Worker 1] Heartbeat: received=2, queue=0, batch=1
-INFO:     127.0.0.1:45424 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Heartbeat: received=1, queue=0, batch=1
-[Worker 1] FINISHED: a9b57e9e... (output_len=21)
-[Worker 0] Heartbeat: received=2, queue=0, batch=1
-[HttpServerManager] Request a9b57e9e... completed
-INFO:     127.0.0.1:45426 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45440 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #3: 27498abf...
-[Worker 1] New request: id=27498abf..., max_output_len=16, ignore_eos=True
-load 1 adapters, 3 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-86']
-[Worker 1] Updated actual adapter usage: 96 cells
-[Worker 1] FINISHED: 27498abf... (output_len=16)
-[HttpServerManager] Request 27498abf... completed
-INFO:     127.0.0.1:45442 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] FINISHED: 8d23b567... (output_len=97)
-[Worker 2] Received #2: 5bfdbaa6...
-[Worker 2] New request: id=5bfdbaa6..., max_output_len=110, ignore_eos=True
-[Worker 2] Received #3: 467abc04...
-[Worker 2] New request: id=467abc04..., max_output_len=86, ignore_eos=True
-load 2 adapters, 3 in total
-[Worker 2] Loaded 2 adapters: ['dummy-lora-7b-rank-8-15', 'dummy-lora-7b-rank-8-60']
-[Worker 2] Updated actual adapter usage: 96 cells
-[Worker 0] FINISHED: 6065730f... (output_len=126)
-[Worker 0] Received #3: 61f4648a...
-[Worker 0] New request: id=61f4648a..., max_output_len=34, ignore_eos=True
-load 1 adapters, 3 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-5']
-[Worker 0] Updated actual adapter usage: 96 cells
-[Worker 0] FINISHED: 61f4648a... (output_len=34)
-[HttpServerManager] Request 8d23b567... completed
-[HttpServerManager] Request 6065730f... completed
-[HttpServerManager] Request 61f4648a... completed
-INFO:     127.0.0.1:45454 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #4: 37875508...
-[Worker 0] New request: id=37875508..., max_output_len=22, ignore_eos=True
-load 1 adapters, 4 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-70']
-[Worker 0] Updated actual adapter usage: 128 cells
-[Worker 2] FINISHED: 467abc04... (output_len=86)
-[HttpServerManager] Request 467abc04... completed
-INFO:     127.0.0.1:45458 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #4: 956af1e5...
-[Worker 1] New request: id=956af1e5..., max_output_len=97, ignore_eos=True
-load 1 adapters, 4 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-2']
-[Worker 1] Updated actual adapter usage: 128 cells
-[Worker 0] FINISHED: 37875508... (output_len=22)
-[Worker 2] FINISHED: 5bfdbaa6... (output_len=110)
-[HttpServerManager] Request 37875508... completed
-[HttpServerManager] Request 5bfdbaa6... completed
-INFO:     127.0.0.1:45466 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #4: eae51304...
-[Worker 2] New request: id=eae51304..., max_output_len=49, ignore_eos=True
-load 1 adapters, 4 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-96']
-[Worker 2] Updated actual adapter usage: 128 cells
-[Worker 2] FINISHED: eae51304... (output_len=49)
-[HttpServerManager] Request eae51304... completed
-INFO:     127.0.0.1:45478 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #5: 64cc7832...
-[Worker 0] New request: id=64cc7832..., max_output_len=84, ignore_eos=True
-load 1 adapters, 5 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-83']
-[Worker 0] Updated actual adapter usage: 160 cells
-[Worker 1] FINISHED: 956af1e5... (output_len=97)
-[HttpServerManager] Request 956af1e5... completed
-INFO:     127.0.0.1:58350 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #5: 5adf219a...
-[Worker 1] New request: id=5adf219a..., max_output_len=58, ignore_eos=True
-load 1 adapters, 5 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-21']
-[Worker 1] Updated actual adapter usage: 160 cells
-[Worker 1] FINISHED: 5adf219a... (output_len=58)
-[Worker 0] FINISHED: 64cc7832... (output_len=84)
-[Worker 1] Heartbeat: received=5, queue=0, batch=0
-[HttpServerManager] Request 5adf219a... completed
-[HttpServerManager] Request 64cc7832... completed
-INFO:     127.0.0.1:58358 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #5: 8d3fba52...
-[Worker 2] New request: id=8d3fba52..., max_output_len=70, ignore_eos=True
-load 1 adapters, 5 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-18']
-[Worker 2] Updated actual adapter usage: 160 cells
-[Worker 2] Heartbeat: received=5, queue=0, batch=1
-[Worker 0] Heartbeat: received=5, queue=0, batch=0
-[Worker 2] FINISHED: 8d3fba52... (output_len=70)
-[HttpServerManager] Request 8d3fba52... completed
-INFO:     127.0.0.1:58372 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #6: 69ba2284...
-[Worker 0] New request: id=69ba2284..., max_output_len=103, ignore_eos=True
-load 1 adapters, 6 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-18']
-[Worker 0] Updated actual adapter usage: 192 cells
-INFO:     127.0.0.1:58384 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #6: 1d74228a...
-[Worker 1] New request: id=1d74228a..., max_output_len=110, ignore_eos=True
-load 1 adapters, 6 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-30']
-[Worker 1] Updated actual adapter usage: 192 cells
-INFO:     127.0.0.1:58398 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #6: a1cdc10d...
-[Worker 2] New request: id=a1cdc10d..., max_output_len=120, ignore_eos=True
-load 1 adapters, 6 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-52']
-[Worker 2] Updated actual adapter usage: 192 cells
-INFO:     127.0.0.1:58414 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58422 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:58434 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] FINISHED: 69ba2284... (output_len=103)
-[Worker 0] Received #7: f5ebd923...
-[Worker 0] New request: id=f5ebd923..., max_output_len=59, ignore_eos=True
-load 1 adapters, 7 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-43']
-[Worker 0] Updated actual adapter usage: 224 cells
-[HttpServerManager] Request 69ba2284... completed
-INFO:     127.0.0.1:58442 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] FINISHED: 1d74228a... (output_len=110)
-[Worker 1] Received #7: 1793f07c...
-[Worker 1] New request: id=1793f07c..., max_output_len=103, ignore_eos=True
-load 1 adapters, 7 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-29']
-[Worker 1] Updated actual adapter usage: 224 cells
-[HttpServerManager] Request 1d74228a... completed
-INFO:     127.0.0.1:33084 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:33086 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:33096 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] FINISHED: f5ebd923... (output_len=59)
-[Worker 0] Received #8: 81bead95...
-[Worker 0] New request: id=81bead95..., max_output_len=101, ignore_eos=True
-[Worker 0] Received #9: 1f678160...
-[Worker 0] New request: id=1f678160..., max_output_len=110, ignore_eos=True
-load 2 adapters, 9 in total
-[Worker 0] Loaded 2 adapters: ['dummy-lora-7b-rank-8-45', 'dummy-lora-7b-rank-8-13']
-[Worker 2] FINISHED: a1cdc10d... (output_len=120)
-[Worker 2] Received #7: d5d724e2...
-[Worker 2] New request: id=d5d724e2..., max_output_len=11, ignore_eos=True
-[Worker 2] Received #8: ed8ab2bf...
-[Worker 2] New request: id=ed8ab2bf..., max_output_len=30, ignore_eos=True
-[Worker 0] Updated actual adapter usage: 288 cells
-load 2 adapters, 8 in total
-[Worker 2] Loaded 2 adapters: ['dummy-lora-7b-rank-8-61', 'dummy-lora-7b-rank-8-36']
-[Worker 2] Updated actual adapter usage: 256 cells
-[Worker 2] FINISHED: d5d724e2... (output_len=11)
-[Worker 2] FINISHED: ed8ab2bf... (output_len=30)
-[Worker 1] FINISHED: 1793f07c... (output_len=103)
-[Worker 1] Received #8: 373dbfa4...
-[Worker 1] New request: id=373dbfa4..., max_output_len=108, ignore_eos=True
-load 0 adapters, 7 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-29']
-[Worker 1] Updated actual adapter usage: 224 cells
-[HttpServerManager] Request f5ebd923... completed
-[HttpServerManager] Request a1cdc10d... completed
-[HttpServerManager] Request d5d724e2... completed
-[HttpServerManager] Request ed8ab2bf... completed
-[HttpServerManager] Request 1793f07c... completed
-INFO:     127.0.0.1:33104 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] FINISHED: 81bead95... (output_len=101)
-[HttpServerManager] Request 81bead95... completed
-INFO:     127.0.0.1:33112 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #9: 5c85b108...
-[Worker 2] New request: id=5c85b108..., max_output_len=22, ignore_eos=True
-load 1 adapters, 9 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-19']
-[Worker 2] Updated actual adapter usage: 288 cells
-[Worker 0] FINISHED: 1f678160... (output_len=110)
-[HttpServerManager] Request 1f678160... completed
-INFO:     127.0.0.1:33122 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #10: 50973538...
-[Worker 0] New request: id=50973538..., max_output_len=50, ignore_eos=True
-load 1 adapters, 10 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-51']
-[Worker 0] Updated actual adapter usage: 320 cells
-[Worker 1] Heartbeat: received=8, queue=0, batch=1
-[Worker 2] Heartbeat: received=9, queue=0, batch=1
-[Worker 0] Heartbeat: received=10, queue=0, batch=1
-[Worker 2] FINISHED: 5c85b108... (output_len=22)
-[HttpServerManager] Request 5c85b108... completed
-INFO:     127.0.0.1:33130 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] FINISHED: 50973538... (output_len=50)
-[Worker 1] FINISHED: 373dbfa4... (output_len=108)
-[Worker 1] Received #9: f6b0d488...
-[Worker 1] New request: id=f6b0d488..., max_output_len=116, ignore_eos=True
-[Worker 1] Received #10: 4e3516a1...
-[Worker 1] New request: id=4e3516a1..., max_output_len=36, ignore_eos=True
-load 2 adapters, 9 in total
-[Worker 1] Loaded 2 adapters: ['dummy-lora-7b-rank-8-78', 'dummy-lora-7b-rank-8-59']
-[Worker 1] Updated actual adapter usage: 288 cells
-[Worker 1] FINISHED: 4e3516a1... (output_len=36)
-[Worker 1] FINISHED: f6b0d488... (output_len=116)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 0
-[DataParallelRouterManager] Successful Requests: 0
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.00 req/s
-[DataParallelRouterManager] Running Time: 110.08s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 0 requests (0.0%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 0 requests (0.0%)
-[DataParallelRouterManager] ==========================================
-[Router] a294f11d... -> Worker 0
-[DataParallelRouterManager] Received AbortReq for request_id=a294f11df51f4d36a25972d246e27f08 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 7cd1e2d5... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=7cd1e2d5f37f451cbc0442dce433ccf1 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 8d23b567... -> Worker 2
-[Router] 6065730f... -> Worker 0
-[Router] a9b57e9e... -> Worker 1
-[Router] 5bfdbaa6... -> Worker 2
-[DataParallelRouterManager] Received AbortReq for request_id=a9b57e9e8379429293640c45d7f6e9c9 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 6
-[DataParallelRouterManager] Successful Requests: 6
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.05 req/s
-[DataParallelRouterManager] Running Time: 120.08s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 2 requests (33.3%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 2 requests (33.3%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 2 requests (33.3%)
-[DataParallelRouterManager] ==========================================
-[Router] 61f4648a... -> Worker 0
-[Router] 27498abf... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=27498abfdfff4a71862322fe226bf5fb (forwarded to detokenization, worker abort not yet implemented)
-[Router] 467abc04... -> Worker 2
-[DataParallelRouterManager] Received AbortReq for request_id=8d23b567f20940c78e68f38436202b67 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=6065730f91474df3a0d4778c28556323 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=61f4648a1b98402ab91e1e052a037d6a (forwarded to detokenization, worker abort not yet implemented)
-[Router] 37875508... -> Worker 0
-[DataParallelRouterManager] Received AbortReq for request_id=467abc04dd704b5ca611c6c323c44011 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 956af1e5... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=378755087d20450a933a9e2b78f613be (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=5bfdbaa6947044a58b9d9ef692bc0826 (forwarded to detokenization, worker abort not yet implemented)
-[Router] eae51304... -> Worker 2
-[DataParallelRouterManager] Received AbortReq for request_id=eae51304307743cdbfe817e9b0a054ec (forwarded to detokenization, worker abort not yet implemented)
-[Router] 64cc7832... -> Worker 0
-[DataParallelRouterManager] Received AbortReq for request_id=956af1e5af344e68a1141424ba34bbb1 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 5adf219a... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=5adf219a98b54b638dc672d024735e84 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=64cc783207dd4648ba4fc88e4f509786 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 8d3fba52... -> Worker 2
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 15
-[DataParallelRouterManager] Successful Requests: 15
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.12 req/s
-[DataParallelRouterManager] Running Time: 130.08s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 5 requests (33.3%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 5 requests (33.3%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 5 requests (33.3%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] Received AbortReq for request_id=8d3fba5227d04d37ba26223068a897bb (forwarded to detokenization, worker abort not yet implemented)
-[Router] 69ba2284... -> Worker 0
-[Router] 1d74228a... -> Worker 1
-[Router] a1cdc10d... -> Worker 2
-[Router] f5ebd923... -> Worker 0
-[Router] 1793f07c... -> Worker 1
-[Router] d5d724e2... -> Worker 2
-[DataParallelRouterManager] Received AbortReq for request_id=69ba2284c1c54b479c06b09739f83b01 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 81bead95... -> Worker 0
-[DataParallelRouterManager] Received AbortReq for request_id=1d74228a2d9647168ae45415da16e818 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 373dbfa4... -> Worker 1
-[Router] ed8ab2bf... -> Worker 2
-[Router] 1f678160... -> Worker 0
-[DataParallelRouterManager] Received AbortReq for request_id=f5ebd923203c44acaa6285db10588cd0 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=a1cdc10dbeb54ae1bef44098d1cb4acb (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=d5d724e20fdc4a838cad81f30b132427 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=ed8ab2bf229145dbaf9a990b67521b2f (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=1793f07ccb0b4775834ccab56859595c (forwarded to detokenization, worker abort not yet implemented)
-[Router] f6b0d488... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=81bead9596e7461d8a14b8e4b08f7200 (forwarded to detokenization, worker abort not yet implemented)
-[Router] 5c85b108... -> Worker 2
-[DataParallelRouterManager] Received AbortReq for request_id=1f678160ea9e492385a2d3cb1ba38f3b (forwarded to detokenization, worker abort not yet implemented)
-[Router] 50973538... -> Worker 0
-[DataParallelRouterManager] ========== Statistics Summary ==========
-[DataParallelRouterManager] Total Requests: 28
-[DataParallelRouterManager] Successful Requests: 28
-[DataParallelRouterManager] Failed Requests: 0
-[DataParallelRouterManager] Average Throughput: 0.20 req/s
-[DataParallelRouterManager] Running Time: 140.08s
-[DataParallelRouterManager] Worker Request Distribution:
-[DataParallelRouterManager]   Worker 0 (GPU 1): 10 requests (35.7%)
-[DataParallelRouterManager]   Worker 1 (GPU 2): 9 requests (32.1%)
-[DataParallelRouterManager]   Worker 2 (GPU 3): 9 requests (32.1%)
-[DataParallelRouterManager] ==========================================
-[DataParallelRouterManager] Received AbortReq for request_id=5c85b108b68b4ecbbc1a1e7309d705ad (forwarded to detokenization, worker abort not yet implemented)
-[Router] 4e3516a1... -> Worker 1
-[DataParallelRouterManager] Received AbortReq for request_id=50973538698c401ab865cefe3bc1017a (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=373dbfa463e04d1ba674e930a2a50ce8 (forwarded to detokenization, worker abort not yet implemented)
-[DataParallelRouterManager] Received AbortReq for request_id=4e3516a16fcd4069b71079ad27a1b396 (forwarded to detokenization, worker abort not yet implemented)
-[HttpServerManager] Request 50973538... completed
-[HttpServerManager] Request 373dbfa4... completed
-[HttpServerManager] Request 4e3516a1... completed
-[HttpServerManager] Request f6b0d488... completed
-INFO:     127.0.0.1:33144 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #10: ef699647...
-[Worker 2] New request: id=ef699647..., max_output_len=43, ignore_eos=True
-load 1 adapters, 10 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-4']
-[Worker 2] Updated actual adapter usage: 320 cells
-INFO:     127.0.0.1:33148 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #11: c1d2d24c...
-[Worker 0] New request: id=c1d2d24c..., max_output_len=20, ignore_eos=True
-load 1 adapters, 11 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-60']
-[Worker 0] Updated actual adapter usage: 352 cells
-[Worker 0] FINISHED: c1d2d24c... (output_len=20)
-[Worker 2] FINISHED: ef699647... (output_len=43)
-[HttpServerManager] Request c1d2d24c... completed
-[HttpServerManager] Request ef699647... completed
-INFO:     127.0.0.1:39880 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #11: b3c0c260...
-[Worker 1] New request: id=b3c0c260..., max_output_len=39, ignore_eos=True
-load 1 adapters, 10 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-17']
-[Worker 1] Updated actual adapter usage: 320 cells
-[Worker 1] FINISHED: b3c0c260... (output_len=39)
-[HttpServerManager] Request b3c0c260... completed
-INFO:     127.0.0.1:39884 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #11: 8cd08cfc...
-[Worker 2] New request: id=8cd08cfc..., max_output_len=78, ignore_eos=True
-load 1 adapters, 11 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-6']
-[Worker 2] Updated actual adapter usage: 352 cells
-INFO:     127.0.0.1:39898 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #12: 39962841...
-[Worker 0] New request: id=39962841..., max_output_len=66, ignore_eos=True
-load 1 adapters, 12 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-94']
-[Worker 0] Updated actual adapter usage: 384 cells
-INFO:     127.0.0.1:39908 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #12: dea51a44...
-[Worker 1] New request: id=dea51a44..., max_output_len=122, ignore_eos=True
-load 1 adapters, 11 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-96']
-[Worker 1] Updated actual adapter usage: 352 cells
-[Worker 2] FINISHED: 8cd08cfc... (output_len=78)
-[Worker 0] FINISHED: 39962841... (output_len=66)
-[HttpServerManager] Request 8cd08cfc... completed
-[HttpServerManager] Request 39962841... completed
-INFO:     127.0.0.1:39914 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #12: 634a2566...
-[Worker 2] New request: id=634a2566..., max_output_len=93, ignore_eos=True
-load 1 adapters, 12 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-80']
-[Worker 2] Updated actual adapter usage: 384 cells
-[Worker 1] Heartbeat: received=12, queue=0, batch=1
-[Worker 2] Heartbeat: received=12, queue=0, batch=1
-[Worker 0] Heartbeat: received=12, queue=0, batch=0
-INFO:     127.0.0.1:39928 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #13: 78f3172e...
-[Worker 0] New request: id=78f3172e..., max_output_len=35, ignore_eos=True
-load 1 adapters, 13 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-30']
-[Worker 0] Updated actual adapter usage: 416 cells
-[Worker 0] FINISHED: 78f3172e... (output_len=35)
-[HttpServerManager] Request 78f3172e... completed
-INFO:     127.0.0.1:39930 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] FINISHED: 634a2566... (output_len=93)
-[Worker 1] FINISHED: dea51a44... (output_len=122)
-[Worker 1] Received #13: 34a12ace...
-[Worker 1] New request: id=34a12ace..., max_output_len=73, ignore_eos=True
-load 1 adapters, 12 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-9']
-[Worker 1] Updated actual adapter usage: 384 cells
-[HttpServerManager] Request 634a2566... completed
-[HttpServerManager] Request dea51a44... completed
-INFO:     127.0.0.1:39934 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #13: c1c1de26...
-[Worker 2] New request: id=c1c1de26..., max_output_len=49, ignore_eos=True
-load 1 adapters, 13 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-68']
-[Worker 2] Updated actual adapter usage: 416 cells
-INFO:     127.0.0.1:39944 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #14: d0f76b83...
-[Worker 0] New request: id=d0f76b83..., max_output_len=52, ignore_eos=True
-load 1 adapters, 14 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-44']
-[Worker 0] Updated actual adapter usage: 448 cells
-[Worker 2] FINISHED: c1c1de26... (output_len=49)
-[Worker 1] FINISHED: 34a12ace... (output_len=73)
-[Worker 0] FINISHED: d0f76b83... (output_len=52)
-[HttpServerManager] Request c1c1de26... completed
-[HttpServerManager] Request 34a12ace... completed
-[HttpServerManager] Request d0f76b83... completed
-INFO:     127.0.0.1:39948 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #14: 680e33b4...
-[Worker 1] New request: id=680e33b4..., max_output_len=69, ignore_eos=True
-load 1 adapters, 13 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-12']
-[Worker 1] Updated actual adapter usage: 416 cells
-INFO:     127.0.0.1:39952 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #14: 143858ca...
-[Worker 2] New request: id=143858ca..., max_output_len=64, ignore_eos=True
-load 1 adapters, 14 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-49']
-[Worker 2] Updated actual adapter usage: 448 cells
-INFO:     127.0.0.1:39956 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #15: ee020cca...
-[Worker 0] New request: id=ee020cca..., max_output_len=124, ignore_eos=True
-load 1 adapters, 15 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-3']
-[Worker 0] Updated actual adapter usage: 480 cells
-INFO:     127.0.0.1:39962 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:39964 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] FINISHED: 680e33b4... (output_len=69)
-[Worker 1] Received #15: 4c24b89c...
-[Worker 1] New request: id=4c24b89c..., max_output_len=13, ignore_eos=True
-load 1 adapters, 14 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-90']
-[Worker 1] Updated actual adapter usage: 448 cells
-[Worker 1] FINISHED: 4c24b89c... (output_len=13)
-[Worker 2] FINISHED: 143858ca... (output_len=64)
-[Worker 2] Received #15: f2d3b630...
-[Worker 2] New request: id=f2d3b630..., max_output_len=35, ignore_eos=True
-load 1 adapters, 15 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-25']
-[Worker 2] Updated actual adapter usage: 480 cells
-[HttpServerManager] Request 680e33b4... completed
-[HttpServerManager] Request 4c24b89c... completed
-[HttpServerManager] Request 143858ca... completed
-INFO:     127.0.0.1:45978 - "POST /generate_stream HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45986 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #16: 6509493d...
-[Worker 1] New request: id=6509493d..., max_output_len=115, ignore_eos=True
-load 1 adapters, 15 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-31']
-[Worker 1] Updated actual adapter usage: 480 cells
-[Worker 2] FINISHED: f2d3b630... (output_len=35)
-[HttpServerManager] Request f2d3b630... completed
-INFO:     127.0.0.1:46002 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #16: 464af053...
-[Worker 2] New request: id=464af053..., max_output_len=51, ignore_eos=True
-load 0 adapters, 15 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-52']
-[Worker 2] Updated actual adapter usage: 480 cells
-[Worker 0] FINISHED: ee020cca... (output_len=124)
-[Worker 0] Received #16: 51c29c10...
-[Worker 0] New request: id=51c29c10..., max_output_len=35, ignore_eos=True
-load 1 adapters, 16 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-66']
-[Worker 0] Updated actual adapter usage: 512 cells
-[HttpServerManager] Request ee020cca... completed
-INFO:     127.0.0.1:46012 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] FINISHED: 51c29c10... (output_len=35)
-[Worker 0] Received #17: 9b6d9044...
-[Worker 0] New request: id=9b6d9044..., max_output_len=91, ignore_eos=True
-load 1 adapters, 17 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-54']
-[Worker 0] Updated actual adapter usage: 544 cells
-[HttpServerManager] Request 51c29c10... completed
-INFO:     127.0.0.1:46020 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] FINISHED: 464af053... (output_len=51)
-[HttpServerManager] Request 464af053... completed
-INFO:     127.0.0.1:46034 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #17: 2ad7a363...
-[Worker 2] New request: id=2ad7a363..., max_output_len=69, ignore_eos=True
-load 0 adapters, 15 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-96']
-[Worker 2] Updated actual adapter usage: 480 cells
-[Worker 1] FINISHED: 6509493d... (output_len=115)
-[Worker 1] Received #17: 0cdf3178...
-[Worker 1] New request: id=0cdf3178..., max_output_len=37, ignore_eos=True
-load 1 adapters, 16 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-18']
-[Worker 1] Updated actual adapter usage: 512 cells
-[Worker 1] Heartbeat: received=17, queue=0, batch=1
-[Worker 2] Heartbeat: received=17, queue=0, batch=1
-[Worker 0] Heartbeat: received=17, queue=0, batch=1
-[HttpServerManager] Request 6509493d... completed
-INFO:     127.0.0.1:46040 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] FINISHED: 0cdf3178... (output_len=37)
-[Worker 0] FINISHED: 9b6d9044... (output_len=91)
-[Worker 0] Received #18: f368e95e...
-[Worker 0] New request: id=f368e95e..., max_output_len=82, ignore_eos=True
-load 1 adapters, 18 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-77']
-[Worker 0] Updated actual adapter usage: 576 cells
-[Worker 2] FINISHED: 2ad7a363... (output_len=69)
-[HttpServerManager] Request 0cdf3178... completed
-[HttpServerManager] Request 9b6d9044... completed
-[HttpServerManager] Request 2ad7a363... completed
-INFO:     127.0.0.1:46054 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #18: 8e8534b5...
-[Worker 1] New request: id=8e8534b5..., max_output_len=126, ignore_eos=True
-load 1 adapters, 17 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-93']
-[Worker 1] Updated actual adapter usage: 544 cells
-[Worker 0] FINISHED: f368e95e... (output_len=82)
-[HttpServerManager] Request f368e95e... completed
-INFO:     127.0.0.1:46070 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #18: 8843208a...
-[Worker 2] New request: id=8843208a..., max_output_len=99, ignore_eos=True
-load 1 adapters, 16 in total
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-89']
-[Worker 2] Updated actual adapter usage: 512 cells
-[Worker 1] FINISHED: 8e8534b5... (output_len=126)
-[HttpServerManager] Request 8e8534b5... completed
-INFO:     127.0.0.1:46084 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #19: fb8954ff...
-[Worker 0] New request: id=fb8954ff..., max_output_len=96, ignore_eos=True
-load 0 adapters, 18 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-59']
-[Worker 0] Updated actual adapter usage: 576 cells
-INFO:     127.0.0.1:46098 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #19: ca85c930...
-[Worker 1] New request: id=ca85c930..., max_output_len=110, ignore_eos=True
-load 1 adapters, 18 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-92']
-[Worker 1] Updated actual adapter usage: 576 cells
-INFO:     127.0.0.1:46112 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] FINISHED: 8843208a... (output_len=99)
-[Worker 2] Received #19: 5c4dbff2...
-[Worker 2] New request: id=5c4dbff2..., max_output_len=69, ignore_eos=True
-load 1 adapters, 17 in total
+[Worker 0] Heartbeat: received=180, queue=0, batch=2
+[Worker 2] FINISHED: 2e9873a0... (output_len=43)
+[ResponseMerger] FINISHED: req=2e9873a0..., worker=2
+[HttpServerManager] Request 2e9873a0... completed
+[DataParallelRouterManager] Received AbortReq for request_id=2e9873a0c76f4c26b35c03e0c011cc19 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: f6c27452... (output_len=54)
+[ResponseMerger] FINISHED: req=f6c27452..., worker=0
+[HttpServerManager] Request f6c27452... completed
+[DataParallelRouterManager] Received AbortReq for request_id=f6c27452518246aa9642ad8c6fc6c53b (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: eba2d0de... (output_len=68)
+[ResponseMerger] FINISHED: req=eba2d0de..., worker=2
+[HttpServerManager] Request eba2d0de... completed
+[DataParallelRouterManager] Received AbortReq for request_id=eba2d0de15a54dfaba984919b41aa214 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: 7975a177... (output_len=86)
+[ResponseMerger] FINISHED: req=7975a177..., worker=2
+[HttpServerManager] Request 7975a177... completed
+[DataParallelRouterManager] Received AbortReq for request_id=7975a177e6ca44d3b02c489a2a78ba8b (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: e059f515... (output_len=59)
+[ResponseMerger] FINISHED: req=e059f515..., worker=1
+[HttpServerManager] Request e059f515... completed
+[DataParallelRouterManager] Received AbortReq for request_id=e059f5155bc54b68af4a7f6c43ea800a (forwarded to detokenization, worker abort not yet implemented)
+[Worker 1] FINISHED: a4c376ee... (output_len=63)
+[ResponseMerger] FINISHED: req=a4c376ee..., worker=1
+[HttpServerManager] Request a4c376ee... completed
+[DataParallelRouterManager] Received AbortReq for request_id=a4c376eeb7a54619b030e0bac06853e8 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 0] FINISHED: 89fe912a... (output_len=106)
+[ResponseMerger] FINISHED: req=89fe912a..., worker=0
+[HttpServerManager] Request 89fe912a... completed
+[DataParallelRouterManager] Received AbortReq for request_id=89fe912a581142bf9ce7e1948b2d4ce4 (forwarded to detokenization, worker abort not yet implemented)
+[Worker 2] FINISHED: 2fdb58e1... (output_len=120)
+[Worker 2] Received #180: af3b4865...
+[Worker 2] New request: id=af3b4865..., max_output_len=93, ignore_eos=True
+[ResponseMerger] FINISHED: req=2fdb58e1..., worker=2
+[HttpServerManager] Request 2fdb58e1... completed
+[DataParallelRouterManager] Received AbortReq for request_id=2fdb58e1a90b483a9197e3fad0af2589 (forwarded to detokenization, worker abort not yet implemented)
+load 0 adapters, 64 in total
 [Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-8']
-[Worker 2] Updated actual adapter usage: 544 cells
-[Worker 0] FINISHED: fb8954ff... (output_len=96)
-[Worker 1] FINISHED: ca85c930... (output_len=110)
-[HttpServerManager] Request 8843208a... completed
-[HttpServerManager] Request fb8954ff... completed
-[HttpServerManager] Request ca85c930... completed
-INFO:     127.0.0.1:32942 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 0] Received #20: 12b3e941...
-[Worker 0] New request: id=12b3e941..., max_output_len=104, ignore_eos=True
-load 1 adapters, 19 in total
-[Worker 0] Loaded 1 adapters: ['dummy-lora-7b-rank-8-19']
-[Worker 0] Updated actual adapter usage: 608 cells
-[Worker 2] FINISHED: 5c4dbff2... (output_len=69)
-[HttpServerManager] Request 5c4dbff2... completed
-INFO:     127.0.0.1:32948 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 1] Received #20: 625bd6d2...
-[Worker 1] New request: id=625bd6d2..., max_output_len=8, ignore_eos=True
-load 1 adapters, 19 in total
-[Worker 1] Loaded 1 adapters: ['dummy-lora-7b-rank-8-4']
-[Worker 1] Updated actual adapter usage: 608 cells
-INFO:     127.0.0.1:32958 - "POST /generate_stream HTTP/1.1" 200 OK
-[Worker 2] Received #20: df8a02a5...
-[Worker 2] New request: id=df8a02a5..., max_output_len=34, ignore_eos=True
-load 1 adapters, 18 in total
-[Worker 1] FINISHED: 625bd6d2... (output_len=8)
-[Worker 2] Loaded 1 adapters: ['dummy-lora-7b-rank-8-32']
-[Worker 2] Updated actual adapter usage: 576 cells
-[Worker 0] FINISHED: 12b3e941... (output_len=104)
-[Worker 1] Heartbeat: received=20, queue=0, batch=0
-[Worker 2] Heartbeat: received=20, queue=0, batch=1
-[Worker 0] Heartbeat: received=20, queue=0, batch=0
-[Worker 2] FINISHED: df8a02a5... (output_len=34)
+[Worker 2] Updated actual adapter usage: 2048 cells
+[Worker 2] FINISHED: af3b4865... (output_len=93)
+[ResponseMerger] FINISHED: req=af3b4865..., worker=2
+[HttpServerManager] Request af3b4865... completed
+[DataParallelRouterManager] Received AbortReq for request_id=af3b4865e29240f6b925187a80388190 (forwarded to detokenization, worker abort not yet implemented)
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.45 req/s
+[DataParallelRouterManager] Running Time: 220.07s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.35 req/s
+[DataParallelRouterManager] Running Time: 230.08s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 2] Heartbeat: received=180, queue=0, batch=0
+[Worker 1] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.25 req/s
+[DataParallelRouterManager] Running Time: 240.09s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 0] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.16 req/s
+[DataParallelRouterManager] Running Time: 250.09s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.08 req/s
+[DataParallelRouterManager] Running Time: 260.10s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 2] Heartbeat: received=180, queue=0, batch=0
+[Worker 1] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 2.00 req/s
+[DataParallelRouterManager] Running Time: 270.11s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 0] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.93 req/s
+[DataParallelRouterManager] Running Time: 280.12s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.86 req/s
+[DataParallelRouterManager] Running Time: 290.13s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 2] Heartbeat: received=180, queue=0, batch=0
+[Worker 1] Heartbeat: received=180, queue=0, batch=0
+[Worker 0] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.80 req/s
+[DataParallelRouterManager] Running Time: 300.14s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.74 req/s
+[DataParallelRouterManager] Running Time: 310.15s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.69 req/s
+[DataParallelRouterManager] Running Time: 320.16s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 2] Heartbeat: received=180, queue=0, batch=0
+[Worker 1] Heartbeat: received=180, queue=0, batch=0
+[Worker 0] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.64 req/s
+[DataParallelRouterManager] Running Time: 330.17s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.59 req/s
+[DataParallelRouterManager] Running Time: 340.17s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.54 req/s
+[DataParallelRouterManager] Running Time: 350.18s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================
+[Worker 2] Heartbeat: received=180, queue=0, batch=0
+[Worker 1] Heartbeat: received=180, queue=0, batch=0
+[Worker 0] Heartbeat: received=180, queue=0, batch=0
+[DataParallelRouterManager] ========== Statistics Summary ==========
+[DataParallelRouterManager] Total Requests: 540
+[DataParallelRouterManager] Successful Requests: 540
+[DataParallelRouterManager] Failed Requests: 0
+[DataParallelRouterManager] Average Throughput: 1.50 req/s
+[DataParallelRouterManager] Running Time: 360.19s
+[DataParallelRouterManager] Worker Request Distribution:
+[DataParallelRouterManager]   Worker 0 (GPU 1): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 1 (GPU 2): 180 requests (33.3%)
+[DataParallelRouterManager]   Worker 2 (GPU 3): 180 requests (33.3%)
+[DataParallelRouterManager] ==========================================

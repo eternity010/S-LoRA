@@ -1,0 +1,4 @@
+# file: /home/hzheng/S-LoRA/slora/server/router/round_robin_router.py
+# hypothesis_version: 6.141.1
+
+['next_worker', 'num_workers', 'total_requests']

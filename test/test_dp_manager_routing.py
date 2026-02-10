@@ -20,6 +20,7 @@ import zmq.asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from slora.server.router.dp_manager import DataParallelRouterManager
+from slora.server.sampling_params import SamplingParams
 
 
 @pytest.fixture
@@ -208,6 +209,8 @@ class TestRunMainLoop:
         3. 持续处理多个请求
         
         Requirements: 2.1, 2.3
+        
+        Note: run() 方法使用 recv_pyobj() 接收 tuple 格式的请求
         """
         # 设置 ZMQ（使用模拟的 sockets）
         router_manager.context = zmq.asyncio.Context()
@@ -216,15 +219,20 @@ class TestRunMainLoop:
         mock_receiver = AsyncMock()
         router_manager.request_receiver = mock_receiver
         
+        # 模拟 send_to_detokenization
+        router_manager.send_to_detokenization = Mock()
+        
         # 模拟接收 3 个请求后停止
+        # run() 方法期望 tuple 格式: (adapter_dir, prompt_ids, sampling_params, request_id)
+        # sampling_params 需要是 SamplingParams 对象
         requests = [
-            {'request_id': 'req-1', 'adapter_dir': '/path', 'prompt_ids': [1, 2], 'sampling_params': {}},
-            {'request_id': 'req-2', 'adapter_dir': '/path', 'prompt_ids': [3, 4], 'sampling_params': {}},
-            {'request_id': 'req-3', 'adapter_dir': '/path', 'prompt_ids': [5, 6], 'sampling_params': {}},
+            ('/path', [1, 2], SamplingParams(max_new_tokens=10), 'req-1'),
+            ('/path', [3, 4], SamplingParams(max_new_tokens=10), 'req-2'),
+            ('/path', [5, 6], SamplingParams(max_new_tokens=10), 'req-3'),
         ]
         
-        # 设置 recv_json 返回请求，然后抛出异常停止循环
-        mock_receiver.recv_json.side_effect = requests + [asyncio.CancelledError()]
+        # 设置 recv_pyobj 返回请求，然后抛出异常停止循环
+        mock_receiver.recv_pyobj.side_effect = requests + [asyncio.CancelledError()]
         
         # 模拟 request_senders
         router_manager.request_senders = []
@@ -232,12 +240,15 @@ class TestRunMainLoop:
             mock_sender = AsyncMock()
             router_manager.request_senders.append(mock_sender)
         
+        # 设置 workers_ready 为 True，避免健康检查和统计任务阻塞
+        router_manager.workers_ready = True
+        
         # 运行主循环（会在 CancelledError 时停止）
         with pytest.raises(asyncio.CancelledError):
             await router_manager.run()
         
-        # 验证：recv_json 被调用了 4 次（3 个请求 + 1 次触发异常）
-        assert mock_receiver.recv_json.call_count == 4
+        # 验证：recv_pyobj 被调用了 4 次（3 个请求 + 1 次触发异常）
+        assert mock_receiver.recv_pyobj.call_count == 4
         
         # 验证：所有请求都被路由（总共 3 个请求）
         total_sent = sum(s.send_json.call_count for s in router_manager.request_senders)
@@ -253,6 +264,8 @@ class TestRunMainLoop:
         2. 错误被记录但循环继续
         
         Requirements: 2.5
+        
+        Note: run() 方法使用 recv_pyobj() 接收 tuple 格式的请求
         """
         # 设置 ZMQ（使用模拟的 sockets）
         router_manager.context = zmq.asyncio.Context()
@@ -261,14 +274,19 @@ class TestRunMainLoop:
         mock_receiver = AsyncMock()
         router_manager.request_receiver = mock_receiver
         
+        # 模拟 send_to_detokenization
+        router_manager.send_to_detokenization = Mock()
+        
         # 第一个请求正常，第二个请求触发错误，第三个请求正常，然后停止
+        # run() 方法期望 tuple 格式: (adapter_dir, prompt_ids, sampling_params, request_id)
+        # sampling_params 需要是 SamplingParams 对象
         requests = [
-            {'request_id': 'req-1', 'adapter_dir': '/path', 'prompt_ids': [1, 2], 'sampling_params': {}},
-            {'request_id': 'req-2', 'adapter_dir': '/path', 'prompt_ids': [3, 4], 'sampling_params': {}},
-            {'request_id': 'req-3', 'adapter_dir': '/path', 'prompt_ids': [5, 6], 'sampling_params': {}},
+            ('/path', [1, 2], SamplingParams(max_new_tokens=10), 'req-1'),
+            ('/path', [3, 4], SamplingParams(max_new_tokens=10), 'req-2'),
+            ('/path', [5, 6], SamplingParams(max_new_tokens=10), 'req-3'),
         ]
         
-        mock_receiver.recv_json.side_effect = requests + [asyncio.CancelledError()]
+        mock_receiver.recv_pyobj.side_effect = requests + [asyncio.CancelledError()]
         
         # 模拟 request_senders
         router_manager.request_senders = []
@@ -284,12 +302,15 @@ class TestRunMainLoop:
         ]
         router_manager.request_senders[0].send_json.side_effect = error_on_second_call
         
+        # 设置 workers_ready 为 True，避免健康检查和统计任务阻塞
+        router_manager.workers_ready = True
+        
         # 运行主循环（会在 CancelledError 时停止）
         with pytest.raises(asyncio.CancelledError):
             await router_manager.run()
         
-        # 验证：recv_json 被调用了 4 次（3 个请求 + 1 次触发异常）
-        assert mock_receiver.recv_json.call_count == 4
+        # 验证：recv_pyobj 被调用了 4 次（3 个请求 + 1 次触发异常）
+        assert mock_receiver.recv_pyobj.call_count == 4
         
         # 验证：至少有 2 个请求被成功发送（req-1 和 req-3）
         # 注意：由于 round robin，请求会分配到不同的 worker

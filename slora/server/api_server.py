@@ -108,6 +108,7 @@ async def generate(request: Request) -> Response:
             return Response(status_code=499)
         if await request.is_disconnected():
             # Abort the request if the client disconnects.
+            print(f"[API] Client disconnected, aborting request {request_id[:8]}...")
             await httpserver_manager.abort(request_id)
             return Response(status_code=499)
         final_output.append(request_output)
@@ -376,6 +377,19 @@ def main():
                         help="Number of GPU workers for data parallel mode. If not specified, uses all available GPUs")
     parser.add_argument("--gpu-ids", type=str, default=None,
                         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). If not specified, uses all available GPUs")
+    
+    # Routing strategy arguments (for data parallel mode)
+    parser.add_argument("--routing-strategy", type=str, default="round-robin", 
+                        choices=["round-robin", "adapter-aware"],
+                        help="Routing strategy for data parallel mode: 'round-robin' (default) or 'adapter-aware'")
+    parser.add_argument("--routing-w1", type=float, default=1.0,
+                        help="Cache affinity weight for adapter-aware routing (default: 1.0)")
+    parser.add_argument("--routing-w2", type=float, default=0.1,
+                        help="Load penalty weight for adapter-aware routing (default: 0.1)")
+    parser.add_argument("--max-queue-length", type=int, default=100,
+                        help="Maximum queue length threshold for routing (default: 100)")
+    parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,
+                        help="Hot adapter request rate threshold in req/s (default: 10.0)")
 
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,

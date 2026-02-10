@@ -90,7 +90,6 @@ class HttpServerManager:
                     metadata["prompt_tokens"] = prompt_tokens
                 yield out_str, metadata, finished
             if finished:
-                print(f"[HttpServerManager] Request {request_id[:8]}... completed")
                 try:
                     del self.req_id_to_out_inf[request_id]
                 except:

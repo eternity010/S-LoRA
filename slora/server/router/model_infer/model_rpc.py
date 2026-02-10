@@ -195,7 +195,7 @@ class ModelRpcServer(rpyc.Service):
         return None
 
     @torch.no_grad()
-    def exposed_trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None):
+    def exposed_trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None, pending_adapter_counts=None):
         """
         手动触发阈值淘汰
         
@@ -204,6 +204,7 @@ class ModelRpcServer(rpyc.Service):
             threshold: 淘汰阈值（0-1），默认 0.9 (90%)
             evict_ratio: 淘汰比例（0-1），默认 0.2 (20%)
             max_lora_ratio: LoRA 最大占用比例（0-1），用于固定 LoRA 的空间上限
+            pending_adapter_counts: 队列中等待各 adapter 的请求数 {adapter_dir: count}
         
         返回:
             淘汰结果字典，包含 evicted, evicted_count, cells_freed 等信息
@@ -211,9 +212,16 @@ class ModelRpcServer(rpyc.Service):
         """
         if self.world_size != 1:
             preserve_dirs = obtain(preserve_dirs) if preserve_dirs is not None else None
+            pending_adapter_counts = obtain(pending_adapter_counts) if pending_adapter_counts is not None else None
         
         if not self.input_params.bmm and not self.input_params.no_mem_pool:
             preserve_set = set(preserve_dirs) if preserve_dirs else None
+            
+            # 更新队列等待请求数（用于评分）
+            if pending_adapter_counts:
+                self.infer_adapter.pending_adapter_counts = pending_adapter_counts
+            else:
+                self.infer_adapter.pending_adapter_counts = {}
             
             # 调试日志：打印 RPC 端接收到的保护列表
             if preserve_set:
@@ -555,9 +563,9 @@ class ModelRpcClient:
         else:
             return ans
     
-    async def trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None):
+    async def trigger_threshold_eviction(self, preserve_dirs=None, threshold=0.9, evict_ratio=0.2, max_lora_ratio=None, pending_adapter_counts=None):
         """手动触发阈值淘汰"""
-        ans = self._trigger_threshold_eviction(preserve_dirs, threshold, evict_ratio, max_lora_ratio)
+        ans = self._trigger_threshold_eviction(preserve_dirs, threshold, evict_ratio, max_lora_ratio, pending_adapter_counts)
         if self.use_rpc:
             await asyncio.to_thread(ans.wait)
             return ans.value
