@@ -10,3 +10,9 @@ dist
 *.json
 *.jsonl
 *.pdf
+
+# Hypothesis (Property-Based Testing) cache
+.hypothesis/
+
+# Pytest cache
+.pytest_cache/
