@@ -102,10 +102,13 @@ class WorkerStateCache:
                     'cached_adapters': List[str],
                     'queue_length': int,
                     'gpu_memory_free': int,
-                    'timestamp': float
+                    'timestamp': float,
+                    'avg_rank': float (optional),
+                    'min_rank': int (optional),
+                    'max_rank': int (optional)
                 }
         
-        Requirements: 1.4
+        Requirements: 1.4, 8.2, 8.3
         """
         try:
             if message.get('type') != 'worker_state':
@@ -123,7 +126,12 @@ class WorkerStateCache:
                 queue_length=message.get('queue_length', 0),
                 gpu_memory_free=message.get('gpu_memory_free', 0),
                 last_heartbeat=message.get('timestamp', time.time()),
-                is_healthy=True  # 收到消息说明 Worker 健康
+                is_healthy=True,  # 收到消息说明 Worker 健康
+                # Rank distribution fields for Rank-Aware Routing
+                # Use default values (0.0, 0, 0) for backward compatibility with old Workers
+                avg_rank=message.get('avg_rank', 0.0),
+                min_rank=message.get('min_rank', 0),
+                max_rank=message.get('max_rank', 0)
             )
             
             self.update(worker_id, state)

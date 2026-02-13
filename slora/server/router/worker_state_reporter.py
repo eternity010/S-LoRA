@@ -175,7 +175,11 @@ class WorkerStateReporter:
                     queue_length=state_dict.get('queue_length', 0),
                     gpu_memory_free=state_dict.get('gpu_memory_free', 0),
                     last_heartbeat=time.time(),
-                    is_healthy=True
+                    is_healthy=True,
+                    # Rank distribution fields for Rank-Aware Routing
+                    avg_rank=state_dict.get('avg_rank', 0.0),
+                    min_rank=state_dict.get('min_rank', 0),
+                    max_rank=state_dict.get('max_rank', 0)
                 )
             except Exception as e:
                 logger.error(f"Error getting state: {e}")
@@ -187,7 +191,10 @@ class WorkerStateReporter:
             queue_length=0,
             gpu_memory_free=0,
             last_heartbeat=time.time(),
-            is_healthy=True
+            is_healthy=True,
+            avg_rank=0.0,
+            min_rank=0,
+            max_rank=0
         )
     
     def _create_state_message(self, state: WorkerState) -> dict:
@@ -198,7 +205,9 @@ class WorkerStateReporter:
             state: Worker 状态
             
         Returns:
-            状态消息字典
+            状态消息字典，包含 rank 分布字段用于 Rank-Aware Routing
+        
+        Requirements: 1.1, 1.2, 1.3
         """
         return {
             'type': 'worker_state',
@@ -206,7 +215,11 @@ class WorkerStateReporter:
             'cached_adapters': list(state.cached_adapters),
             'queue_length': state.queue_length,
             'gpu_memory_free': state.gpu_memory_free,
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            # Rank distribution fields for Rank-Aware Routing
+            'avg_rank': state.avg_rank,
+            'min_rank': state.min_rank,
+            'max_rank': state.max_rank
         }
     
     async def _send_state(self, state: WorkerState) -> bool:

@@ -53,9 +53,17 @@ python run_exp.py --debug
 
 #### 数据并行模式 ⭐ 新增
 ```bash
-# 使用 3 个 GPU 启动数据并行模式
+# 使用 3 个 GPU 启动数据并行模式（真实模型）
 python launch_server.py \
     --model-setting Real \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2
+
+# 使用 3 个 GPU 启动数据并行模式（虚拟权重，快速测试）
+python launch_server.py \
     --num-adapter 100 \
     --num-token 5000 \
     --dummy \
@@ -71,13 +79,41 @@ python launch_server.py \
     --num-workers 3 \
     --gpu-ids 0,1,2
 
-# 使用所有可用 GPU（自动检测）
+# 使用所有可用 GPU（自动检测，真实模型）
 python launch_server.py \
     --model-setting Real \
     --num-adapter 100 \
     --num-token 5000 \
     --parallel-mode data \
     --num-workers 4
+
+#### Rank-Aware Routing 测试 ⭐ 新增
+```bash
+# 启用 Rank-Aware Routing（w3=5.0，真实模型）
+python launch_server.py \
+    --model-setting Real \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2 \
+    --routing-w3 5.0
+
+# 启用 Rank-Aware Routing（w3=5.0，虚拟权重测试）
+python launch_server.py \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --dummy \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2 \
+    --routing-w3 5.0
+
+# 不同 w3 值对比
+--routing-w3 0.0   # 禁用（默认）
+--routing-w3 2.0   # 轻度 rank 感知
+--routing-w3 5.0   # 中度 rank 感知
+--routing-w3 10.0  # 强 rank 感知
 ```
 
 #### 指定 GPU 使用（张量并行）
@@ -187,17 +223,25 @@ python launch_server.py --num-adapter 100 --num-token 10000 --dummy
 ```bash
 cd benchmarks
 
-# 使用 3 个 GPU（推荐用于 3090）
+# 使用 3 个 GPU（推荐用于 3090，真实模型）
 python launch_server.py \
     --model-setting Real \
     --num-adapter 100 \
     --num-token 5000 \
     --parallel-mode data \
     --num-workers 3 \
-    --gpu-ids 0,1,2 \
-    --dummy
+    --gpu-ids 0,1,2
 
-# 使用 4 个 GPU（推荐用于 A100）
+# 使用 3 个 GPU（推荐用于 3090，虚拟权重测试）
+python launch_server.py \
+    --num-adapter 100 \
+    --num-token 5000 \
+    --dummy \
+    --parallel-mode data \
+    --num-workers 3 \
+    --gpu-ids 0,1,2
+
+# 使用 4 个 GPU（推荐用于 A100，真实模型）
 python launch_server.py \
     --model-setting Real \
     --num-adapter 200 \
@@ -303,6 +347,14 @@ Request(
 - **适配器加载/卸载时间**：内存管理开销
 
 ## 📝 注意事项
+
+### 参数使用说明 ⭐ 重要
+**`--model-setting Real` 与 `--dummy` 参数说明**：
+- `--model-setting Real`: 使用真实的本地模型文件
+- `--dummy`: 使用虚拟权重，无需真实模型文件
+- **这两个参数不应同时使用**，请根据需求选择其中一种：
+  - 性能测试或生产环境：使用 `--model-setting Real`
+  - 快速功能测试或调试：使用 `--dummy`
 
 ### 通用注意事项
 1. **服务器必须先启动**：运行 `run_exp.py` 前确保服务器已启动

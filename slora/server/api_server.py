@@ -386,6 +386,10 @@ def main():
                         help="Cache affinity weight for adapter-aware routing (default: 1.0)")
     parser.add_argument("--routing-w2", type=float, default=0.1,
                         help="Load penalty weight for adapter-aware routing (default: 0.1)")
+    parser.add_argument("--routing-w3", type=float, default=0.0,
+                        help="Rank mismatch penalty weight for rank-aware routing (default: 0.0, disabled)")
+    parser.add_argument("--default-lora-rank", type=int, default=16,
+                        help="Default LoRA rank for unknown adapters in rank-aware routing (default: 16)")
     parser.add_argument("--max-queue-length", type=int, default=100,
                         help="Maximum queue length threshold for routing (default: 100)")
     parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,

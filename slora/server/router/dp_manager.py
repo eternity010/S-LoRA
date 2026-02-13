@@ -124,6 +124,14 @@ class DataParallelRouterManager:
         # 初始化路由器
         self.router: Union[RoundRobinRouter, AdapterAwareRouter] = self._create_router()
         
+        # 加载并传递 adapter ranks 到路由器（仅 adapter-aware 模式）
+        # Requirements: 3.1 (Rank-Aware Routing)
+        if self.routing_strategy == 'adapter-aware':
+            adapter_ranks = self._load_adapter_ranks()
+            if isinstance(self.router, AdapterAwareRouter):
+                self.router.set_adapter_ranks(adapter_ranks)
+                print(f"[DataParallelRouterManager] Loaded {len(adapter_ranks)} adapter ranks for rank-aware routing")
+        
         # Worker 状态缓存（用于 adapter-aware 路由）
         self.worker_state_cache: Optional[WorkerStateCache] = None
         if self.routing_strategy == 'adapter-aware':
@@ -172,6 +180,9 @@ class DataParallelRouterManager:
             routing_config = self._get_routing_config()
             print(f"[DataParallelRouterManager]   Routing w1 (cache affinity): {routing_config.w1}")
             print(f"[DataParallelRouterManager]   Routing w2 (load penalty): {routing_config.w2}")
+            print(f"[DataParallelRouterManager]   Routing w3 (rank mismatch penalty): {routing_config.w3}")
+            print(f"[DataParallelRouterManager]   Default LoRA rank: {routing_config.default_lora_rank}")
+            print(f"[DataParallelRouterManager]   Max rank diff: {routing_config.max_rank_diff}")
             print(f"[DataParallelRouterManager]   Max queue length: {routing_config.max_queue_length}")
             print(f"[DataParallelRouterManager]   Hot adapter threshold: {routing_config.hot_adapter_threshold} req/s")
         print(f"[DataParallelRouterManager] ==========================================")
@@ -280,17 +291,71 @@ class DataParallelRouterManager:
         Returns:
             RoutingConfig: 路由配置实例
         
-        Requirements: 6.1-6.5
+        Requirements: 6.1-6.5 (Adapter-Aware), 6.1-6.4 (Rank-Aware)
         """
         return RoutingConfig(
             strategy=getattr(self.args, 'routing_strategy', 'round-robin'),
             w1=getattr(self.args, 'routing_w1', 1.0),
             w2=getattr(self.args, 'routing_w2', 0.1),
+            w3=getattr(self.args, 'routing_w3', 0.0),  # Rank mismatch penalty weight
+            default_lora_rank=getattr(self.args, 'default_lora_rank', 16),  # Default rank for unknown adapters
+            max_rank_diff=getattr(self.args, 'max_rank_diff', 64),  # Max rank difference for normalization
             heartbeat_interval_ms=getattr(self.args, 'heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=getattr(self.args, 'heartbeat_timeout_ms', 300),
             max_queue_length=getattr(self.args, 'max_queue_length', 100),
             hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 10.0)
         )
+    
+    def _load_adapter_ranks(self) -> dict:
+        """
+        加载 adapter rank 信息
+        
+        从 lora_dirs 配置中加载每个 adapter 的 rank 信息。
+        使用 get_lora_config 读取 adapter_config.json 中的 rank 值。
+        对于缺失或无效的配置，使用默认 rank 值。
+        
+        Returns:
+            Dict[str, int]: adapter 路径到 rank 的映射
+        
+        Requirements: 3.1
+        
+        Note:
+            这个方法在 adapter-aware 路由模式下被调用。
+            默认 rank 值从 routing config 中获取。
+        """
+        from slora.models.peft.lora_adapter import get_lora_config
+        
+        adapter_ranks = {}
+        lora_dirs = getattr(self.args, 'lora_dirs', [])
+        
+        if not lora_dirs:
+            logger.info("No lora_dirs configured, adapter ranks will be empty")
+            return adapter_ranks
+        
+        # 获取默认 rank 值
+        routing_config = self._get_routing_config()
+        default_rank = getattr(routing_config, 'default_lora_rank', 16)
+        
+        logger.info(f"Loading adapter ranks from {len(lora_dirs)} lora_dirs...")
+        
+        for i, lora_dir in enumerate(lora_dirs):
+            try:
+                # 使用 get_lora_config 读取配置
+                config, _ = get_lora_config(lora_dir, getattr(self.args, 'dummy', False))
+                rank = config.get("r", default_rank)
+                adapter_ranks[lora_dir] = rank
+                
+                # 只在第一个、最后一个和每20个 adapter 时输出，避免日志过多
+                if i == 0 or i == len(lora_dirs) - 1 or (i + 1) % 20 == 0:
+                    logger.info(f"  [{i+1}/{len(lora_dirs)}] {lora_dir}: rank={rank}")
+                
+            except Exception as e:
+                # 配置缺失或无效，使用默认 rank
+                logger.warning(f"Failed to load rank for {lora_dir}: {e}, using default rank {default_rank}")
+                adapter_ranks[lora_dir] = default_rank
+        
+        logger.info(f"Loaded ranks for {len(adapter_ranks)} adapters")
+        return adapter_ranks
     
     def _create_router(self) -> Union[RoundRobinRouter, AdapterAwareRouter]:
         """

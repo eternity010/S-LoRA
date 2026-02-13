@@ -42,6 +42,10 @@ if __name__ == "__main__":
                         help="缓存亲和性权重 (默认: 1.0)")
     parser.add_argument("--routing-w2", type=float, default=0.1,
                         help="负载惩罚权重 (默认: 0.1)")
+    parser.add_argument("--routing-w3", type=float, default=0.0,
+                        help="Rank 不匹配惩罚权重，用于 rank 感知路由 (默认: 0.0，禁用)")
+    parser.add_argument("--default-lora-rank", type=int, default=16,
+                        help="未知 adapter 的默认 LoRA rank (默认: 16)")
     parser.add_argument("--max-queue-length", type=int, default=100,
                         help="最大队列长度阈值 (默认: 100)")
     parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,

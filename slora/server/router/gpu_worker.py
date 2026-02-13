@@ -172,8 +172,11 @@ class GPUWorker:
             - cached_adapters: 已缓存的 Adapter 目录集合
             - queue_length: 当前队列长度
             - gpu_memory_free: 可用 GPU 显存（bytes）
+            - avg_rank: 当前批次的平均 rank
+            - min_rank: 当前批次的最小 rank
+            - max_rank: 当前批次的最大 rank
         
-        Requirements: 1.1, 1.2
+        Requirements: 1.1, 1.2, 1.3, 1.4
         """
         # 获取已缓存的 adapters
         cached_adapters = set(self.adapter_cache.keys()) if self.adapter_cache else set()
@@ -193,10 +196,32 @@ class GPUWorker:
         except Exception:
             pass
         
+        # 计算当前批次的 rank 分布（用于 Rank-Aware Routing）
+        # Requirements: 1.1, 1.2, 1.3, 1.4
+        avg_rank = 0.0
+        min_rank = 0
+        max_rank = 0
+        
+        if self.current_batch and self.current_batch.reqs:
+            ranks = []
+            for req in self.current_batch.reqs:
+                adapter_dir = req.adapter_dir
+                # 使用 lora_ranks 映射获取 rank，默认值为 16
+                rank = self.lora_ranks.get(adapter_dir, 16)
+                ranks.append(rank)
+            
+            if ranks:
+                avg_rank = sum(ranks) / len(ranks)
+                min_rank = min(ranks)
+                max_rank = max(ranks)
+        
         return {
             'cached_adapters': cached_adapters,
             'queue_length': queue_length,
-            'gpu_memory_free': gpu_memory_free
+            'gpu_memory_free': gpu_memory_free,
+            'avg_rank': avg_rank,
+            'min_rank': min_rank,
+            'max_rank': max_rank
         }
     
     def _setup_state_reporter(self, state_report_port: Optional[int] = None) -> None:

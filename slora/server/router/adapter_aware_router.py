@@ -98,16 +98,17 @@ class AdapterAwareRouter:
     基于亲和性的智能路由器
     
     Implements the scoring function:
-    Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i
+    Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i - w3 · RankMismatch_i
     
     Attributes:
         num_workers: Worker 数量
         config: 路由配置
         worker_states: Worker 状态字典
         adapter_to_workers: Adapter 到 Worker 的倒排索引
+        adapter_ranks: Adapter 到 rank 的映射（用于 Rank-Aware Routing）
         stats: 路由统计信息
     
-    Requirements: 2.1, 2.2, 3.1, 3.2
+    Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 3.4
     """
     
     def __init__(self, 
@@ -134,6 +135,10 @@ class AdapterAwareRouter:
         # Adapter -> Worker 倒排索引
         self.adapter_to_workers: Dict[str, Set[int]] = defaultdict(set)
         
+        # Adapter -> Rank 映射（用于 Rank-Aware Routing）
+        # Requirements: 3.2, 3.3, 3.4
+        self.adapter_ranks: Dict[str, int] = {}
+        
         # 路由统计
         self.stats = RoutingStats()
         
@@ -151,13 +156,16 @@ class AdapterAwareRouter:
         self._stats_log_interval = 10.0  # 每 10 秒输出一次统计
         
         logger.info(f"AdapterAwareRouter initialized with {num_workers} workers, "
-                   f"strategy={self.config.strategy}, w1={self.config.w1}, w2={self.config.w2}")
+                   f"strategy={self.config.strategy}, w1={self.config.w1}, w2={self.config.w2}, "
+                   f"w3={self.config.w3}")
     
     def calculate_score(self, worker_id: int, adapter_dir: str) -> float:
         """
         计算 Worker 对请求的评分
         
-        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i
+        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i - w3 · RankMismatch_i
+        
+        其中 RankMismatch = |request_rank - worker_avg_rank| / max_rank_diff
         
         Args:
             worker_id: Worker ID
@@ -166,7 +174,7 @@ class AdapterAwareRouter:
         Returns:
             评分值
         
-        Requirements: 2.2
+        Requirements: 2.2, 5.1, 5.2, 5.4, 5.5
         """
         state = self.worker_states.get(worker_id)
         if state is None:
@@ -175,8 +183,22 @@ class AdapterAwareRouter:
         # I(adapter ∈ Cache_i): 指示函数
         cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
         
-        # 评分公式
+        # 基础评分公式
         score = self.config.w1 * cache_indicator - self.config.w2 * state.queue_length
+        
+        # Rank 不匹配惩罚（仅当 w3 > 0 时应用）
+        # Requirements: 5.1, 5.2, 5.4, 5.5
+        if self.config.w3 > 0:
+            request_rank = self.get_adapter_rank(adapter_dir)
+            rank_mismatch = self.calculate_rank_mismatch(request_rank, worker_id)
+            rank_penalty = self.config.w3 * rank_mismatch
+            score -= rank_penalty
+            
+            logger.debug(f"Worker {worker_id} score breakdown: "
+                        f"cache={self.config.w1 * cache_indicator:.2f}, "
+                        f"queue={-self.config.w2 * state.queue_length:.2f}, "
+                        f"rank_penalty={-rank_penalty:.2f}, "
+                        f"total={score:.2f}")
         
         return score
     
@@ -252,6 +274,12 @@ class AdapterAwareRouter:
         )
         
         self.stats.record_request(selected_worker_id, cache_hit, is_cold_start)
+        
+        # 记录 Rank 不匹配统计 (Requirements: 7.1, 7.2)
+        if self.config.w3 > 0:
+            request_rank = self.get_adapter_rank(adapter_dir)
+            rank_mismatch = self.calculate_rank_mismatch(request_rank, selected_worker_id)
+            self.stats.record_rank_mismatch(rank_mismatch)
         
         # 冷启动日志 (Requirements 4.2)
         if is_cold_start:
@@ -385,11 +413,96 @@ class AdapterAwareRouter:
         """
         return self.adapter_to_workers.get(adapter_dir, set()).copy()
     
+    def set_adapter_ranks(self, adapter_ranks: Dict[str, int]) -> None:
+        """
+        设置 Adapter rank 映射
+        
+        从 DataParallelRouterManager 调用，传入从 adapter 配置文件中读取的 rank 信息。
+        
+        Args:
+            adapter_ranks: Adapter 目录到 rank 的映射字典
+        
+        Requirements: 3.2
+        """
+        self.adapter_ranks = adapter_ranks.copy()
+        logger.info(f"Loaded {len(self.adapter_ranks)} adapter ranks for rank-aware routing")
+        
+        # DEBUG: 输出部分 adapter rank 信息
+        if self.adapter_ranks:
+            sample_adapters = list(self.adapter_ranks.items())[:5]
+            for adapter_dir, rank in sample_adapters:
+                adapter_name = adapter_dir.split('/')[-1] if '/' in adapter_dir else adapter_dir
+                logger.debug(f"  Adapter {adapter_name}: rank={rank}")
+    
+    def get_adapter_rank(self, adapter_dir: str) -> int:
+        """
+        获取指定 Adapter 的 rank
+        
+        如果 Adapter 未知（不在 adapter_ranks 映射中），返回配置的默认 rank 值。
+        
+        Args:
+            adapter_dir: Adapter 目录
+            
+        Returns:
+            Adapter 的 rank 值
+        
+        Requirements: 3.3, 3.4
+        """
+        if adapter_dir in self.adapter_ranks:
+            return self.adapter_ranks[adapter_dir]
+        
+        # 未知 Adapter，使用默认 rank
+        default_rank = self.config.default_lora_rank
+        logger.debug(f"Unknown adapter {adapter_dir}, using default rank={default_rank}")
+        return default_rank
+    
+    def calculate_rank_mismatch(self, request_rank: int, worker_id: int) -> float:
+        """
+        计算请求 rank 与 Worker 平均 rank 的归一化不匹配度
+        
+        公式: mismatch = |request_rank - avg_rank| / max_rank_diff
+        
+        Args:
+            request_rank: 请求的 Adapter rank
+            worker_id: Worker ID
+            
+        Returns:
+            归一化的不匹配度，范围 [0, 1]
+            - 0.0 表示完全匹配或空批次
+            - 1.0 表示最大不匹配
+        
+        Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
+        """
+        state = self.worker_states.get(worker_id)
+        if state is None:
+            return 0.0
+        
+        # 空批次情况：avg_rank=0，返回 0.0（不惩罚）
+        if state.avg_rank == 0.0:
+            return 0.0
+        
+        # 计算绝对差值
+        diff = abs(request_rank - state.avg_rank)
+        
+        # rank 相等时返回 0.0
+        if diff == 0.0:
+            return 0.0
+        
+        # 归一化到 [0, 1] 范围
+        max_rank_diff = self.config.max_rank_diff
+        if max_rank_diff <= 0:
+            return 0.0
+        
+        # 限制在 [0, 1] 范围内
+        mismatch = min(diff / max_rank_diff, 1.0)
+        
+        return mismatch
+    
     def get_stats(self) -> dict:
         """
         获取路由统计信息
         
-        Requirements: 7.1, 7.2, 7.3
+        Requirements: 7.1, 7.2, 7.3, 7.4
         """
         stats = self.stats.to_dict()
         
@@ -399,17 +512,23 @@ class AdapterAwareRouter:
         stats['unhealthy_workers'] = self.num_workers - len(healthy_workers)
         stats['total_cached_adapters'] = len(self.adapter_to_workers)
         
+        # 添加 Rank-Aware 路由配置信息 (Requirements: 7.4)
+        stats['rank_aware_enabled'] = self.config.w3 > 0
+        stats['w3'] = self.config.w3
+        stats['loaded_adapter_ranks'] = len(self.adapter_ranks)
+        
         return stats
     
     def log_stats_summary(self) -> None:
         """
         输出统计摘要日志
         
-        Requirements: 7.4, 7.5
+        Requirements: 7.3, 7.4, 7.5
         """
         stats = self.get_stats()
         
-        logger.info(
+        # 基础统计日志
+        log_msg = (
             f"Routing Stats: "
             f"total={stats['total_requests']}, "
             f"hits={stats['cache_hits']}, "
@@ -419,6 +538,15 @@ class AdapterAwareRouter:
             f"hot_redistributions={stats['hot_adapter_redistributions']}, "
             f"healthy_workers={stats['healthy_workers']}/{self.num_workers}"
         )
+        
+        # 添加 Rank 统计信息 (Requirements: 7.3)
+        if stats.get('rank_aware_enabled', False):
+            log_msg += (
+                f", rank_matched={stats.get('rank_matched_count', 0)}, "
+                f"avg_rank_mismatch={stats.get('avg_rank_mismatch', 0.0):.3f}"
+            )
+        
+        logger.info(log_msg)
         
         # 输出 Worker 请求分布
         if stats['worker_request_counts']:
@@ -480,6 +608,9 @@ class AdapterAwareRouter:
         
         # 清空倒排索引
         self.adapter_to_workers.clear()
+        
+        # 清空 adapter rank 映射
+        self.adapter_ranks.clear()
         
         # 重置统计
         self.stats.reset()

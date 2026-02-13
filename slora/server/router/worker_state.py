@@ -18,7 +18,7 @@ class WorkerState:
     Worker 状态信息
     
     Tracks the current state of a GPU Worker including its cached adapters,
-    queue length, and health status.
+    queue length, health status, and batch rank distribution.
     
     Attributes:
         worker_id: Worker 唯一标识
@@ -27,8 +27,11 @@ class WorkerState:
         gpu_memory_free: 可用 GPU 显存（bytes）
         last_heartbeat: 最后心跳时间戳
         is_healthy: 是否健康
+        avg_rank: 当前批次的平均 LoRA rank
+        min_rank: 当前批次的最小 LoRA rank
+        max_rank: 当前批次的最大 LoRA rank
     
-    Requirements: 1.1, 1.2
+    Requirements: 1.1, 1.2, 2.1, 2.2, 2.3, 2.4, 2.5, 8.2
     """
     worker_id: int
     cached_adapters: Set[str] = field(default_factory=set)
@@ -36,6 +39,10 @@ class WorkerState:
     gpu_memory_free: int = 0
     last_heartbeat: float = field(default_factory=time.time)
     is_healthy: bool = True
+    # Rank distribution fields for rank-aware routing
+    avg_rank: float = 0.0      # Average rank of current batch
+    min_rank: int = 0          # Minimum rank in current batch
+    max_rank: int = 0          # Maximum rank in current batch
     
     def has_adapter(self, adapter_dir: str) -> bool:
         """检查是否缓存了指定的 Adapter"""
@@ -53,19 +60,25 @@ class WorkerState:
             'queue_length': self.queue_length,
             'gpu_memory_free': self.gpu_memory_free,
             'last_heartbeat': self.last_heartbeat,
-            'is_healthy': self.is_healthy
+            'is_healthy': self.is_healthy,
+            'avg_rank': self.avg_rank,
+            'min_rank': self.min_rank,
+            'max_rank': self.max_rank
         }
     
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkerState':
-        """从字典创建 WorkerState 实例"""
+        """从字典创建 WorkerState 实例（向后兼容，支持无 rank 字段的旧格式）"""
         return cls(
             worker_id=data['worker_id'],
             cached_adapters=set(data.get('cached_adapters', [])),
             queue_length=data.get('queue_length', 0),
             gpu_memory_free=data.get('gpu_memory_free', 0),
             last_heartbeat=data.get('last_heartbeat', time.time()),
-            is_healthy=data.get('is_healthy', True)
+            is_healthy=data.get('is_healthy', True),
+            avg_rank=data.get('avg_rank', 0.0),
+            min_rank=data.get('min_rank', 0),
+            max_rank=data.get('max_rank', 0)
         )
 
 
@@ -83,6 +96,8 @@ class RoutingStats:
         cold_starts: 冷启动次数
         hot_adapter_redistributions: 热点 Adapter 重分配次数
         worker_request_counts: 每个 Worker 的请求计数
+        rank_matched_count: Rank 匹配的路由次数（不匹配度低于阈值）
+        total_rank_mismatch: 总 rank 不匹配度
     
     Requirements: 7.1, 7.2, 7.3
     """
@@ -92,6 +107,9 @@ class RoutingStats:
     cold_starts: int = 0
     hot_adapter_redistributions: int = 0
     worker_request_counts: Dict[int, int] = field(default_factory=dict)
+    # Rank-aware statistics
+    rank_matched_count: int = 0           # Requests routed to similar-rank Workers
+    total_rank_mismatch: float = 0.0      # Sum of all rank mismatches
     
     @property
     def cache_hit_rate(self) -> float:
@@ -113,6 +131,20 @@ class RoutingStats:
         if self.total_requests == 0:
             return 0.0
         return self.cache_misses / self.total_requests
+    
+    @property
+    def avg_rank_mismatch(self) -> float:
+        """
+        计算平均 rank 不匹配度
+        
+        Returns:
+            平均 rank 不匹配度（0.0 - 1.0）
+        
+        Requirements: 7.2
+        """
+        if self.total_requests == 0:
+            return 0.0
+        return self.total_rank_mismatch / self.total_requests
     
     def record_request(self, worker_id: int, cache_hit: bool, is_cold_start: bool = False) -> None:
         """
@@ -138,6 +170,20 @@ class RoutingStats:
             self.worker_request_counts[worker_id] = 0
         self.worker_request_counts[worker_id] += 1
     
+    def record_rank_mismatch(self, mismatch: float, threshold: float = 0.1) -> None:
+        """
+        记录一次 rank 不匹配度
+        
+        Args:
+            mismatch: rank 不匹配度（0.0 - 1.0）
+            threshold: 判定为"匹配"的阈值，默认 0.1
+        
+        Requirements: 7.1, 7.2
+        """
+        self.total_rank_mismatch += mismatch
+        if mismatch <= threshold:
+            self.rank_matched_count += 1
+    
     def record_hot_adapter_redistribution(self) -> None:
         """记录一次热点 Adapter 重分配"""
         self.hot_adapter_redistributions += 1
@@ -150,6 +196,8 @@ class RoutingStats:
         self.cold_starts = 0
         self.hot_adapter_redistributions = 0
         self.worker_request_counts.clear()
+        self.rank_matched_count = 0
+        self.total_rank_mismatch = 0.0
     
     def to_dict(self) -> dict:
         """转换为字典格式"""
@@ -160,7 +208,10 @@ class RoutingStats:
             'cold_starts': self.cold_starts,
             'hot_adapter_redistributions': self.hot_adapter_redistributions,
             'cache_hit_rate': self.cache_hit_rate,
-            'worker_request_counts': dict(self.worker_request_counts)
+            'worker_request_counts': dict(self.worker_request_counts),
+            'rank_matched_count': self.rank_matched_count,
+            'total_rank_mismatch': self.total_rank_mismatch,
+            'avg_rank_mismatch': self.avg_rank_mismatch
         }
     
     def __str__(self) -> str:
@@ -184,6 +235,9 @@ class RoutingConfig:
         strategy: 路由策略 ('adapter-aware' or 'round-robin')
         w1: 缓存亲和性权重
         w2: 负载惩罚权重
+        w3: Rank 不匹配惩罚权重（用于 rank 感知路由）
+        default_lora_rank: 未知 adapter 的默认 LoRA rank
+        max_rank_diff: 用于归一化 rank 差异的最大值
         heartbeat_interval_ms: 心跳间隔（毫秒）
         heartbeat_timeout_ms: 心跳超时（毫秒）
         max_queue_length: 最大队列长度阈值
@@ -194,6 +248,9 @@ class RoutingConfig:
     strategy: str = 'adapter-aware'
     w1: float = 1.0
     w2: float = 0.1
+    w3: float = 0.0                    # Rank mismatch penalty weight (NEW)
+    default_lora_rank: int = 16        # Default rank for unknown adapters (NEW)
+    max_rank_diff: int = 64            # Max rank difference for normalization (NEW)
     heartbeat_interval_ms: int = 100
     heartbeat_timeout_ms: int = 300
     max_queue_length: int = 100
@@ -207,6 +264,12 @@ class RoutingConfig:
             raise ValueError(f"w1 must be non-negative, got {self.w1}")
         if self.w2 < 0:
             raise ValueError(f"w2 must be non-negative, got {self.w2}")
+        if self.w3 < 0:
+            raise ValueError(f"w3 must be non-negative, got {self.w3}")
+        if self.default_lora_rank <= 0:
+            raise ValueError(f"default_lora_rank must be positive, got {self.default_lora_rank}")
+        if self.max_rank_diff <= 0:
+            raise ValueError(f"max_rank_diff must be positive, got {self.max_rank_diff}")
         if self.heartbeat_interval_ms <= 0:
             raise ValueError(f"heartbeat_interval_ms must be positive, got {self.heartbeat_interval_ms}")
         if self.heartbeat_timeout_ms <= 0:
@@ -232,6 +295,9 @@ class RoutingConfig:
             'strategy': self.strategy,
             'w1': self.w1,
             'w2': self.w2,
+            'w3': self.w3,
+            'default_lora_rank': self.default_lora_rank,
+            'max_rank_diff': self.max_rank_diff,
             'heartbeat_interval_ms': self.heartbeat_interval_ms,
             'heartbeat_timeout_ms': self.heartbeat_timeout_ms,
             'max_queue_length': self.max_queue_length,
@@ -240,11 +306,14 @@ class RoutingConfig:
     
     @classmethod
     def from_dict(cls, data: dict) -> 'RoutingConfig':
-        """从字典创建 RoutingConfig 实例"""
+        """从字典创建 RoutingConfig 实例（向后兼容）"""
         return cls(
             strategy=data.get('strategy', 'adapter-aware'),
             w1=data.get('w1', 1.0),
             w2=data.get('w2', 0.1),
+            w3=data.get('w3', 0.0),
+            default_lora_rank=data.get('default_lora_rank', 16),
+            max_rank_diff=data.get('max_rank_diff', 64),
             heartbeat_interval_ms=data.get('heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=data.get('heartbeat_timeout_ms', 300),
             max_queue_length=data.get('max_queue_length', 100),
