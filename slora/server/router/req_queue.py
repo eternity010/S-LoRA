@@ -1,3 +1,4 @@
+import os
 import uuid
 import asyncio
 import numpy as np
@@ -64,14 +65,15 @@ class ReqQueue:
             len(self.cache_len_list) <= self.running_max_req_size):
             return True
         else:
-            # 新增：调试日志
-            if need_max_token_num >= self.max_total_tokens - total_adapter_occupation:
-                print(f"[并发控制] 无法添加请求：")
-                print(f"  需要空间: {need_max_token_num} cells")
-                print(f"  总空间: {self.max_total_tokens} cells")
-                print(f"  实际 adapter 占用: {self.actual_total_adapter_size} cells")
-                print(f"  当前批次 adapter: {self.adapter_size} cells")
-                print(f"  可用空间: {self.max_total_tokens - total_adapter_occupation} cells")
+            # DEBUG 模式：打印并发控制日志
+            if os.environ.get('DEBUG', '0') == '1':
+                if need_max_token_num >= self.max_total_tokens - total_adapter_occupation:
+                    print(f"[并发控制] 无法添加请求：")
+                    print(f"  需要空间: {need_max_token_num} cells")
+                    print(f"  总空间: {self.max_total_tokens} cells")
+                    print(f"  实际 adapter 占用: {self.actual_total_adapter_size} cells")
+                    print(f"  当前批次 adapter: {self.adapter_size} cells")
+                    print(f"  可用空间: {self.max_total_tokens - total_adapter_occupation} cells")
             return False
     
     def update_counter(self, req):

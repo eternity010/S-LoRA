@@ -1,391 +1,103 @@
-# Benchmarks 目录说明
+# Benchmarks
 
-本目录包含 S-LoRA 的基准测试工具和实验脚本。
-
-## 📁 目录结构
+## 目录结构
 
 ```
 benchmarks/
-├── launch_server.py      # 启动 S-LoRA 服务器
-├── run_exp.py            # 运行基准测试实验（S-LoRA）
-├── run_exp_peft.py       # 运行 PEFT 基线对比实验
-├── trace.py              # 生成/处理请求跟踪数据
+├── launch_server.py      # 启动服务器
+├── run_exp.py            # 运行基准测试
+├── run_exp_peft.py       # PEFT 基线对比
+├── trace.py              # 请求生成（Power Law 分布）
 ├── exp_suite.py          # 实验配置套件
-├── time_stats.py         # 性能时间统计工具
-├── real_trace/           # 真实跟踪数据目录
-├── paper/                # 论文实验数据
-└── a10g/                 # A10G GPU 实验数据
+└── time_stats.py         # 性能统计
 ```
 
-## 🔧 核心文件功能
+## 快速开始
 
-### 1. `launch_server.py` - 服务器启动脚本
-
-**功能**：启动 S-LoRA 或对比基线（vLLM、LightLLM）服务器
-
-**主要参数**：
-- `--device`: 设备预设（`debug`/`a10g`/`h100`）
-- `--backend`: 后端选择（`slora`/`vllm`/`lightllm`/`vllm-packed`）
-- `--model-setting`: 模型配置（`S1`/`S2`/`S3`/`S4`/`Real`）
-- `--num-adapter`: LoRA 适配器数量
-- `--num-token`: 最大 token 容量
-- `--dummy`: 使用虚拟权重模式
-- `--prefetch`: 启用适配器预取
-- `--no-mem-pool`: 禁用内存池（共享内存）
-- `--bmm`: 使用 BMM 模式
-- `--enable-abort`: 启用请求中止功能
-- `--parallel-mode`: 并行模式（`tensor`/`data`）⭐ 新增
-- `--num-workers`: 数据并行模式下的 Worker 数量 ⭐ 新增
-- `--gpu-ids`: 数据并行模式下使用的 GPU ID（逗号分隔）⭐ 新增
-
-**使用示例**：
-
-#### 张量并行模式（默认）
-```bash
-# 启动 S-LoRA 服务器（张量并行）
-python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
-python run_exp.py --debug --model-setting Real
-
-# 使用虚拟权重测试
-python launch_server.py --num-adapter 100 --num-token 10000 --dummy
-python run_exp.py --debug
-```
-
-#### 数据并行模式 ⭐ 新增
-```bash
-# 使用 3 个 GPU 启动数据并行模式（真实模型）
-python launch_server.py \
-    --model-setting Real \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2
-
-# 使用 3 个 GPU 启动数据并行模式（虚拟权重，快速测试）
-python launch_server.py \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --dummy \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2
-
-# 快速测试（debug 模式）
-python launch_server.py \
-    --device debug \
-    --dummy \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2
-
-# 使用所有可用 GPU（自动检测，真实模型）
-python launch_server.py \
-    --model-setting Real \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --parallel-mode data \
-    --num-workers 4
-
-#### Rank-Aware Routing 测试 ⭐ 新增
-```bash
-# 启用 Rank-Aware Routing（w3=5.0，真实模型）
-python launch_server.py \
-    --model-setting Real \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2 \
-    --routing-w3 5.0
-
-# 启用 Rank-Aware Routing（w3=5.0，虚拟权重测试）
-python launch_server.py \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --dummy \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2 \
-    --routing-w3 5.0
-
-# 不同 w3 值对比
---routing-w3 0.0   # 禁用（默认）
---routing-w3 2.0   # 轻度 rank 感知
---routing-w3 5.0   # 中度 rank 感知
---routing-w3 10.0  # 强 rank 感知
-```
-
-#### 指定 GPU 使用（张量并行）
-```bash
-# 使用 GPU 0 和 1
-export CUDA_VISIBLE_DEVICES=0,1
-python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
-```
-
-### 2. `run_exp.py` - 基准测试主脚本
-
-**功能**：运行 S-LoRA 基准测试，发送请求并收集性能指标
-
-**主要参数**：
-- `--backend`: 后端选择（`slora`/`vllm`/`lightllm`）
-- `--suite`: 测试套件名称（如 `a10g-num-adapter`）
-- `--mode`: 运行模式（`synthetic`/`real`）
-- `--debug`: 调试模式
-- `--breakdown`: 显示详细性能分解
-
-**使用示例**：
-```bash
-# 合成模式测试
-python run_exp.py --backend slora --suite a10g-num-adapter --mode synthetic
-
-# 真实跟踪数据测试
-python run_exp.py --backend slora --suite a10g --mode real --debug
-```
-
-### 3. `run_exp_peft.py` - PEFT 基线对比
-
-**功能**：运行 HuggingFace PEFT 基线对比实验
-
-**参数**：与 `run_exp.py` 类似
-
-**使用示例**：
-```bash
-python run_exp_peft.py --backend peft --suite a10g --mode synthetic
-```
-
-### 4. `trace.py` - 请求跟踪生成
-
-**功能**：生成合成请求或处理真实跟踪数据
-
-**核心函数**：
-- `generate_requests()`: 生成合成请求（基于幂律分布）
-- `get_real_requests()`: 从真实跟踪文件加载请求
-- `Request`: 请求数据结构
-
-**请求参数**：
-- `num_adapters`: 适配器数量
-- `alpha`: 幂律分布参数（控制适配器使用频率）
-- `req_rate`: 请求速率（req/s）
-- `cv`: 变异系数（控制到达过程）
-- `duration`: 测试持续时间（秒）
-- `input_range`: 输入长度范围 `[min, max]`
-- `output_range`: 输出长度范围 `[min, max]`
-
-### 5. `exp_suite.py` - 实验配置
-
-**功能**：定义模型配置和测试套件
-
-**配置项**：
-- `BASE_MODEL`: 基础模型路径映射
-- `LORA_DIR`: LoRA 适配器目录映射
-- `paper_suite`: 论文实验配置套件
-
-**模型设置**：
-- `S1`/`S2`: Llama-7B（不同 rank 配置）
-- `S3`/`S4`: Llama-13B（不同 rank 配置）
-- `Real`: 本地真实模型路径
-
-**测试套件示例**：
-- `a10g-num-adapter`: 不同适配器数量测试
-- `a10g-alpha`: 不同幂律分布参数测试
-- `a10g-cv`: 不同变异系数测试
-- `a10g-req-rate`: 不同请求速率测试
-
-### 6. `time_stats.py` - 性能统计工具
-
-**功能**：从日志文件中提取和统计性能指标
-
-**统计项**：
-- `load`: 适配器加载时间
-- `prefetch`: 预取时间
-- `offload`: 卸载时间
-- `prefill`: Prefill 阶段时间
-- `decode`: Decode 阶段时间
-- `filter`: 过滤时间
-
-## 🚀 快速开始
-
-### 1. 启动服务器
-
-#### 张量并行模式（默认）
 ```bash
 cd benchmarks
 
-# 真实模型
-python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
-
-# 虚拟权重（无需模型文件）
+# 1. 启动服务器
+# 张量并行（默认）
 python launch_server.py --num-adapter 100 --num-token 10000 --dummy
+
+# 数据并行（3 GPU）
+python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
+    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3
+
+# 数据并行 + 智能路由
+python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
+    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3 \
+    --routing-strategy adapter-aware
+
+# 数据并行 + Rank-Aware 路由
+python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
+    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3 \
+    --routing-w3 5.0
+
+# 2. 运行测试（另一个终端）
+python run_exp.py --debug                          # 默认配置（均匀分布）
+python run_exp.py --suite routing-test --debug     # 智能路由测试（热点分布）
 ```
 
-#### 数据并行模式 ⭐ 新增
-```bash
-cd benchmarks
+> 使用真实模型时，将 `--dummy` 替换为 `--model-setting Real`，两者不要同时使用。
 
-# 使用 3 个 GPU（推荐用于 3090，真实模型）
-python launch_server.py \
-    --model-setting Real \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2
+## launch_server.py 参数
 
-# 使用 3 个 GPU（推荐用于 3090，虚拟权重测试）
-python launch_server.py \
-    --num-adapter 100 \
-    --num-token 5000 \
-    --dummy \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2
+| 参数 | 说明 |
+|------|------|
+| `--model-setting` | 模型配置：`S1`/`S2`(7B) `S3`/`S4`(13B) `Real`(本地) |
+| `--dummy` | 虚拟权重，快速测试用 |
+| `--num-adapter` | LoRA 适配器数量 |
+| `--num-token` | 最大 token 容量 |
+| `--parallel-mode` | `tensor`(默认) / `data` |
+| `--num-workers` | 数据并行 Worker 数量 |
+| `--gpu-ids` | GPU ID，逗号分隔 |
+| `--routing-strategy` | 路由策略：`round-robin`(默认) / `adapter-aware` |
+| `--routing-w3` | Rank-Aware 权重（0=禁用，5.0=中度，10.0=强） |
 
-# 使用 4 个 GPU（推荐用于 A100，真实模型）
-python launch_server.py \
-    --model-setting Real \
-    --num-adapter 200 \
-    --num-token 10000 \
-    --parallel-mode data \
-    --num-workers 4 \
-    --gpu-ids 0,1,2,3
-```
+## 测试套件（exp_suite.py）
 
-### 2. 运行测试
+### debug_suite（开发测试用）
 
-```bash
-# 在另一个终端运行测试
-python run_exp.py --debug --model-setting Real
-```
+| 套件名 | alpha | num_adapters | 说明 |
+|--------|-------|-------------|------|
+| `default` | 1.0 | 100 | 均匀分布，baseline |
+| `routing-test` | 0.6 | 100 | 热点分布，测试智能路由 |
+| `debug` | 1.0 | 20 | 小规模快速测试 |
 
-### 3. 查看结果
+### paper_suite（论文实验用）
 
-结果保存在 JSONL 格式文件中，包含：
-- 吞吐量（throughput）
-- 延迟（latency）
-- 内存使用（memory usage）
-- 其他性能指标
+`a10g-num-adapter`, `a10g-alpha`, `a10g-cv`, `a10g-req-rate` 等，详见代码。
 
-## 📊 实验配置说明
+## Alpha 参数（trace.py）
 
-### 合成模式（Synthetic Mode）
-
-使用 `generate_requests()` 生成合成请求：
-- 适配器选择：基于幂律分布（Zipf-like）
-- 请求到达：泊松过程（可配置变异系数）
-- 输入/输出长度：均匀随机分布
-
-### 真实模式（Real Mode）
-
-使用 `get_real_requests()` 从跟踪文件加载：
-- 支持 JSON Lines 格式（`.jsonl`）
-- 包含真实的时间戳和请求模式
-- 需要预先处理跟踪数据
-
-## 🔍 关键概念
-
-### 并行模式对比 ⭐ 新增
-
-#### 张量并行（Tensor Parallelism）
-- **适用场景**：单个大模型无法放入单张 GPU
-- **架构**：模型切分到多个 GPU，协同处理每个请求
-- **优点**：支持超大模型，单请求延迟低
-- **缺点**：吞吐量受限于 GPU 间通信
-
-**启动示例**：
-```bash
-# 使用 4 个 GPU 进行张量并行
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-python launch_server.py --num-adapter 100 --num-token 10000 --model-setting Real
-```
-
-#### 数据并行（Data Parallelism）⭐ 新增
-- **适用场景**：模型可放入单张 GPU，需要高吞吐量
-- **架构**：每个 GPU 加载完整模型，独立处理请求
-- **优点**：高吞吐量（2.5x ~ 3x），GPU 独立工作，易扩展
-- **缺点**：显存占用高（每 GPU 一份模型）
-
-**启动示例**：
-```bash
-# 使用 3 个 GPU 进行数据并行
-python launch_server.py \
-    --model-setting Real \
-    --parallel-mode data \
-    --num-workers 3 \
-    --gpu-ids 0,1,2 \
-    --dummy
-```
-
-**性能对比**：
-| 特性 | 张量并行 | 数据并行 |
-|------|---------|---------|
-| 吞吐量 | 1x | 2.5x ~ 3x |
-| 延迟 | 低 | 中等 |
-| GPU 利用率 | 中等 | 高 |
-| 显存占用 | 低（模型切分） | 高（每 GPU 一份） |
-| 扩展性 | 受限于模型大小 | 易于扩展 |
-
-### 请求结构
+`alpha` 控制 Power Law 分布，决定 adapter 访问的热点程度：
 
 ```python
-Request(
-    req_id: str,           # 请求 ID
-    model_dir: str,        # 模型目录
-    adapter_dir: str,      # 适配器目录
-    prompt: str,           # 输入提示
-    prompt_len: int,       # 输入长度
-    output_len: int,      # 输出长度
-    req_time: float        # 请求时间戳
-)
+probs = np.random.power(alpha, tot_req)
+ind = (probs * num_adapters).astype(int)
 ```
 
-### 性能指标
+| alpha | 分布 | 说明 |
+|-------|------|------|
+| 0.1-0.3 | 极端热点 | 少数 adapter 占 80%+ 流量 |
+| **0.6** | **明显热点** | **前 20% adapter 占 60%+ 流量（推荐测试智能路由）** |
+| 1.0 | 均匀分布 | 所有 adapter 等概率访问 |
 
-- **吞吐量**：每秒处理的 token 数（tokens/s）
-- **延迟**：端到端请求处理时间
-- **内存使用**：峰值 GPU 内存占用
-- **适配器加载/卸载时间**：内存管理开销
+alpha < 1 时热点越集中，智能路由的缓存亲和性优势越明显。alpha = 1 是均匀分布，难以体现路由优化效果。
 
-## 📝 注意事项
+## 并行模式对比
 
-### 参数使用说明 ⭐ 重要
-**`--model-setting Real` 与 `--dummy` 参数说明**：
-- `--model-setting Real`: 使用真实的本地模型文件
-- `--dummy`: 使用虚拟权重，无需真实模型文件
-- **这两个参数不应同时使用**，请根据需求选择其中一种：
-  - 性能测试或生产环境：使用 `--model-setting Real`
-  - 快速功能测试或调试：使用 `--dummy`
+| 特性 | 张量并行 | 数据并行 |
+|------|---------|---------|
+| 场景 | 模型放不下单卡 | 模型放得下，要高吞吐 |
+| 吞吐量 | 1x | 2.5x ~ 3x |
+| 显存占用 | 低（模型切分） | 高（每 GPU 一份） |
 
-### 通用注意事项
-1. **服务器必须先启动**：运行 `run_exp.py` 前确保服务器已启动
-2. **模型路径**：使用 `Real` 模式需要确保模型文件存在
-3. **端口冲突**：默认使用 8000 端口，确保未被占用
-4. **内存限制**：根据 GPU 显存调整 `--num-token` 和适配器数量
-5. **跟踪数据格式**：真实模式需要符合 S-LoRA 的 JSONL 格式
+## 注意事项
 
-### 数据并行模式注意事项 ⭐ 新增
-6. **显存要求**：每个 GPU 需要能放下完整模型
-   - Llama-7B：推荐 24GB+ 显存（如 3090、4090、A100）
-   - Llama-13B：推荐 40GB+ 显存（如 A100 40GB）
-7. **Worker 数量选择**：
-   - 推荐 Worker 数量 = GPU 数量
-   - 最大不超过可用 GPU 数量
-8. **GPU ID 指定**：
-   - 使用 `--gpu-ids 0,1,2` 明确指定 GPU
-   - 或省略该参数自动使用所有可用 GPU
-9. **性能调优**：
-   - 增加 `--num-token` 可提高单 Worker 吞吐量
-   - 增加 Worker 数量可提高总体吞吐量
-   - 监控 GPU 利用率：`watch -n 1 nvidia-smi`
-
-### 故障排除
-- **Worker 启动失败**：检查 GPU 显存是否足够
-- **网络连接错误**：确保 ZMQ 端口未被占用
-- **性能不佳**：检查 GPU 利用率，调整批次大小
-
-## 🔗 相关文件
-
-- `../slora/server/api_server.py`: S-LoRA 服务器实现
-- `../slora/server/router/`: 请求路由和调度
-- `../README_CN.md`: 项目主文档
-
+- 服务器必须先启动，再运行 `run_exp.py`
+- 数据并行模式下每个 GPU 需放下完整模型（7B 需 24GB+，13B 需 40GB+）
+- Worker 数量推荐等于 GPU 数量
+- 监控 GPU：`watch -n 1 nvidia-smi`

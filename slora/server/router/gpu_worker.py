@@ -1145,6 +1145,10 @@ class GPUWorker:
                                 pending_adapter_counts=pending_counts
                             )
                             if evict_result and evict_result.get('evicted'):
+                                # 从 adapter_cache 中移除被淘汰的 adapter
+                                evicted_adapters = evict_result.get('evicted_adapters', [])
+                                for evicted_dir in evicted_adapters:
+                                    self.adapter_cache.pop(evicted_dir, None)
                                 await self._update_actual_adapter_usage()
                                 if self.state_reporter:
                                     await self.state_reporter.report_now()
@@ -1167,6 +1171,10 @@ class GPUWorker:
                             max_lora_ratio=getattr(self.args, 'max_lora_ratio', None)
                         )
                         if evict_result and evict_result.get('evicted'):
+                            # 从 adapter_cache 中移除被淘汰的 adapter
+                            evicted_adapters = evict_result.get('evicted_adapters', [])
+                            for evicted_dir in evicted_adapters:
+                                self.adapter_cache.pop(evicted_dir, None)
                             await self._update_actual_adapter_usage()
                             if self.state_reporter:
                                 await self.state_reporter.report_now()

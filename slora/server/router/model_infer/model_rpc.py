@@ -226,8 +226,6 @@ class ModelRpcServer(rpyc.Service):
             # 调试日志：打印 RPC 端接收到的保护列表
             if preserve_set:
                 print(f"   [RPC] 接收到保护列表: {len(preserve_set)} 个适配器")
-            else:
-                print(f"   [RPC] 警告：preserve_set 为空或 None")
             
             return self.infer_adapter.check_and_evict_by_threshold(
                 threshold=threshold,

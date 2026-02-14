@@ -7,6 +7,7 @@ and load balancing to optimize request distribution across GPU Workers.
 Requirements: 2.1-2.5, 3.1-3.4, 5.1-5.3
 """
 
+import os
 import time
 import logging
 from typing import Dict, List, Optional, Set, Deque
@@ -16,6 +17,19 @@ from .worker_state import WorkerState, RoutingStats, RoutingConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+def _get_debug_file_logger():
+    """获取写入文件的调试 logger（单例）"""
+    debug_logger = logging.getLogger('routing_debug')
+    if not debug_logger.handlers:
+        debug_logger.setLevel(logging.DEBUG)
+        log_path = os.environ.get('ROUTING_DEBUG_LOG', 'routing_debug.log')
+        fh = logging.FileHandler(log_path, mode='a')
+        fh.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%H:%M:%S'))
+        debug_logger.addHandler(fh)
+        debug_logger.propagate = False  # 不输出到终端
+    return debug_logger
 
 
 class RequestRateTracker:
@@ -214,6 +228,9 @@ class AdapterAwareRouter:
         
         Requirements: 2.3, 2.4, 5.1, 5.3
         """
+        import os
+        debug_mode = os.environ.get('DEBUG', '0') == '1'
+        
         # 如果使用 Round-Robin 策略，直接轮询
         if self.config.strategy == 'round-robin':
             return self._round_robin_select()
@@ -227,6 +244,17 @@ class AdapterAwareRouter:
         if not healthy_workers:
             logger.warning("No healthy workers available, falling back to round-robin")
             return self._round_robin_select()
+        
+        # DEBUG: 输出 Worker 状态信息到文件
+        if debug_mode:
+            dlog = _get_debug_file_logger()
+            adapter_name = adapter_dir.split('/')[-1] if adapter_dir else 'None'
+            dlog.debug(f"[Router] Routing adapter: {adapter_name}")
+            for wid in healthy_workers:
+                state = self.worker_states[wid]
+                dlog.debug(f"[Router]   W{wid}: queue={state.queue_length}, "
+                           f"cached={len(state.cached_adapters)}, "
+                           f"has_target={state.has_adapter(adapter_dir)}")
         
         # 检查是否为热点 Adapter
         is_hot_adapter = self._rate_tracker.is_hot(
@@ -250,6 +278,13 @@ class AdapterAwareRouter:
             
             score = self.calculate_score(worker_id, adapter_dir)
             scores.append((worker_id, score, state.queue_length))
+            
+            # DEBUG: 输出评分详情到文件
+            if debug_mode:
+                cache_hit = 1.0 if state.has_adapter(adapter_dir) else 0.0
+                dlog.debug(f"[Router]   W{worker_id} score={score:.3f} "
+                           f"(cache={self.config.w1 * cache_hit:.2f}, "
+                           f"qpen={-self.config.w2 * state.queue_length:.2f})")
         
         # 如果所有 Worker 都超限，选择队列最短的
         if not scores:

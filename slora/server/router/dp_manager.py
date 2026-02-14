@@ -747,7 +747,8 @@ class DataParallelRouterManager:
         proc = mp.Process(
             target=run_gpu_worker_process,
             args=(worker_id, gpu_id, self.args, 
-                  self.worker_ports[worker_id], self.response_port, self.ready_port),
+                  self.worker_ports[worker_id], self.response_port, self.ready_port,
+                  self.state_receiver_port),  # 传递状态上报端口
             name=f"GPUWorker-{worker_id}"
         )
         proc.start()
@@ -816,6 +817,12 @@ class DataParallelRouterManager:
                 
                 # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
                 await self.request_senders[worker_id].send_json(request)
+                
+                # 立即递增 Router 端的 queue_length 估计值，避免连续请求全部路由到同一 Worker
+                if self.routing_strategy == 'adapter-aware' and hasattr(self.router, 'worker_states'):
+                    state = self.router.worker_states.get(worker_id)
+                    if state:
+                        state.queue_length += 1
                 
                 # 更新统计信息（Requirement 8.2）
                 self.stats['total_requests'] += 1
@@ -950,12 +957,12 @@ class DataParallelRouterManager:
         while not self.workers_ready:
             await asyncio.sleep(1)
         
-        print(f"[DataParallelRouterManager] Statistics reporting started (interval: 10s)")
+        print(f"[DataParallelRouterManager] Statistics reporting started (interval: 20s)")
         
         while True:
             try:
-                # 等待 10 秒
-                await asyncio.sleep(10)
+                # 等待 20 秒
+                await asyncio.sleep(20)
                 
                 # 计算运行时间
                 if self.stats['start_time'] is not None:
@@ -1100,7 +1107,19 @@ class DataParallelRouterManager:
         
         Requirements: 1.4 (Adapter-Aware)
         """
+        import os
+        debug_mode = os.environ.get('DEBUG', '0') == '1'
+        
+        # 设置文件 logger
+        dlog = None
+        if debug_mode:
+            from slora.server.router.adapter_aware_router import _get_debug_file_logger
+            dlog = _get_debug_file_logger()
+        
         print(f"[DataParallelRouterManager] Worker state processing started")
+        
+        # 统计接收到的状态上报数量
+        state_report_count = 0
         
         while True:
             try:
@@ -1135,6 +1154,14 @@ class DataParallelRouterManager:
                 if self.worker_state_cache:
                     self.worker_state_cache.update(worker_id, state)
                 
+                state_report_count += 1
+                
+                # DEBUG: 每 100 次上报写入文件
+                if dlog and state_report_count % 100 == 0:
+                    dlog.debug(f"[StateRecv] total={state_report_count}, "
+                               f"W{worker_id}: queue={state.queue_length}, "
+                               f"cached={len(state.cached_adapters)}")
+                
                 logger.debug(f"Updated worker {worker_id} state: "
                             f"queue={state.queue_length}, "
                             f"adapters={len(state.cached_adapters)}")
@@ -1153,7 +1180,8 @@ class DataParallelRouterManager:
 
 
 def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace,
-                           request_port: int, response_port: int, ready_port: int) -> None:
+                           request_port: int, response_port: int, ready_port: int,
+                           state_report_port: int = None) -> None:
     """
     Worker 进程的入口函数
     
@@ -1167,6 +1195,7 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
         request_port: 接收请求的端口
         response_port: 发送响应的端口
         ready_port: 发送就绪信号的端口
+        state_report_port: 状态上报端口（用于智能路由）
     
     Requirements:
         - 7.1: Worker 启动失败时记录详细错误日志
@@ -1226,6 +1255,12 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
         print(f"[Worker {worker_id}] Setting up ZMQ communication...")
         sys.stdout.flush()
         worker._setup_zmq(request_port, response_port)
+        
+        # 设置状态上报器（用于智能路由）
+        if state_report_port:
+            print(f"[Worker {worker_id}] Setting up state reporter (port={state_report_port})...")
+            sys.stdout.flush()
+            worker._setup_state_reporter(state_report_port)
         
         # 发送就绪信号
         # Router Manager 收到所有 Worker 的就绪信号后才开始路由请求

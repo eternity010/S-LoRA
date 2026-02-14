@@ -11,6 +11,9 @@ dist
 *.jsonl
 *.pdf
 
+# Kiro IDE configuration
+.kiro/
+
 # Hypothesis (Property-Based Testing) cache
 .hypothesis/
 

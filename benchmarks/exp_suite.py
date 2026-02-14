@@ -261,11 +261,22 @@ debug_suite = {
     "default": BenchmarkConfig(
         num_adapters = [100],
         alpha = [1],
-        req_rate = [5],
+        req_rate = [10],
         cv = [1],
         duration = [60],
-        input_range = [[8,128]],
-        output_range = [[8,128]],
+        input_range = [[128,512]],   # 快速测试用; 论文基准推荐 [128, 512]
+        output_range = [[64,256]],  # 快速测试用; 论文基准推荐 [64, 256]
+    ),
+    
+    # 智能路由测试配置：使用热点分布
+    "routing-test": BenchmarkConfig(
+        num_adapters = [100],
+        alpha = [0.3],  # 热点分布：少数 adapter 会收到更多请求
+        req_rate = [10],
+        cv = [1],
+        duration = [30],
+        input_range = [[128,512]],
+        output_range = [[64,256]],
     ),
 
     "debug": BenchmarkConfig(

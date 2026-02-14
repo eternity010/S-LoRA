@@ -119,6 +119,22 @@ if __name__ == "__main__":
         if args.gpu_ids:
             cmd += f" --gpu-ids {args.gpu_ids}"
         
+        # 添加路由策略参数（数据并行模式）
+        if args.routing_strategy:
+            cmd += f" --routing-strategy {args.routing_strategy}"
+        if args.routing_w1 != 1.0:
+            cmd += f" --routing-w1 {args.routing_w1}"
+        if args.routing_w2 != 0.1:
+            cmd += f" --routing-w2 {args.routing_w2}"
+        if args.routing_w3 != 0.0:
+            cmd += f" --routing-w3 {args.routing_w3}"
+        if args.default_lora_rank != 16:
+            cmd += f" --default-lora-rank {args.default_lora_rank}"
+        if args.max_queue_length != 100:
+            cmd += f" --max-queue-length {args.max_queue_length}"
+        if args.hot_adapter_threshold != 10.0:
+            cmd += f" --hot-adapter-threshold {args.hot_adapter_threshold}"
+
         # 添加阈值淘汰参数
         cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"
         cmd += f" --evict-interval-ratio {args.evict_interval_ratio}"
