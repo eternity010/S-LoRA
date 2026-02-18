@@ -488,7 +488,7 @@ class DataParallelRouterManager:
         print(f"[DataParallelRouterManager] (This may take a few minutes while models are loading)")
         
         ready_workers = set()
-        max_wait_time = 600  # 最多等待 10 分钟
+        max_wait_time = 1200  # 最多等待 20 分钟
         start_wait = asyncio.get_event_loop().time()
         
         while len(ready_workers) < self.num_workers:
@@ -935,6 +935,62 @@ class DataParallelRouterManager:
                 import traceback
                 traceback.print_exc()
     
+    def _check_config_update(self, config_update_file: str) -> None:
+        """
+        检查并应用路由配置更新
+        
+        从配置文件读取更新参数，调用 router.update_config() 应用更新，
+        然后删除配置文件。
+        
+        Args:
+            config_update_file: 配置更新文件路径 (如 /tmp/slora_routing_config_update.json)
+        
+        Note:
+            - 仅在 adapter-aware 路由策略下有效
+            - 配置文件格式: {"w1": float, "w2": float, "w3": float, "reset_stats": bool}
+            - 所有参数都是可选的
+        """
+        import os
+        import json
+        
+        try:
+            if not os.path.exists(config_update_file):
+                return
+            
+            # 读取配置文件
+            with open(config_update_file, 'r') as f:
+                update = json.load(f)
+            
+            # 删除配置文件（无论更新是否成功）
+            os.remove(config_update_file)
+            
+            # 仅 adapter-aware 路由支持配置更新
+            if self.routing_strategy != 'adapter-aware':
+                print(f"[DataParallelRouterManager] Config update ignored: "
+                      f"routing strategy is '{self.routing_strategy}', not 'adapter-aware'")
+                return
+            
+            if not hasattr(self.router, 'update_config'):
+                print(f"[DataParallelRouterManager] Config update ignored: "
+                      f"router does not support update_config()")
+                return
+            
+            # 应用配置更新
+            result = self.router.update_config(**update)
+            print(f"[DataParallelRouterManager] Routing config updated: {result}")
+            
+        except json.JSONDecodeError as e:
+            print(f"[DataParallelRouterManager] ERROR: Invalid config file format: {e}")
+            # 尝试删除损坏的配置文件
+            try:
+                os.remove(config_update_file)
+            except:
+                pass
+        except Exception as e:
+            print(f"[DataParallelRouterManager] ERROR in config update: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
     async def _print_statistics(self) -> None:
         """
         定期输出请求统计信息
@@ -952,17 +1008,30 @@ class DataParallelRouterManager:
             只有在所有 Worker 就绪后才开始输出统计。
         """
         import time
+        import json
+        import os
+        
+        # 统计文件路径
+        stats_file = "/tmp/slora_routing_stats.json"
         
         # 等待所有 Worker 就绪
         while not self.workers_ready:
             await asyncio.sleep(1)
         
         print(f"[DataParallelRouterManager] Statistics reporting started (interval: 20s)")
+        print(f"[DataParallelRouterManager] Stats file: {stats_file}")
+        
+        # 配置更新文件路径
+        config_update_file = "/tmp/slora_routing_config_update.json"
         
         while True:
             try:
-                # 等待 20 秒
-                await asyncio.sleep(20)
+                # 等待 5 秒（更频繁地更新统计文件）
+                await asyncio.sleep(5)
+                
+                # 检查并应用配置更新
+                self._check_config_update(config_update_file)
+                await asyncio.sleep(5)
                 
                 # 计算运行时间
                 if self.stats['start_time'] is not None:
@@ -972,23 +1041,62 @@ class DataParallelRouterManager:
                     elapsed_time = 0
                     throughput = 0
                 
-                # 输出统计摘要
-                print(f"[DataParallelRouterManager] ========== Statistics Summary ==========")
-                print(f"[DataParallelRouterManager] Total Requests: {self.stats['total_requests']}")
-                print(f"[DataParallelRouterManager] Successful Requests: {self.stats['successful_requests']}")
-                print(f"[DataParallelRouterManager] Failed Requests: {self.stats['failed_requests']}")
-                print(f"[DataParallelRouterManager] Average Throughput: {throughput:.2f} req/s")
-                print(f"[DataParallelRouterManager] Running Time: {elapsed_time:.2f}s")
+                # 计算缓存命中率（仅 adapter-aware 模式）
+                cache_hit_rate = 0.0
+                cache_hits = 0
+                cache_misses = 0
+                if self.routing_strategy == 'adapter-aware' and hasattr(self.router, 'get_stats'):
+                    router_stats = self.router.get_stats()
+                    cache_hit_rate = router_stats.get('cache_hit_rate', 0.0)
+                    cache_hits = router_stats.get('cache_hits', 0)
+                    cache_misses = router_stats.get('cache_misses', 0)
                 
-                # 输出每个 Worker 的请求分布
-                print(f"[DataParallelRouterManager] Worker Request Distribution:")
-                for i in range(self.num_workers):
-                    count = self.stats['worker_request_counts'][i]
-                    percentage = (count / self.stats['total_requests'] * 100) if self.stats['total_requests'] > 0 else 0
-                    print(f"[DataParallelRouterManager]   Worker {i} (GPU {self.gpu_ids[i]}): "
-                          f"{count} requests ({percentage:.1f}%)")
+                # 构建统计数据
+                stats_data = {
+                    'routing_strategy': self.routing_strategy,
+                    'total_requests': self.stats['total_requests'],
+                    'successful_requests': self.stats['successful_requests'],
+                    'failed_requests': self.stats['failed_requests'],
+                    'throughput': throughput,
+                    'elapsed_time': elapsed_time,
+                    'cache_hit_rate': cache_hit_rate,
+                    'cache_hits': cache_hits,
+                    'cache_misses': cache_misses,
+                    'worker_request_counts': {str(i): self.stats['worker_request_counts'][i] for i in range(self.num_workers)},
+                    'num_workers': self.num_workers,
+                    'gpu_ids': self.gpu_ids,
+                    'timestamp': time.time()
+                }
                 
-                print(f"[DataParallelRouterManager] ==========================================")
+                # 写入统计文件（原子写入）
+                try:
+                    temp_file = stats_file + ".tmp"
+                    with open(temp_file, 'w') as f:
+                        json.dump(stats_data, f)
+                    os.rename(temp_file, stats_file)
+                except Exception as e:
+                    print(f"[DataParallelRouterManager] Warning: Failed to write stats file: {e}")
+                
+                # 每 20 秒输出一次到控制台
+                if int(elapsed_time) % 20 < 5:
+                    print(f"[DataParallelRouterManager] ========== Statistics Summary ==========")
+                    print(f"[DataParallelRouterManager] Total Requests: {self.stats['total_requests']}")
+                    print(f"[DataParallelRouterManager] Successful Requests: {self.stats['successful_requests']}")
+                    print(f"[DataParallelRouterManager] Failed Requests: {self.stats['failed_requests']}")
+                    print(f"[DataParallelRouterManager] Average Throughput: {throughput:.2f} req/s")
+                    print(f"[DataParallelRouterManager] Running Time: {elapsed_time:.2f}s")
+                    if cache_hit_rate > 0:
+                        print(f"[DataParallelRouterManager] Cache Hit Rate: {cache_hit_rate:.2%}")
+                    
+                    # 输出每个 Worker 的请求分布
+                    print(f"[DataParallelRouterManager] Worker Request Distribution:")
+                    for i in range(self.num_workers):
+                        count = self.stats['worker_request_counts'][i]
+                        percentage = (count / self.stats['total_requests'] * 100) if self.stats['total_requests'] > 0 else 0
+                        print(f"[DataParallelRouterManager]   Worker {i} (GPU {self.gpu_ids[i]}): "
+                              f"{count} requests ({percentage:.1f}%)")
+                    
+                    print(f"[DataParallelRouterManager] ==========================================")
                 
             except Exception as e:
                 # 记录错误但继续统计

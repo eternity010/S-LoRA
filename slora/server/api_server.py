@@ -76,6 +76,110 @@ def create_error_response(status_code: HTTPStatus, message: str) -> JSONResponse
 def healthcheck():
     return "OK"
 
+@app.get("/routing_stats")
+def routing_stats():
+    """Get routing statistics from the router process"""
+    import json
+    import os
+    
+    stats_file = "/tmp/slora_routing_stats.json"
+    
+    if not os.path.exists(stats_file):
+        return JSONResponse({
+            "error": "Stats file not found",
+            "message": "Router may not be running in data parallel mode or stats not yet available"
+        }, status_code=404)
+    
+    try:
+        with open(stats_file, 'r') as f:
+            stats = json.load(f)
+        return JSONResponse(stats)
+    except Exception as e:
+        return JSONResponse({
+            "error": str(e),
+            "message": "Failed to read stats file"
+        }, status_code=500)
+
+
+@app.post("/update_routing_config")
+async def update_routing_config(request: Request):
+    """
+    动态更新路由配置参数
+    
+    请求体 JSON 格式:
+    {
+        "w1": float,        # 缓存亲和性权重 (可选)
+        "w2": float,        # 负载惩罚权重 (可选)
+        "w3": float,        # Rank 不匹配惩罚权重 (可选)
+        "reset_stats": bool # 是否重置统计信息 (可选, 默认 false)
+    }
+    
+    返回:
+    - 200: 配置更新请求已提交
+    - 400: 请求参数无效
+    - 500: 写入配置文件失败
+    """
+    import json
+    import os
+    
+    config_update_file = "/tmp/slora_routing_config_update.json"
+    
+    try:
+        request_dict = await request.json()
+    except Exception as e:
+        return JSONResponse({
+            "error": "Invalid JSON",
+            "message": str(e)
+        }, status_code=400)
+    
+    # 验证参数
+    valid_keys = {"w1", "w2", "w3", "reset_stats"}
+    invalid_keys = set(request_dict.keys()) - valid_keys
+    if invalid_keys:
+        return JSONResponse({
+            "error": "Invalid parameters",
+            "message": f"Unknown parameters: {invalid_keys}. Valid parameters: {valid_keys}"
+        }, status_code=400)
+    
+    # 验证数值参数非负
+    for key in ["w1", "w2", "w3"]:
+        if key in request_dict:
+            value = request_dict[key]
+            if not isinstance(value, (int, float)):
+                return JSONResponse({
+                    "error": "Invalid parameter type",
+                    "message": f"{key} must be a number, got {type(value).__name__}"
+                }, status_code=400)
+            if value < 0:
+                return JSONResponse({
+                    "error": "Invalid parameter value",
+                    "message": f"{key} must be non-negative, got {value}"
+                }, status_code=400)
+    
+    # 验证 reset_stats 参数
+    if "reset_stats" in request_dict:
+        if not isinstance(request_dict["reset_stats"], bool):
+            return JSONResponse({
+                "error": "Invalid parameter type",
+                "message": f"reset_stats must be a boolean"
+            }, status_code=400)
+    
+    # 写入配置文件
+    try:
+        with open(config_update_file, 'w') as f:
+            json.dump(request_dict, f)
+        
+        return JSONResponse({
+            "status": "submitted",
+            "message": "Config update request submitted. Changes will be applied within 5 seconds.",
+            "config": request_dict
+        })
+    except Exception as e:
+        return JSONResponse({
+            "error": "Failed to write config file",
+            "message": str(e)
+        }, status_code=500)
+
 @app.post("/generate")
 async def generate(request: Request) -> Response:
     global isFirst

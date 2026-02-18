@@ -1,0 +1,1519 @@
+For some LLaMA-based models, initializing the fast tokenizer may take a long time. To eliminate the initialization time, consider using 'hf-internal-testing/llama-tokenizer' instead of the original tokenizer.
+[Router] Starting router process in DATA parallel mode
+[DataParallelRouter] Allocated response_port: 10025
+[DataParallelRouter] Router port: 10000
+[DataParallelRouter] Detokenization port: 10001
+================================================================================
+[DataParallelRouter] Starting Data Parallel Mode
+================================================================================
+[DataParallelRouter] Number of Workers: 3 (specified)
+[DataParallelRouter] GPU IDs: 1,2,3 (specified)
+[DataParallelRouter] Routing Strategy: adapter-aware
+[DataParallelRouter]   w1 (cache affinity): 1.0
+[DataParallelRouter]   w2 (load penalty): 0.1
+[DataParallelRouter]   w3 (rank mismatch penalty): 0.0
+[DataParallelRouter]   default_lora_rank: 16
+[DataParallelRouter]   max_queue_length: 100
+[DataParallelRouter]   hot_adapter_threshold: 10.0 req/s
+================================================================================
+[DataParallelRouterManager] ========== Initialization Started ==========
+[DataParallelRouterManager] Using specified GPU IDs: [1, 2, 3]
+[DataParallelRouterManager] Created AdapterAwareRouter with config: w1=1.0, w2=0.1, max_queue=100
+[DataParallelRouterManager] Loaded 102 adapter ranks for rank-aware routing
+[DataParallelRouterManager] Configuration:
+[DataParallelRouterManager]   Number of workers: 3
+[DataParallelRouterManager]   GPU IDs: [1, 2, 3]
+[DataParallelRouterManager]   Routing strategy: adapter-aware
+[DataParallelRouterManager]   Router port: 10000
+[DataParallelRouterManager]   Response port: 10025
+[DataParallelRouterManager]   Detoken port: 10001
+[DataParallelRouterManager]   Model directory: /home/hzheng/models/llama-7b
+[DataParallelRouterManager]   Max total tokens: 15000
+[DataParallelRouterManager]   Batch max tokens: 3072
+[DataParallelRouterManager]   Routing w1 (cache affinity): 1.0
+[DataParallelRouterManager]   Routing w2 (load penalty): 0.1
+[DataParallelRouterManager]   Routing w3 (rank mismatch penalty): 0.0
+[DataParallelRouterManager]   Default LoRA rank: 16
+[DataParallelRouterManager]   Max rank diff: 64
+[DataParallelRouterManager]   Max queue length: 100
+[DataParallelRouterManager]   Hot adapter threshold: 10.0 req/s
+[DataParallelRouterManager] ==========================================
+[DataParallelRouterManager] Allocated ports for workers: [50000, 50001, 50002]
+[DataParallelRouterManager] ZMQ PULL socket bound to port 10000 (receiving from API Server, timeout=30s)
+[DataParallelRouterManager] ZMQ PUSH socket connected to detokenization port 10001 (timeout=30s)
+[DataParallelRouterManager] ZMQ PUSH socket bound to port 50000 (sending to Worker 0, timeout=30s, HWM=unlimited)
+[DataParallelRouterManager] ZMQ PUSH socket bound to port 50001 (sending to Worker 1, timeout=30s, HWM=unlimited)
+[DataParallelRouterManager] ZMQ PUSH socket bound to port 50002 (sending to Worker 2, timeout=30s, HWM=unlimited)
+[DataParallelRouterManager] ZMQ PULL socket bound to port 52000 (receiving Worker state reports)
+[DataParallelRouterManager] ZMQ communication setup complete: 3 worker sockets created with timeout=30s
+[DataParallelRouterManager] ========== Starting Workers ==========
+[DataParallelRouterManager] Ready signal port: 51000
+[DataParallelRouterManager] Starting Response Merger...
+[DataParallelRouterManager] Started Response Merger process (worker_response_port=10025, detoken_port=10001)
+[DataParallelRouterManager] Starting 3 worker(s)...
+[DataParallelRouterManager] Starting Worker 0...
+[DataParallelRouterManager]   GPU ID: 1
+[DataParallelRouterManager]   Request port: 50000
+[DataParallelRouterManager]   Response port: 10025
+[DataParallelRouterManager] Worker 0 process started (PID: 463330)
+[DataParallelRouterManager] Starting Worker 1...
+[DataParallelRouterManager]   GPU ID: 2
+[DataParallelRouterManager]   Request port: 50001
+[DataParallelRouterManager]   Response port: 10025
+[DataParallelRouterManager] Worker 1 process started (PID: 463331)
+[DataParallelRouterManager] Starting Worker 2...
+[DataParallelRouterManager]   GPU ID: 3
+[DataParallelRouterManager]   Request port: 50002
+[DataParallelRouterManager]   Response port: 10025
+[Worker 1] Starting worker process on GPU 2...
+[Worker 1] Creating GPUWorker instance...
+[Worker 0] Starting worker process on GPU 1...
+[Worker 0] Creating GPUWorker instance...
+[Worker 2] Starting worker process on GPU 3...
+[Worker 2] Creating GPUWorker instance...
+[Worker 0] ========== GPU Environment Setup ==========
+[Worker 0] Physical GPU ID: 1
+[Worker 0] GPU Name: NVIDIA GeForce RTX 3090
+[Worker 0] Total Memory: 23.69 GB
+[Worker 0] Compute Capability: 8.6
+[Worker 0] CUDA_VISIBLE_DEVICES: 1
+[Worker 0] PyTorch Device: cuda:0
+[Worker 0] ==========================================
+[Worker 0] Loaded adapter config: /home/hzheng/models/alpaca-lora-7b-0, rank=16
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-9, rank=64
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-19, rank=64
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-29, rank=64
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-39, rank=64
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-49, rank=64
+[Worker 0] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-50, rank=64
+[Worker 0] Adapter rank configuration initialized: 103 adapters
+[Worker 0] Setting up request queue...
+[Worker 0] Request queue initialized: max_total_tokens=15000, batch_max_tokens=3072, running_max_req_size=1000
+[Worker 0] Initializing model RPC...
+[Worker 0] ========== Model Loading Started ==========
+[Worker 0] Step 1/3: Creating Model RPC client...
+[Worker 0] Model RPC client created (took 0.00s)
+[Worker 0] Step 2/3: Preparing model initialization parameters...
+[Worker 0] Model configuration:
+[Worker 0]   Model directory: /home/hzheng/models/llama-7b
+[Worker 0]   Max total tokens: 15000
+[Worker 0]   Batch max tokens: 3072
+[Worker 0]   Running max requests: 1000
+[Worker 0]   Dummy mode: False
+[Worker 0]   LoRA enabled: True
+[Worker 0]   Adapter directories: 102 adapters
+[Worker 0] Step 3/3: Loading model weights...
+[Worker 1] ========== GPU Environment Setup ==========
+[Worker 1] Physical GPU ID: 2
+[Worker 1] GPU Name: NVIDIA GeForce RTX 3090
+[Worker 1] Total Memory: 23.69 GB
+[Worker 1] Compute Capability: 8.6
+[Worker 1] CUDA_VISIBLE_DEVICES: 2
+[Worker 1] PyTorch Device: cuda:0
+[Worker 1] ==========================================
+[Worker 1] Loaded adapter config: /home/hzheng/models/alpaca-lora-7b-0, rank=16
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-9, rank=64
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-19, rank=64
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-29, rank=64
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-39, rank=64
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-49, rank=64
+[Worker 1] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-50, rank=64
+[Worker 1] Adapter rank configuration initialized: 103 adapters
+[Worker 1] Setting up request queue...
+[Worker 1] Request queue initialized: max_total_tokens=15000, batch_max_tokens=3072, running_max_req_size=1000
+[Worker 1] Initializing model RPC...
+[Worker 1] ========== Model Loading Started ==========
+[Worker 1] Step 1/3: Creating Model RPC client...
+[Worker 1] Model RPC client created (took 0.00s)
+[Worker 1] Step 2/3: Preparing model initialization parameters...
+[Worker 1] Model configuration:
+[Worker 1]   Model directory: /home/hzheng/models/llama-7b
+[Worker 1]   Max total tokens: 15000
+[Worker 1]   Batch max tokens: 3072
+[Worker 1]   Running max requests: 1000
+[Worker 1]   Dummy mode: False
+[Worker 1]   LoRA enabled: True
+[Worker 1]   Adapter directories: 102 adapters
+[Worker 1] Step 3/3: Loading model weights...
+[Worker 2] ========== GPU Environment Setup ==========
+[Worker 2] Physical GPU ID: 3
+[Worker 2] GPU Name: NVIDIA GeForce RTX 3090
+[Worker 2] Total Memory: 23.69 GB
+[Worker 2] Compute Capability: 8.6
+[Worker 2] CUDA_VISIBLE_DEVICES: 3
+[Worker 2] PyTorch Device: cuda:0
+[Worker 2] ==========================================
+[Worker 2] Loaded adapter config: /home/hzheng/models/alpaca-lora-7b-0, rank=16
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-9, rank=64
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-19, rank=64
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-29, rank=64
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-39, rank=64
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-49, rank=64
+[Worker 2] Loaded adapter config: /home/hzheng/models/bactrian-x-llama-7b-lora-50, rank=64
+[Worker 2] Adapter rank configuration initialized: 103 adapters
+[Worker 2] Setting up request queue...
+[Worker 2] Request queue initialized: max_total_tokens=15000, batch_max_tokens=3072, running_max_req_size=1000
+[Worker 2] Initializing model RPC...
+[Worker 2] ========== Model Loading Started ==========
+[Worker 2] Step 1/3: Creating Model RPC client...
+[Worker 2] Model RPC client created (took 0.00s)
+[Worker 2] Step 2/3: Preparing model initialization parameters...
+[Worker 2] Model configuration:
+[Worker 2]   Model directory: /home/hzheng/models/llama-7b
+[Worker 2]   Max total tokens: 15000
+[Worker 2]   Batch max tokens: 3072
+[Worker 2]   Running max requests: 1000
+[Worker 2]   Dummy mode: False
+[Worker 2]   LoRA enabled: True
+[Worker 2]   Adapter directories: 102 adapters
+[Worker 2] Step 3/3: Loading model weights...
+load adapters:   0%|          | 0/102 [00:00<?, ?it/s]load adapters:   0%|          | 0/102 [00:00<?, ?it/s]load adapters:   0%|          | 0/102 [00:00<?, ?it/s]load adapters:   1%|          | 1/102 [00:10<18:06, 10.76s/it]load adapters:   1%|          | 1/102 [00:10<18:08, 10.77s/it]load adapters:   1%|          | 1/102 [00:10<18:13, 10.83s/it]load adapters:   2%|▏         | 2/102 [00:22<18:46, 11.27s/it]load adapters:   2%|▏         | 2/102 [00:26<23:09, 13.90s/it]load adapters:   2%|▏         | 2/102 [00:31<27:20, 16.40s/it]load adapters:   3%|▎         | 3/102 [00:31<16:56, 10.26s/it]load adapters:   3%|▎         | 3/102 [00:31<15:58,  9.68s/it]load adapters:   3%|▎         | 3/102 [00:31<15:04,  9.13s/it]load adapters:   4%|▍         | 4/102 [00:46<19:48, 12.12s/it]load adapters:   4%|▍         | 4/102 [00:48<20:00, 12.25s/it]load adapters:   4%|▍         | 4/102 [00:48<20:43, 12.69s/it]load adapters:   5%|▍         | 5/102 [00:58<19:17, 11.93s/it]load adapters:   5%|▍         | 5/102 [00:58<18:34, 11.49s/it]load adapters:   5%|▍         | 5/102 [00:58<18:15, 11.29s/it]load adapters:   6%|▌         | 6/102 [01:09<18:49, 11.76s/it]load adapters:   6%|▌         | 6/102 [01:15<21:20, 13.34s/it]load adapters:   7%|▋         | 7/102 [01:15<15:50, 10.00s/it]load adapters:   7%|▋         | 7/102 [01:15<14:39,  9.25s/it]load adapters:   6%|▌         | 6/102 [01:16<21:41, 13.56s/it]load adapters:   8%|▊         | 8/102 [01:31<18:33, 11.84s/it]load adapters:   8%|▊         | 8/102 [01:31<17:43, 11.31s/it]load adapters:   7%|▋         | 7/102 [01:36<25:09, 15.89s/it]load adapters:   9%|▉         | 9/102 [01:37<15:21,  9.91s/it]load adapters:   9%|▉         | 9/102 [01:37<14:44,  9.51s/it]load adapters:   8%|▊         | 8/102 [01:49<23:22, 14.92s/it]load adapters:  10%|▉         | 10/102 [01:53<17:49, 11.62s/it]load adapters:   9%|▉         | 9/102 [01:53<17:47, 11.48s/it]load adapters:  10%|▉         | 10/102 [01:53<18:23, 12.00s/it]load adapters:  11%|█         | 11/102 [01:57<13:54,  9.17s/it]load adapters:  11%|█         | 11/102 [01:57<14:15,  9.40s/it]load adapters:  10%|▉         | 10/102 [02:08<19:05, 12.45s/it]load adapters:  12%|█▏        | 12/102 [02:16<18:28, 12.32s/it]load adapters:  11%|█         | 11/102 [02:16<16:54, 11.15s/it]load adapters:  12%|█▏        | 12/102 [02:16<18:24, 12.27s/it]load adapters:  13%|█▎        | 13/102 [02:16<12:52,  8.68s/it]load adapters:  13%|█▎        | 13/102 [02:16<12:49,  8.65s/it]load adapters:  12%|█▏        | 12/102 [02:27<16:46, 11.18s/it]load adapters:  14%|█▎        | 14/102 [02:33<16:14, 11.08s/it]load adapters:  14%|█▎        | 14/102 [02:33<16:25, 11.20s/it]load adapters:  13%|█▎        | 13/102 [02:33<14:18,  9.64s/it]load adapters:  15%|█▍        | 15/102 [02:35<12:01,  8.30s/it]load adapters:  15%|█▍        | 15/102 [02:37<13:08,  9.06s/it]load adapters:  16%|█▌        | 16/102 [02:47<13:23,  9.35s/it]load adapters:  14%|█▎        | 14/102 [02:47<15:49, 10.79s/it]load adapters:  16%|█▌        | 16/102 [02:57<17:38, 12.31s/it]load adapters:  17%|█▋        | 17/102 [02:57<13:45,  9.71s/it]load adapters:  15%|█▍        | 15/102 [02:57<15:30, 10.69s/it]load adapters:  17%|█▋        | 17/102 [02:58<12:18,  8.69s/it]load adapters:  18%|█▊        | 18/102 [03:09<14:21, 10.25s/it]load adapters:  18%|█▊        | 18/102 [03:14<15:35, 11.14s/it]load adapters:  19%|█▊        | 19/102 [03:18<13:45,  9.94s/it]load adapters:  19%|█▊        | 19/102 [03:18<12:23,  8.96s/it]load adapters:  16%|█▌        | 16/102 [03:18<19:45, 13.79s/it]load adapters:  20%|█▉        | 20/102 [03:31<14:48, 10.83s/it]load adapters:  20%|█▉        | 20/102 [03:34<15:05, 11.04s/it]load adapters:  17%|█▋        | 17/102 [03:34<20:26, 14.43s/it]load adapters:  21%|██        | 21/102 [03:35<10:35,  7.85s/it]load adapters:  21%|██        | 21/102 [03:35<11:43,  8.69s/it]load adapters:  22%|██▏       | 22/102 [03:50<13:30, 10.13s/it]load adapters:  18%|█▊        | 18/102 [03:50<20:47, 14.85s/it]load adapters:  22%|██▏       | 22/102 [03:54<15:54, 11.93s/it]load adapters:  23%|██▎       | 23/102 [03:54<11:03,  8.40s/it]load adapters:  23%|██▎       | 23/102 [03:54<11:07,  8.44s/it]load adapters:  19%|█▊        | 19/102 [03:55<16:17, 11.78s/it]load adapters:  24%|██▎       | 24/102 [04:10<13:54, 10.70s/it]load adapters:  24%|██▎       | 24/102 [04:12<14:30, 11.16s/it]load adapters:  25%|██▍       | 25/102 [04:12<10:15,  7.99s/it]load adapters:  20%|█▉        | 20/102 [04:14<19:21, 14.16s/it]load adapters:  25%|██▍       | 25/102 [04:14<11:01,  8.59s/it]load adapters:  25%|██▌       | 26/102 [04:24<11:35,  9.15s/it]load adapters:  25%|██▌       | 26/102 [04:30<13:28, 10.64s/it]load adapters:  26%|██▋       | 27/102 [04:30<10:20,  8.27s/it]load adapters:  21%|██        | 21/102 [04:30<19:47, 14.67s/it]load adapters:  26%|██▋       | 27/102 [04:32<09:57,  7.96s/it]load adapters:  27%|██▋       | 28/102 [04:47<13:16, 10.77s/it]load adapters:  22%|██▏       | 22/102 [04:51<21:51, 16.40s/it]load adapters:  27%|██▋       | 28/102 [04:52<14:27, 11.72s/it]load adapters:  23%|██▎       | 23/102 [04:53<16:13, 12.33s/it]load adapters:  28%|██▊       | 29/102 [04:54<11:40,  9.60s/it]load adapters:  28%|██▊       | 29/102 [04:54<10:33,  8.68s/it]load adapters:  29%|██▉       | 30/102 [05:08<13:24, 11.17s/it]load adapters:  29%|██▉       | 30/102 [05:10<13:16, 11.06s/it]load adapters:  24%|██▎       | 24/102 [05:13<18:51, 14.50s/it]load adapters:  30%|███       | 31/102 [05:13<10:55,  9.23s/it]load adapters:  30%|███       | 31/102 [05:13<10:12,  8.62s/it]load adapters:  25%|██▍       | 25/102 [05:13<13:09, 10.25s/it]load adapters:  25%|██▌       | 26/102 [05:29<15:04, 11.90s/it]load adapters:  31%|███▏      | 32/102 [05:29<13:12, 11.32s/it]load adapters:  31%|███▏      | 32/102 [05:29<12:42, 10.90s/it]load adapters:  32%|███▏      | 33/102 [05:34<10:39,  9.26s/it]load adapters:  32%|███▏      | 33/102 [05:34<10:18,  8.96s/it]load adapters:  26%|██▋       | 27/102 [05:34<12:14,  9.79s/it]load adapters:  33%|███▎      | 34/102 [05:50<13:00, 11.48s/it]load adapters:  33%|███▎      | 34/102 [05:50<12:45, 11.25s/it]load adapters:  27%|██▋       | 28/102 [05:51<14:37, 11.86s/it]load adapters:  34%|███▍      | 35/102 [05:57<10:59,  9.84s/it]load adapters:  34%|███▍      | 35/102 [05:57<11:15, 10.08s/it]load adapters:  28%|██▊       | 29/102 [05:57<12:29, 10.27s/it]load adapters:  35%|███▌      | 36/102 [06:10<11:51, 10.78s/it]load adapters:  35%|███▌      | 36/102 [06:18<14:32, 13.22s/it]load adapters:  29%|██▉       | 30/102 [06:18<16:01, 13.35s/it]load adapters:  36%|███▋      | 37/102 [06:18<10:44,  9.92s/it]load adapters:  36%|███▋      | 37/102 [06:18<10:09,  9.37s/it]load adapters:  30%|███       | 31/102 [06:18<11:12,  9.48s/it]load adapters:  37%|███▋      | 38/102 [06:34<12:35, 11.81s/it]load adapters:  37%|███▋      | 38/102 [06:34<12:11, 11.42s/it]load adapters:  31%|███▏      | 32/102 [06:34<13:27, 11.53s/it]load adapters:  38%|███▊      | 39/102 [06:35<08:50,  8.42s/it]load adapters:  38%|███▊      | 39/102 [06:35<08:32,  8.14s/it]load adapters:  32%|███▏      | 33/102 [06:35<09:26,  8.21s/it]load adapters:  39%|███▉      | 40/102 [06:52<11:13, 10.86s/it]load adapters:  33%|███▎      | 34/102 [06:52<12:20, 10.89s/it]load adapters:  39%|███▉      | 40/102 [06:52<11:32, 11.17s/it]load adapters:  34%|███▍      | 35/102 [07:04<12:24, 11.11s/it]load adapters:  40%|████      | 41/102 [07:04<11:19, 11.15s/it]load adapters:  40%|████      | 41/102 [07:04<11:29, 11.31s/it]load adapters:  35%|███▌      | 36/102 [07:20<13:53, 12.64s/it]load adapters:  41%|████      | 42/102 [07:20<12:41, 12.70s/it]load adapters:  41%|████      | 42/102 [07:20<12:50, 12.85s/it]load adapters:  42%|████▏     | 43/102 [07:21<09:10,  9.33s/it]load adapters:  36%|███▋      | 37/102 [07:22<10:07,  9.35s/it]load adapters:  42%|████▏     | 43/102 [07:22<09:13,  9.38s/it]load adapters:  43%|████▎     | 44/102 [07:30<08:44,  9.04s/it]load adapters:  43%|████▎     | 44/102 [07:41<11:53, 12.30s/it]load adapters:  37%|███▋      | 38/102 [07:44<14:03, 13.18s/it]load adapters:  44%|████▍     | 45/102 [07:47<09:51, 10.39s/it]load adapters:  38%|███▊      | 39/102 [07:47<10:42, 10.20s/it]load adapters:  44%|████▍     | 45/102 [07:47<10:55, 11.50s/it]load adapters:  45%|████▌     | 46/102 [07:52<08:47,  9.43s/it]load adapters:  45%|████▌     | 46/102 [08:00<10:30, 11.26s/it]load adapters:  39%|███▉      | 40/102 [08:00<11:29, 11.11s/it]load adapters:  46%|████▌     | 47/102 [08:07<10:21, 11.29s/it]load adapters:  40%|████      | 41/102 [08:07<10:06,  9.94s/it]load adapters:  46%|████▌     | 47/102 [08:08<09:16, 10.12s/it]load adapters:  47%|████▋     | 48/102 [08:10<07:51,  8.74s/it]load adapters:  41%|████      | 42/102 [08:26<12:40, 12.67s/it]load adapters:  47%|████▋     | 48/102 [08:27<11:31, 12.80s/it]load adapters:  48%|████▊     | 49/102 [08:27<09:49, 11.12s/it]load adapters:  42%|████▏     | 43/102 [08:27<08:49,  8.97s/it]load adapters:  48%|████▊     | 49/102 [08:27<08:00,  9.07s/it]load adapters:  43%|████▎     | 44/102 [08:34<08:17,  8.58s/it]load adapters:  49%|████▉     | 50/102 [08:43<11:03, 12.75s/it]load adapters:  49%|████▉     | 50/102 [08:44<09:47, 11.29s/it]load adapters:  50%|█████     | 51/102 [08:44<07:45,  9.13s/it]load adapters:  44%|████▍     | 45/102 [08:44<08:24,  8.86s/it]load adapters:  50%|█████     | 51/102 [08:44<06:52,  8.09s/it]load adapters:  45%|████▌     | 46/102 [08:50<07:36,  8.16s/it]load adapters:  51%|█████     | 52/102 [09:02<09:56, 11.94s/it]load adapters:  51%|█████     | 52/102 [09:03<09:19, 11.18s/it]load adapters:  46%|████▌     | 47/102 [09:03<08:33,  9.34s/it]load adapters:  52%|█████▏    | 53/102 [09:03<06:53,  8.45s/it]load adapters:  52%|█████▏    | 53/102 [09:03<06:29,  7.95s/it]load adapters:  53%|█████▎    | 54/102 [09:20<08:59, 11.23s/it]load adapters:  53%|█████▎    | 54/102 [09:21<08:42, 10.88s/it]load adapters:  47%|████▋     | 48/102 [09:21<10:45, 11.95s/it]load adapters:  54%|█████▍    | 55/102 [09:25<07:19,  9.36s/it]load adapters:  54%|█████▍    | 55/102 [09:26<07:07,  9.10s/it]load adapters:  48%|████▊     | 49/102 [09:26<08:45,  9.91s/it]load adapters:  49%|████▉     | 50/102 [09:36<08:45, 10.11s/it]load adapters:  55%|█████▍    | 56/102 [09:38<07:55, 10.33s/it]load adapters:  50%|█████     | 51/102 [09:38<06:28,  7.61s/it]load adapters:  55%|█████▍    | 56/102 [09:40<08:12, 10.70s/it]load adapters:  56%|█████▌    | 57/102 [09:49<07:46, 10.38s/it]load adapters:  56%|█████▌    | 57/102 [09:49<07:34, 10.10s/it]load adapters:  51%|█████     | 52/102 [09:49<07:15,  8.70s/it]load adapters:  57%|█████▋    | 58/102 [10:03<08:34, 11.69s/it]load adapters:  57%|█████▋    | 58/102 [10:08<09:21, 12.77s/it]load adapters:  52%|█████▏    | 53/102 [10:08<09:28, 11.59s/it]load adapters:  58%|█████▊    | 59/102 [10:08<06:28,  9.05s/it]load adapters:  58%|█████▊    | 59/102 [10:08<06:53,  9.62s/it]load adapters:  53%|█████▎    | 54/102 [10:20<09:30, 11.89s/it]load adapters:  59%|█████▉    | 60/102 [10:26<08:05, 11.55s/it]load adapters:  59%|█████▉    | 60/102 [10:26<08:24, 12.01s/it]load adapters:  54%|█████▍    | 55/102 [10:26<07:48,  9.97s/it]load adapters:  60%|█████▉    | 61/102 [10:36<07:53, 11.55s/it]load adapters:  60%|█████▉    | 61/102 [10:36<07:43, 11.30s/it]load adapters:  55%|█████▍    | 56/102 [10:40<08:37, 11.24s/it]load adapters:  61%|██████    | 62/102 [10:53<08:32, 12.81s/it]load adapters:  61%|██████    | 62/102 [10:53<08:41, 13.04s/it]load adapters:  56%|█████▌    | 57/102 [10:53<08:46, 11.69s/it]load adapters:  62%|██████▏   | 63/102 [10:53<05:54,  9.09s/it]load adapters:  62%|██████▏   | 63/102 [10:53<06:01,  9.26s/it]load adapters:  57%|█████▋    | 58/102 [11:03<08:14, 11.25s/it]load adapters:  63%|██████▎   | 64/102 [11:10<07:21, 11.61s/it]load adapters:  63%|██████▎   | 64/102 [11:11<07:25, 11.73s/it]load adapters:  58%|█████▊    | 59/102 [11:11<07:18, 10.21s/it]load adapters:  64%|██████▎   | 65/102 [11:11<05:06,  8.28s/it]load adapters:  64%|██████▎   | 65/102 [11:11<05:10,  8.40s/it]load adapters:  65%|██████▍   | 66/102 [11:23<05:35,  9.32s/it]load adapters:  65%|██████▍   | 66/102 [11:30<06:53, 11.49s/it]load adapters:  59%|█████▉    | 60/102 [11:32<09:23, 13.42s/it]load adapters:  66%|██████▌   | 67/102 [11:36<06:09, 10.55s/it]load adapters:  66%|██████▌   | 67/102 [11:36<05:46,  9.91s/it]load adapters:  60%|█████▉    | 61/102 [11:36<07:21, 10.77s/it]load adapters:  67%|██████▋   | 68/102 [11:54<07:09, 12.63s/it]load adapters:  67%|██████▋   | 68/102 [11:54<06:54, 12.20s/it]load adapters:  61%|██████    | 62/102 [11:54<08:32, 12.81s/it]load adapters:  68%|██████▊   | 69/102 [11:54<04:55,  8.95s/it]load adapters:  68%|██████▊   | 69/102 [11:54<04:46,  8.68s/it]load adapters:  69%|██████▊   | 70/102 [12:07<05:27, 10.22s/it]load adapters:  69%|██████▊   | 70/102 [12:11<05:53, 11.06s/it]load adapters:  70%|██████▉   | 71/102 [12:11<04:17,  8.29s/it]load adapters:  62%|██████▏   | 63/102 [12:11<09:10, 14.11s/it]load adapters:  70%|██████▉   | 71/102 [12:11<04:03,  7.85s/it]load adapters:  71%|███████   | 72/102 [12:25<04:55,  9.85s/it]load adapters:  71%|███████   | 72/102 [12:27<05:10, 10.35s/it]load adapters:  72%|███████▏  | 73/102 [12:28<03:46,  7.81s/it]load adapters:  72%|███████▏  | 73/102 [12:28<03:33,  7.35s/it]load adapters:  63%|██████▎   | 64/102 [12:28<09:27, 14.94s/it]load adapters:  73%|███████▎  | 74/102 [12:43<04:43, 10.11s/it]load adapters:  73%|███████▎  | 74/102 [12:43<04:33,  9.77s/it]load adapters:  64%|██████▎   | 65/102 [12:46<09:48, 15.90s/it]load adapters:  74%|███████▎  | 75/102 [12:46<03:36,  8.01s/it]load adapters:  74%|███████▎  | 75/102 [12:46<03:29,  7.76s/it]load adapters:  75%|███████▍  | 76/102 [13:03<04:36, 10.62s/it]load adapters:  75%|███████▍  | 76/102 [13:03<04:31, 10.46s/it]load adapters:  65%|██████▍   | 66/102 [13:03<09:44, 16.23s/it]load adapters:  75%|███████▌  | 77/102 [13:06<03:26,  8.26s/it]load adapters:  66%|██████▌   | 67/102 [13:06<07:06, 12.18s/it]load adapters:  75%|███████▌  | 77/102 [13:06<03:25,  8.21s/it]load adapters:  76%|███████▋  | 78/102 [13:15<03:24,  8.51s/it]load adapters:  76%|███████▋  | 78/102 [13:20<04:02, 10.11s/it]load adapters:  77%|███████▋  | 79/102 [13:21<02:58,  7.75s/it]load adapters:  77%|███████▋  | 79/102 [13:21<02:45,  7.18s/it]load adapters:  67%|██████▋   | 68/102 [13:21<07:29, 13.21s/it]load adapters:  78%|███████▊  | 80/102 [13:40<04:00, 10.93s/it]load adapters:  78%|███████▊  | 80/102 [13:41<04:10, 11.40s/it]load adapters:  68%|██████▊   | 69/102 [13:40<08:15, 15.01s/it]load adapters:  79%|███████▉  | 81/102 [13:41<02:42,  7.74s/it]load adapters:  79%|███████▉  | 81/102 [13:42<02:53,  8.27s/it]load adapters:  80%|████████  | 82/102 [13:52<02:55,  8.77s/it]load adapters:  69%|██████▊   | 70/102 [13:59<08:29, 15.92s/it]load adapters:  80%|████████  | 82/102 [14:00<03:46, 11.34s/it]load adapters:  81%|████████▏ | 83/102 [14:00<02:42,  8.58s/it]load adapters:  70%|██████▉   | 71/102 [14:00<06:00, 11.61s/it]load adapters:  81%|████████▏ | 83/102 [14:07<03:10, 10.05s/it]load adapters:  82%|████████▏ | 84/102 [14:07<02:27,  8.20s/it]load adapters:  71%|███████   | 72/102 [14:17<06:40, 13.35s/it]load adapters:  82%|████████▏ | 84/102 [14:24<03:36, 12.04s/it]load adapters:  83%|████████▎ | 85/102 [14:24<03:01, 10.66s/it]load adapters:  83%|████████▎ | 85/102 [14:25<02:29,  8.81s/it]load adapters:  72%|███████▏  | 73/102 [14:29<06:07, 12.66s/it]load adapters:  84%|████████▍ | 86/102 [14:31<02:33,  9.62s/it]load adapters:  84%|████████▍ | 86/102 [14:41<02:54, 10.90s/it]load adapters:  85%|████████▌ | 87/102 [14:41<02:25,  9.71s/it]load adapters:  85%|████████▌ | 87/102 [14:41<01:55,  7.72s/it]load adapters:  73%|███████▎  | 74/102 [14:42<05:58, 12.79s/it]load adapters:  74%|███████▎  | 75/102 [14:49<05:00, 11.14s/it]load adapters:  86%|████████▋ | 88/102 [14:50<01:54,  8.18s/it]load adapters:  86%|████████▋ | 88/102 [15:04<03:10, 13.60s/it]load adapters:  87%|████████▋ | 89/102 [15:04<02:06,  9.71s/it]load adapters:  75%|███████▍  | 76/102 [15:04<05:17, 12.20s/it]load adapters:  87%|████████▋ | 89/102 [15:05<02:10, 10.02s/it]load adapters:  88%|████████▊ | 90/102 [15:18<02:11, 11.00s/it]load adapters:  88%|████████▊ | 90/102 [15:18<02:11, 10.99s/it]load adapters:  75%|███████▌  | 77/102 [15:19<05:27, 13.11s/it]load adapters:  89%|████████▉ | 91/102 [15:21<01:35,  8.72s/it]load adapters:  89%|████████▉ | 91/102 [15:21<01:33,  8.46s/it]load adapters:  76%|███████▋  | 78/102 [15:27<04:41, 11.72s/it]load adapters:  90%|█████████ | 92/102 [15:37<01:49, 10.90s/it]load adapters:  90%|█████████ | 92/102 [15:37<01:47, 10.76s/it]load adapters:  77%|███████▋  | 79/102 [15:37<04:17, 11.17s/it]load adapters:  91%|█████████ | 93/102 [15:40<01:16,  8.50s/it]load adapters:  91%|█████████ | 93/102 [15:41<01:18,  8.69s/it]load adapters:  78%|███████▊  | 80/102 [15:41<03:17,  8.99s/it]load adapters:  79%|███████▉  | 81/102 [15:59<04:05, 11.69s/it]load adapters:  92%|█████████▏| 94/102 [15:59<01:33, 11.68s/it]load adapters:  92%|█████████▏| 94/102 [15:59<01:32, 11.62s/it]load adapters:  93%|█████████▎| 95/102 [16:04<01:07,  9.59s/it]load adapters:  93%|█████████▎| 95/102 [16:04<01:07,  9.57s/it]load adapters:  80%|████████  | 82/102 [16:15<04:21, 13.08s/it]load adapters:  94%|█████████▍| 96/102 [16:18<01:06, 11.06s/it]load adapters:  94%|█████████▍| 96/102 [16:18<01:06, 11.02s/it]load adapters:  81%|████████▏ | 83/102 [16:19<03:12, 10.12s/it]load adapters:  95%|█████████▌| 97/102 [16:19<00:39,  7.83s/it]load adapters:  95%|█████████▌| 97/102 [16:19<00:39,  7.94s/it]load adapters:  96%|█████████▌| 98/102 [16:38<00:44, 11.11s/it]load adapters:  96%|█████████▌| 98/102 [16:38<00:44, 11.16s/it]load adapters:  82%|████████▏ | 84/102 [16:38<03:50, 12.80s/it]load adapters:  97%|█████████▋| 99/102 [16:39<00:24,  8.06s/it]load adapters:  97%|█████████▋| 99/102 [16:39<00:24,  8.11s/it]load adapters:  83%|████████▎ | 85/102 [16:50<03:34, 12.61s/it]load adapters:  98%|█████████▊| 100/102 [16:53<00:19,  9.93s/it]load adapters:  98%|█████████▊| 100/102 [16:53<00:19,  9.96s/it]load adapters:  84%|████████▍ | 86/102 [17:06<03:41, 13.81s/it]load adapters:  99%|█████████▉| 101/102 [17:07<00:11, 11.08s/it]load adapters:  99%|█████████▉| 101/102 [17:07<00:11, 11.09s/it]load adapters:  85%|████████▌ | 87/102 [17:07<02:26,  9.75s/it]load adapters: 100%|██████████| 102/102 [17:20<00:00, 11.81s/it]load adapters: 100%|██████████| 102/102 [17:20<00:00, 10.20s/it]
+[Worker 1] Model size: 25.10 GB
+[Worker 1] Model weights loaded (took 1063.34s)
+[Worker 1] ========== Model Loading Complete ==========
+[Worker 1] Total initialization time: 1063.34s
+[Worker 1] Model RPC initialized successfully on GPU 2
+[Worker 1] Model loading complete
+[Worker 1] Setting up ZMQ communication...
+[Worker 1] ZMQ communication setup complete: request_port=50001, response_port=10025, timeout=30s
+[Worker 1] Setting up state reporter (port=52000)...
+[Worker 1] State reporter configured: address=tcp://127.0.0.1:52000, interval=100ms
+[Worker 1] Sending ready signal...
+[Worker 1] Worker initialization complete, starting main loop...
+[Worker 1] Ready on GPU 2
+[Worker 1] State reporter started
+[Worker 1] Started receive and process loops
+[Worker 1] Request receiver loop started
+[Worker 1] Process loop started
+load adapters: 100%|██████████| 102/102 [17:20<00:00, 11.87s/it]load adapters: 100%|██████████| 102/102 [17:20<00:00, 10.20s/it]
+[Worker 0] Model size: 25.10 GB
+[Worker 0] Model weights loaded (took 1063.60s)
+[Worker 0] ========== Model Loading Complete ==========
+[Worker 0] Total initialization time: 1063.60s
+[Worker 0] Model RPC initialized successfully on GPU 1
+[Worker 0] Model loading complete
+[Worker 0] Setting up ZMQ communication...
+[Worker 0] ZMQ communication setup complete: request_port=50000, response_port=10025, timeout=30s
+[Worker 0] Setting up state reporter (port=52000)...
+[Worker 0] State reporter configured: address=tcp://127.0.0.1:52000, interval=100ms
+[Worker 0] Sending ready signal...
+[Worker 0] Worker initialization complete, starting main loop...
+[Worker 0] Ready on GPU 1
+[Worker 0] State reporter started
+[Worker 0] Started receive and process loops
+[Worker 0] Request receiver loop started
+[Worker 0] Process loop started
+load adapters:  86%|████████▋ | 88/102 [17:20<02:32, 10.92s/it]load adapters:  87%|████████▋ | 89/102 [17:21<01:40,  7.72s/it]load adapters:  88%|████████▊ | 90/102 [17:21<01:07,  5.59s/it]load adapters:  89%|████████▉ | 91/102 [17:22<00:43,  3.99s/it]load adapters:  90%|█████████ | 92/102 [17:22<00:29,  2.97s/it]load adapters:  91%|█████████ | 93/102 [17:22<00:19,  2.15s/it]load adapters:  92%|█████████▏| 94/102 [17:23<00:13,  1.68s/it]load adapters:  93%|█████████▎| 95/102 [17:23<00:08,  1.24s/it]load adapters:  94%|█████████▍| 96/102 [17:24<00:06,  1.05s/it]load adapters:  95%|█████████▌| 97/102 [17:24<00:04,  1.24it/s]load adapters:  96%|█████████▌| 98/102 [17:25<00:02,  1.35it/s]load adapters:  97%|█████████▋| 99/102 [17:25<00:01,  1.70it/s]load adapters:  98%|█████████▊| 100/102 [17:25<00:01,  1.72it/s]load adapters:  99%|█████████▉| 101/102 [17:26<00:00,  2.09it/s]load adapters: 100%|██████████| 102/102 [17:26<00:00,  1.95it/s]load adapters: 100%|██████████| 102/102 [17:26<00:00, 10.26s/it]
+[Worker 2] Model size: 25.10 GB
+[Worker 2] Model weights loaded (took 1069.43s)
+[Worker 2] ========== Model Loading Complete ==========
+[Worker 2] Total initialization time: 1069.43s
+[Worker 2] Model RPC initialized successfully on GPU 3
+[Worker 2] Model loading complete
+[Worker 2] Setting up ZMQ communication...
+[Worker 2] ZMQ communication setup complete: request_port=50002, response_port=10025, timeout=30s
+[Worker 2] Setting up state reporter (port=52000)...
+[Worker 2] State reporter configured: address=tcp://127.0.0.1:52000, interval=100ms
+[Worker 2] Sending ready signal...
+[Worker 2] Worker initialization complete, starting main loop...
+[Worker 2] Ready on GPU 3
+[Worker 2] State reporter started
+[Worker 2] Started receive and process loops
+[Worker 2] Request receiver loop started
+[Worker 2] Process loop started
+INFO:     Started server process [462623]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+llama-7b: 12.06 GB
+peak working mem for (bs=20, seqlen=512): 0.70 GB
+peak working mem for (bs=100, seqlen=512): 3.52 GB
+all adapters (102) estimated size: 7.97 GB
+avg adapter estimated size: 80.00 MB
+INFO:     127.0.0.1:44888 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44904 - "POST /update_routing_config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44918 - "GET /routing_stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55646 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 1 in total
+INFO:     127.0.0.1:55648 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55652 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 1 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 0] Updated actual adapter usage: 256 cells
+INFO:     127.0.0.1:55656 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55666 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 1 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-17']
+[Worker 1] Updated actual adapter usage: 256 cells
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 64 cells
+INFO:     127.0.0.1:55682 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55688 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55704 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55720 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55728 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55736 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55740 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55746 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55758 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55770 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55772 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55784 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55794 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55804 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55818 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55834 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55836 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55848 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55862 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55874 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55884 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55900 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55916 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55920 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55934 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55948 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55950 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55952 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55966 - "POST /generate_stream HTTP/1.1" 200 OK
+load 7 adapters, 8 in total
+INFO:     127.0.0.1:55970 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 1] Loaded 7 adapters: ['bactrian-x-llama-7b-lora-15', 'bactrian-x-llama-7b-lora-30', 'bactrian-x-llama-7b-lora-5', 'bactrian-x-llama-7b-lora-3', 'alpaca-lora-7b-5']
+[Worker 1] Updated actual adapter usage: 1664 cells
+INFO:     127.0.0.1:55986 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56000 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 1 in total
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 64 cells
+INFO:     127.0.0.1:56002 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56016 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56024 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 10 in total
+   [加载时] 保护活跃批次的 7 个适配器
+[Worker 1] Loaded 2 adapters: ['alpaca-lora-7b-9', 'alpaca-lora-7b-44']
+[Worker 1] Updated actual adapter usage: 1792 cells
+load 6 adapters, 7 in total
+[Worker 0] Loaded 7 adapters: ['alpaca-lora-7b-9', 'bactrian-x-llama-7b-lora-0', 'bactrian-x-llama-7b-lora-1', 'alpaca-lora-7b-3', 'bactrian-x-llama-7b-lora-9']
+[Worker 0] Updated actual adapter usage: 1024 cells
+load 0 adapters, 1 in total
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 64 cells
+INFO:     127.0.0.1:56038 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56044 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56050 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56060 - "POST /generate_stream HTTP/1.1" 200 OK
+load 3 adapters, 10 in total
+   [加载时] 保护活跃批次的 7 个适配器
+[Worker 0] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-41', 'bactrian-x-llama-7b-lora-8', 'alpaca-lora-7b-22']
+[Worker 0] Updated actual adapter usage: 1600 cells
+INFO:     127.0.0.1:56072 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56082 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56090 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56094 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56104 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56118 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56132 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56138 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56146 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56162 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56168 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56182 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56190 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56192 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56194 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56210 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56224 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56236 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56252 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56254 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56256 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56262 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56278 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56294 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56306 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56320 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56322 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56336 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56348 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56356 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56358 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56368 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56382 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56386 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53668 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53684 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53688 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53696 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53706 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53710 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53726 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53728 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53736 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53748 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53750 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53758 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53770 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53782 - "POST /generate_stream HTTP/1.1" 200 OK
+load 6 adapters, 16 in total
+[Worker 1] Loaded 8 adapters: ['bactrian-x-llama-7b-lora-24', 'alpaca-lora-7b-38', 'bactrian-x-llama-7b-lora-34', 'alpaca-lora-7b-21', 'bactrian-x-llama-7b-lora-5']
+[Worker 1] Updated actual adapter usage: 2560 cells
+INFO:     127.0.0.1:53796 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53812 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53828 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53834 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53842 - "POST /generate_stream HTTP/1.1" 200 OK
+load 7 adapters, 23 in total
+   [加载时] 保护活跃批次的 8 个适配器
+[Worker 1] Loaded 11 adapters: ['alpaca-lora-7b-2', 'bactrian-x-llama-7b-lora-15', 'bactrian-x-llama-7b-lora-30', 'alpaca-lora-7b-10', 'bactrian-x-llama-7b-lora-26']
+load 2 adapters, 3 in total
+[Worker 2] Loaded 3 adapters: ['alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-6', 'alpaca-lora-7b-14']
+INFO:     127.0.0.1:53854 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 2] Updated actual adapter usage: 384 cells
+[Worker 1] Updated actual adapter usage: 3584 cells
+INFO:     127.0.0.1:53856 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53858 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53868 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53880 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53890 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 4 in total
+   [加载时] 保护活跃批次的 3 个适配器
+[Worker 2] Loaded 2 adapters: ['alpaca-lora-7b-4', 'alpaca-lora-7b-0']
+load 1 adapters, 24 in total
+   [加载时] 保护活跃批次的 17 个适配器
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-20']
+[Worker 2] Updated actual adapter usage: 448 cells
+[Worker 1] Updated actual adapter usage: 3648 cells
+load 5 adapters, 15 in total
+[Worker 0] Loaded 8 adapters: ['bactrian-x-llama-7b-lora-6', 'alpaca-lora-7b-9', 'bactrian-x-llama-7b-lora-40', 'bactrian-x-llama-7b-lora-12', 'alpaca-lora-7b-36']
+INFO:     127.0.0.1:53906 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53908 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Updated actual adapter usage: 2688 cells
+INFO:     127.0.0.1:53912 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53924 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53936 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 19 in total
+   [加载时] 保护活跃批次的 8 个适配器
+[Worker 0] Loaded 6 adapters: ['alpaca-lora-7b-21', 'bactrian-x-llama-7b-lora-23', 'bactrian-x-llama-7b-lora-1', 'alpaca-lora-7b-1', 'bactrian-x-llama-7b-lora-0']
+[Worker 0] Updated actual adapter usage: 3136 cells
+[Worker 1] Heartbeat: received=31, queue=0, batch=20
+INFO:     127.0.0.1:53944 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53960 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53966 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Heartbeat: received=32, queue=4, batch=16
+load 2 adapters, 21 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 3 adapters: ['alpaca-lora-7b-16', 'alpaca-lora-7b-11', 'alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 3264 cells
+INFO:     127.0.0.1:53970 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53972 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53984 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54000 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54010 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54024 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54036 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54046 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54062 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54066 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54072 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54088 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54100 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54116 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54124 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54128 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54136 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54148 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54152 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54160 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54174 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54176 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54184 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54192 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54204 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54216 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54228 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54236 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54248 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54262 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54270 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54274 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54290 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54296 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54306 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54310 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54322 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54326 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54330 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54332 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54336 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56280 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56282 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 28 in total
+[Worker 1] Loaded 9 adapters: ['bactrian-x-llama-7b-lora-24', 'alpaca-lora-7b-7', 'bactrian-x-llama-7b-lora-2', 'alpaca-lora-7b-21', 'alpaca-lora-7b-11']
+INFO:     127.0.0.1:56296 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 1] Updated actual adapter usage: 4288 cells
+[Worker 2] Heartbeat: received=30, queue=0, batch=2
+INFO:     127.0.0.1:56298 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56304 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 6 in total
+[Worker 2] Loaded 3 adapters: ['alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-19', 'bactrian-x-llama-7b-lora-2']
+[Worker 2] Updated actual adapter usage: 960 cells
+INFO:     127.0.0.1:56308 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56322 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56334 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 29 in total
+   [加载时] 保护活跃批次的 9 个适配器
+[Worker 1] Loaded 7 adapters: ['bactrian-x-llama-7b-lora-24', 'bactrian-x-llama-7b-lora-34', 'bactrian-x-llama-7b-lora-5', 'alpaca-lora-7b-41', 'alpaca-lora-7b-44']
+[Worker 1] Updated actual adapter usage: 4352 cells
+INFO:     127.0.0.1:56340 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56352 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56358 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56374 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56388 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56392 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 10 in total
+   [加载时] 保护活跃批次的 3 个适配器
+[Worker 2] Loaded 5 adapters: ['alpaca-lora-7b-39', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-31', 'alpaca-lora-7b-6', 'alpaca-lora-7b-30']
+[Worker 2] Updated actual adapter usage: 1408 cells
+load 0 adapters, 29 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-47']
+[Worker 1] Updated actual adapter usage: 4352 cells
+INFO:     127.0.0.1:56402 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56418 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56426 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56434 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56440 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 10 in total
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 1408 cells
+INFO:     127.0.0.1:56446 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56454 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56462 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 25 in total
+[Worker 0] Loaded 7 adapters: ['alpaca-lora-7b-1', 'bactrian-x-llama-7b-lora-10', 'bactrian-x-llama-7b-lora-2', 'alpaca-lora-7b-34', 'alpaca-lora-7b-36']
+[Worker 0] Updated actual adapter usage: 3904 cells
+INFO:     127.0.0.1:56474 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56478 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56490 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 27 in total
+   [加载时] 保护活跃批次的 7 个适配器
+INFO:     127.0.0.1:56498 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Loaded 7 adapters: ['bactrian-x-llama-7b-lora-1', 'alpaca-lora-7b-1', 'bactrian-x-llama-7b-lora-2', 'alpaca-lora-7b-15', 'bactrian-x-llama-7b-lora-4']
+INFO:     127.0.0.1:56500 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Updated actual adapter usage: 4224 cells
+INFO:     127.0.0.1:56504 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56506 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56520 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 27 in total
+[Worker 0] Loaded 4 adapters: ['bactrian-x-llama-7b-lora-0', 'bactrian-x-llama-7b-lora-9', 'bactrian-x-llama-7b-lora-4', 'alpaca-lora-7b-36']
+[Worker 0] Updated actual adapter usage: 4224 cells
+INFO:     127.0.0.1:56522 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56528 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56542 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56546 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56562 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56574 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56584 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56600 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56606 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56612 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56626 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56636 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56640 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56644 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56648 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56656 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56658 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56660 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56670 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56684 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56696 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56712 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56726 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56734 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56750 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56752 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56768 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56784 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56796 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56810 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56824 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56836 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56848 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56854 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56866 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56878 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56890 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56902 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56918 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56930 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56932 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56934 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56938 - "POST /generate_stream HTTP/1.1" 200 OK
+load 5 adapters, 34 in total
+[Worker 1] Loaded 8 adapters: ['bactrian-x-llama-7b-lora-10', 'alpaca-lora-7b-0', 'alpaca-lora-7b-17', 'alpaca-lora-7b-6', 'bactrian-x-llama-7b-lora-1']
+[Worker 1] Updated actual adapter usage: 5056 cells
+INFO:     127.0.0.1:56954 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56968 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56978 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56994 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57000 - "POST /generate_stream HTTP/1.1" 200 OK
+load 3 adapters, 37 in total
+   [加载时] 保护活跃批次的 8 个适配器
+[Worker 1] Loaded 9 adapters: ['bactrian-x-llama-7b-lora-14', 'alpaca-lora-7b-2', 'alpaca-lora-7b-7', 'bactrian-x-llama-7b-lora-34', 'alpaca-lora-7b-12']
+[Worker 1] Updated actual adapter usage: 5440 cells
+INFO:     127.0.0.1:48762 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 12 in total
+[Worker 2] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-8', 'bactrian-x-llama-7b-lora-13', 'alpaca-lora-7b-0']
+INFO:     127.0.0.1:48764 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 2] Updated actual adapter usage: 1920 cells
+INFO:     127.0.0.1:48768 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48770 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48776 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48780 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48784 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48800 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48812 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 13 in total
+   [加载时] 保护活跃批次的 3 个适配器
+[Worker 2] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-11', 'alpaca-lora-7b-6', 'alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 2176 cells
+INFO:     127.0.0.1:48826 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48834 - "POST /generate_stream HTTP/1.1" 200 OK
+load 5 adapters, 32 in total
+[Worker 0] Loaded 10 adapters: ['alpaca-lora-7b-35', 'alpaca-lora-7b-40', 'bactrian-x-llama-7b-lora-38', 'bactrian-x-llama-7b-lora-12', 'bactrian-x-llama-7b-lora-10']
+load 0 adapters, 13 in total
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 2176 cells
+[Worker 0] Updated actual adapter usage: 4928 cells
+INFO:     127.0.0.1:48842 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48858 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48874 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 37 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-1']
+[Worker 1] Updated actual adapter usage: 5440 cells
+INFO:     127.0.0.1:48890 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48898 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48904 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48914 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 33 in total
+   [加载时] 保护活跃批次的 10 个适配器
+[Worker 0] Loaded 8 adapters: ['bactrian-x-llama-7b-lora-21', 'alpaca-lora-7b-9', 'bactrian-x-llama-7b-lora-12', 'alpaca-lora-7b-11', 'alpaca-lora-7b-16']
+[Worker 0] Updated actual adapter usage: 5184 cells
+INFO:     127.0.0.1:48930 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48944 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48954 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48968 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48978 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48986 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 17 个适配器
+
+⚠️  LoRA 内存使用率 86.3% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5440/15000 cells (36.3%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-3', 'alpaca-lora-7b-11', 'bactrian-x-llama-7b-lora-17', 'alpaca-lora-7b-9']
+offload 4 adapters, 33 remains
+   淘汰完成: 使用率 86.3% → 82.1%
+   释放空间: 640 cells, 剩余 33 个适配器
+
+[Worker 1] Updated actual adapter usage: 4800 cells
+load 2 adapters, 35 in total
+   [加载时] 保护活跃批次的 17 个适配器
+[Worker 1] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-28', 'bactrian-x-llama-7b-lora-18']
+INFO:     127.0.0.1:48998 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49000 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 1] Updated actual adapter usage: 5312 cells
+INFO:     127.0.0.1:49002 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49006 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49018 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49022 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 19 个适配器
+
+⚠️  LoRA 内存使用率 86.3% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5312/15000 cells (35.4%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 3 个适配器
+   淘汰列表: ['alpaca-lora-7b-38', 'alpaca-lora-7b-10', 'alpaca-lora-7b-3']
+offload 3 adapters, 32 remains
+   淘汰完成: 使用率 86.3% → 85.0%
+   释放空间: 192 cells, 剩余 32 个适配器
+
+[Worker 1] Updated actual adapter usage: 5120 cells
+INFO:     127.0.0.1:49024 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49040 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49050 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49062 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49068 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49070 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49082 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49084 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49100 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 33 in total
+   [加载时] 保护活跃批次的 16 个适配器
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-7']
+[Worker 1] Updated actual adapter usage: 5376 cells
+INFO:     127.0.0.1:49104 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49110 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49112 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49128 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49136 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49152 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49158 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49168 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 33 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-0']
+[Worker 1] Updated actual adapter usage: 5376 cells
+load 1 adapters, 34 in total
+   [加载时] 保护活跃批次的 15 个适配器
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-11']
+INFO:     127.0.0.1:49176 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Updated actual adapter usage: 5440 cells
+INFO:     127.0.0.1:49192 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49196 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49210 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49212 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49236 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49238 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 35 in total
+   [加载时] 保护活跃批次的 15 个适配器
+[Worker 0] Loaded 2 adapters: ['alpaca-lora-7b-12', 'bactrian-x-llama-7b-lora-1']
+[Worker 0] Updated actual adapter usage: 5504 cells
+INFO:     127.0.0.1:49240 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49256 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49272 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49288 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49292 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49304 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49306 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49312 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49328 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49348 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49364 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49380 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49388 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49392 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49408 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49422 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49432 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49444 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49458 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49460 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49462 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49468 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49480 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49488 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49500 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49512 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49520 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49530 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49544 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49552 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49566 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49572 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49588 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49592 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 17 in total
+[Worker 2] Loaded 7 adapters: ['alpaca-lora-7b-39', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-7', 'alpaca-lora-7b-18', 'bactrian-x-llama-7b-lora-11']
+[Worker 2] Updated actual adapter usage: 3008 cells
+INFO:     127.0.0.1:49600 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 37 in total
+[Worker 1] Loaded 9 adapters: ['alpaca-lora-7b-2', 'bactrian-x-llama-7b-lora-10', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-45', 'alpaca-lora-7b-34']
+[Worker 1] Updated actual adapter usage: 6016 cells
+INFO:     127.0.0.1:49610 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49622 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49634 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49640 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49650 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49666 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 18 in total
+   [加载时] 保护活跃批次的 7 个适配器
+[Worker 2] Loaded 5 adapters: ['alpaca-lora-7b-0', 'alpaca-lora-7b-6', 'bactrian-x-llama-7b-lora-11', 'bactrian-x-llama-7b-lora-27', 'bactrian-x-llama-7b-lora-2']
+[Worker 2] Updated actual adapter usage: 3264 cells
+load 0 adapters, 37 in total
+[Worker 1] Loaded 6 adapters: ['alpaca-lora-7b-2', 'alpaca-lora-7b-0', 'alpaca-lora-7b-7', 'bactrian-x-llama-7b-lora-5', 'alpaca-lora-7b-44']
+[Worker 1] Updated actual adapter usage: 6016 cells
+INFO:     127.0.0.1:47644 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47646 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47654 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47656 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47668 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47670 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47682 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47692 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47704 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47716 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47722 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 39 in total
+INFO:     127.0.0.1:47730 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Loaded 10 adapters: ['bactrian-x-llama-7b-lora-44', 'alpaca-lora-7b-37', 'alpaca-lora-7b-29', 'alpaca-lora-7b-40', 'bactrian-x-llama-7b-lora-7']
+[Worker 0] Updated actual adapter usage: 6144 cells
+INFO:     127.0.0.1:47738 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47740 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 40 in total
+   [加载时] 保护活跃批次的 10 个适配器
+[Worker 0] Loaded 5 adapters: ['alpaca-lora-7b-48', 'bactrian-x-llama-7b-lora-9', 'alpaca-lora-7b-15', 'bactrian-x-llama-7b-lora-0', 'alpaca-lora-7b-32']
+[Worker 0] Updated actual adapter usage: 6208 cells
+INFO:     127.0.0.1:47748 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47750 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47752 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47768 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47770 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47784 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47798 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47808 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 37 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 1] Updated actual adapter usage: 6016 cells
+INFO:     127.0.0.1:47822 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 37 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-24']
+[Worker 1] Updated actual adapter usage: 6016 cells
+INFO:     127.0.0.1:47838 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 38 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-31']
+[Worker 1] Updated actual adapter usage: 6080 cells
+INFO:     127.0.0.1:47844 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47860 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47870 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47872 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47878 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 39 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 1] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-36', 'alpaca-lora-7b-5']
+[Worker 1] Updated actual adapter usage: 6336 cells
+[Worker 1] Heartbeat: received=116, queue=18, batch=17
+INFO:     127.0.0.1:47888 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 85.2% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 6336/15000 cells (42.2%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 336 cells
+
+   执行淘汰: 淘汰 5 个适配器
+   淘汰列表: ['alpaca-lora-7b-35', 'bactrian-x-llama-7b-lora-14', 'bactrian-x-llama-7b-lora-26', 'bactrian-x-llama-7b-lora-15', 'bactrian-x-llama-7b-lora-28']
+offload 5 adapters, 34 remains
+   淘汰完成: 使用率 85.2% → 77.9%
+   释放空间: 1088 cells, 剩余 34 个适配器
+
+[Worker 1] Updated actual adapter usage: 5248 cells
+load 1 adapters, 35 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 1] Loaded 3 adapters: ['alpaca-lora-7b-23', 'alpaca-lora-7b-5', 'alpaca-lora-7b-15']
+[Worker 1] Updated actual adapter usage: 5312 cells
+INFO:     127.0.0.1:47900 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 40 in total
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-23', 'alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 6208 cells
+INFO:     127.0.0.1:47908 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Heartbeat: received=110, queue=18, batch=18
+INFO:     127.0.0.1:47924 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47932 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47948 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 41 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-8']
+[Worker 0] Updated actual adapter usage: 6272 cells
+load 0 adapters, 35 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-33']
+[Worker 1] Updated actual adapter usage: 5312 cells
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 85.8% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 6272/15000 cells (41.8%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 272 cells
+
+   执行淘汰: 淘汰 5 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-40', 'alpaca-lora-7b-12', 'alpaca-lora-7b-42', 'alpaca-lora-7b-22', 'bactrian-x-llama-7b-lora-41']
+offload 5 adapters, 36 remains
+INFO:     127.0.0.1:47950 - "POST /generate_stream HTTP/1.1" 200 OK
+   淘汰完成: 使用率 85.8% → 81.1%
+   释放空间: 704 cells, 剩余 36 个适配器
+
+[Worker 0] Updated actual adapter usage: 5568 cells
+load 1 adapters, 37 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-6', 'bactrian-x-llama-7b-lora-3']
+[Worker 0] Updated actual adapter usage: 5824 cells
+INFO:     127.0.0.1:47964 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47980 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 35 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 1] Updated actual adapter usage: 5312 cells
+INFO:     127.0.0.1:47992 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47998 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48000 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 15 个适配器
+
+⚠️  LoRA 内存使用率 85.8% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5824/15000 cells (38.8%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-7', 'alpaca-lora-7b-35', 'alpaca-lora-7b-34', 'bactrian-x-llama-7b-lora-25']
+offload 4 adapters, 33 remains
+   淘汰完成: 使用率 85.8% → 81.5%
+   释放空间: 640 cells, 剩余 33 个适配器
+
+[Worker 0] Updated actual adapter usage: 5184 cells
+load 0 adapters, 33 in total
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-0', 'bactrian-x-llama-7b-lora-8']
+[Worker 0] Updated actual adapter usage: 5184 cells
+INFO:     127.0.0.1:48010 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48018 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48024 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48038 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 85.5% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5312/15000 cells (35.4%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-16', 'alpaca-lora-7b-41', 'alpaca-lora-7b-25', 'bactrian-x-llama-7b-lora-7']
+offload 4 adapters, 31 remains
+   淘汰完成: 使用率 85.5% → 81.2%
+   释放空间: 640 cells, 剩余 31 个适配器
+
+[Worker 1] Updated actual adapter usage: 4672 cells
+load 0 adapters, 31 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4672 cells
+INFO:     127.0.0.1:48050 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48058 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48060 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48074 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 34 in total
+   [加载时] 保护活跃批次的 14 个适配器
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-26']
+[Worker 0] Updated actual adapter usage: 5248 cells
+INFO:     127.0.0.1:48084 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48100 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 34 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 0] Updated actual adapter usage: 5248 cells
+INFO:     127.0.0.1:48104 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48118 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48132 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 85.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4672/15000 cells (31.1%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 3 个适配器
+   淘汰列表: ['alpaca-lora-7b-12', 'bactrian-x-llama-7b-lora-2', 'alpaca-lora-7b-13']
+offload 3 adapters, 28 remains
+   淘汰完成: 使用率 85.1% → 82.6%
+   释放空间: 384 cells, 剩余 28 个适配器
+
+[Worker 1] Updated actual adapter usage: 4288 cells
+load 0 adapters, 28 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4288 cells
+INFO:     127.0.0.1:48144 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 22 in total
+[Worker 2] Loaded 9 adapters: ['alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-1', 'bactrian-x-llama-7b-lora-12', 'bactrian-x-llama-7b-lora-0', 'bactrian-x-llama-7b-lora-6']
+[Worker 2] Updated actual adapter usage: 4288 cells
+INFO:     127.0.0.1:48148 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48150 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 24 in total
+   [加载时] 保护活跃批次的 9 个适配器
+[Worker 2] Loaded 5 adapters: ['alpaca-lora-7b-4', 'bactrian-x-llama-7b-lora-29', 'bactrian-x-llama-7b-lora-19', 'alpaca-lora-7b-0', 'alpaca-lora-7b-15']
+[Worker 2] Updated actual adapter usage: 4608 cells
+INFO:     127.0.0.1:48156 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48166 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48178 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48194 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 12 个适配器
+
+⚠️  LoRA 内存使用率 86.3% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4288/15000 cells (28.6%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 3 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-18', 'bactrian-x-llama-7b-lora-47', 'bactrian-x-llama-7b-lora-30']
+offload 3 adapters, 25 remains
+   淘汰完成: 使用率 86.3% → 81.2%
+   释放空间: 768 cells, 剩余 25 个适配器
+
+[Worker 1] Updated actual adapter usage: 3520 cells
+load 0 adapters, 25 in total
+INFO:     127.0.0.1:48206 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 1] Loaded 3 adapters: ['alpaca-lora-7b-0', 'alpaca-lora-7b-6', 'bactrian-x-llama-7b-lora-5']
+[Worker 1] Updated actual adapter usage: 3520 cells
+INFO:     127.0.0.1:48218 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48226 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 35 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-20']
+[Worker 0] Updated actual adapter usage: 5504 cells
+INFO:     127.0.0.1:48236 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 25 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-2']
+[Worker 2] Updated actual adapter usage: 4672 cells
+INFO:     127.0.0.1:48242 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 25 in total
+[Worker 1] Loaded 2 adapters: ['alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-5']
+[Worker 1] Updated actual adapter usage: 3520 cells
+load 1 adapters, 36 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 2 adapters: ['alpaca-lora-7b-11', 'alpaca-lora-7b-10']
+[Worker 0] Updated actual adapter usage: 5568 cells
+INFO:     127.0.0.1:48254 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 86.4% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3520/15000 cells (23.5%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['alpaca-lora-7b-34', 'alpaca-lora-7b-21']
+offload 2 adapters, 23 remains
+   淘汰完成: 使用率 86.4% → 85.5%
+   释放空间: 128 cells, 剩余 23 个适配器
+
+[Worker 1] Updated actual adapter usage: 3392 cells
+INFO:     127.0.0.1:48270 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48282 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 37 in total
+   [加载时] 保护活跃批次的 14 个适配器
+[Worker 0] Loaded 2 adapters: ['alpaca-lora-7b-46', 'alpaca-lora-7b-17']
+[Worker 0] Updated actual adapter usage: 5632 cells
+load 0 adapters, 37 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 5632 cells
+INFO:     127.0.0.1:48292 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 24 in total
+   [加载时] 保护活跃批次的 11 个适配器
+[Worker 1] Loaded 3 adapters: ['alpaca-lora-7b-16', 'alpaca-lora-7b-44', 'alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 3456 cells
+INFO:     127.0.0.1:48296 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 38 in total
+   [加载时] 保护活跃批次的 14 个适配器
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-0', 'alpaca-lora-7b-23']
+[Worker 0] Updated actual adapter usage: 5696 cells
+INFO:     127.0.0.1:42854 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42862 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 87.9% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3456/15000 cells (23.0%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 3 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-45', 'alpaca-lora-7b-27', 'alpaca-lora-7b-20']
+offload 3 adapters, 21 remains
+   淘汰完成: 使用率 87.9% → 85.4%
+   释放空间: 384 cells, 剩余 21 个适配器
+
+[Worker 1] Updated actual adapter usage: 3072 cells
+INFO:     127.0.0.1:42870 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 2] Heartbeat: received=130, queue=14, batch=20
+INFO:     127.0.0.1:42882 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 38 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-3']
+[Worker 0] Updated actual adapter usage: 5696 cells
+INFO:     127.0.0.1:42888 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42902 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42918 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42922 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42924 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 12 个适配器
+
+⚠️  LoRA 内存使用率 85.6% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3072/15000 cells (20.5%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 1 个适配器
+   淘汰列表: ['alpaca-lora-7b-17']
+offload 1 adapters, 20 remains
+   淘汰完成: 使用率 85.6% → 85.2%
+   释放空间: 64 cells, 剩余 20 个适配器
+
+[Worker 1] Updated actual adapter usage: 3008 cells
+INFO:     127.0.0.1:42938 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 38 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-14']
+[Worker 0] Updated actual adapter usage: 5696 cells
+INFO:     127.0.0.1:42950 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42952 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 38 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-6']
+[Worker 0] Updated actual adapter usage: 5696 cells
+INFO:     127.0.0.1:42954 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 26 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 2] Loaded 2 adapters: ['alpaca-lora-7b-11', 'alpaca-lora-7b-0']
+INFO:     127.0.0.1:42970 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 2] Updated actual adapter usage: 4736 cells
+INFO:     127.0.0.1:42974 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42978 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 28 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 2] Loaded 2 adapters: ['alpaca-lora-7b-5', 'alpaca-lora-7b-10']
+[Worker 2] Updated actual adapter usage: 4864 cells
+INFO:     127.0.0.1:42980 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42988 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 15 个适配器
+
+⚠️  LoRA 内存使用率 85.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4864/15000 cells (32.4%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-1', 'alpaca-lora-7b-30']
+offload 2 adapters, 26 remains
+   淘汰完成: 使用率 85.1% → 83.0%
+   释放空间: 320 cells, 剩余 26 个适配器
+
+[Worker 2] Updated actual adapter usage: 4544 cells
+load 0 adapters, 26 in total
+[Worker 2] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-29', 'alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 4544 cells
+INFO:     127.0.0.1:42996 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 26 in total
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 4544 cells
+INFO:     127.0.0.1:43004 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43018 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43034 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43042 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43054 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43056 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43072 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 86.3% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4544/15000 cells (30.3%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-27', 'bactrian-x-llama-7b-lora-8']
+offload 2 adapters, 24 remains
+   淘汰完成: 使用率 86.3% → 82.8%
+   释放空间: 512 cells, 剩余 24 个适配器
+
+[Worker 2] Updated actual adapter usage: 4032 cells
+load 1 adapters, 25 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 2] Loaded 1 adapters: ['alpaca-lora-7b-8']
+[Worker 2] Updated actual adapter usage: 4096 cells
+INFO:     127.0.0.1:43078 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43094 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43098 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 85.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4096/15000 cells (27.3%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-9', 'bactrian-x-llama-7b-lora-13']
+offload 2 adapters, 23 remains
+   淘汰完成: 使用率 85.1% → 81.7%
+   释放空间: 512 cells, 剩余 23 个适配器
+
+[Worker 2] Updated actual adapter usage: 3584 cells
+load 0 adapters, 23 in total
+[Worker 2] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-40', 'bactrian-x-llama-7b-lora-6']
+[Worker 2] Updated actual adapter usage: 3584 cells
+INFO:     127.0.0.1:43110 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43120 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43126 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43138 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 15 个适配器
+
+⚠️  LoRA 内存使用率 85.0% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3584/15000 cells (23.9%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 1 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-0']
+offload 1 adapters, 22 remains
+   淘汰完成: 使用率 85.0% → 83.3%
+   释放空间: 256 cells, 剩余 22 个适配器
+
+[Worker 2] Updated actual adapter usage: 3328 cells
+load 0 adapters, 22 in total
+[Worker 2] Loaded 2 adapters: ['alpaca-lora-7b-0', 'alpaca-lora-7b-14']
+[Worker 2] Updated actual adapter usage: 3328 cells
+INFO:     127.0.0.1:43154 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43162 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43172 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43180 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43186 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43192 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43198 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43202 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43218 - "POST /generate_stream HTTP/1.1" 200 OK
+   [RPC] 接收到保护列表: 15 个适配器
+
+⚠️  LoRA 内存使用率 85.7% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3328/15000 cells (22.2%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 1 个适配器
+   淘汰列表: ['alpaca-lora-7b-2']
+offload 1 adapters, 21 remains
+   淘汰完成: 使用率 85.7% → 85.3%
+   释放空间: 64 cells, 剩余 21 个适配器
+
+[Worker 2] Updated actual adapter usage: 3264 cells
+INFO:     127.0.0.1:43234 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43244 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43252 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43262 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43266 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43270 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43276 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43282 - "POST /generate_stream HTTP/1.1" 200 OK
+load 4 adapters, 24 in total
+[Worker 1] Loaded 6 adapters: ['bactrian-x-llama-7b-lora-43', 'alpaca-lora-7b-2', 'bactrian-x-llama-7b-lora-35', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-3']
+INFO:     127.0.0.1:43290 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 1] Updated actual adapter usage: 4032 cells
+INFO:     127.0.0.1:43302 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43318 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43320 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43330 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43338 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43342 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 25 in total
+   [加载时] 保护活跃批次的 6 个适配器
+[Worker 1] Loaded 5 adapters: ['bactrian-x-llama-7b-lora-28', 'bactrian-x-llama-7b-lora-10', 'alpaca-lora-7b-0', 'alpaca-lora-7b-1', 'bactrian-x-llama-7b-lora-1']
+[Worker 1] Updated actual adapter usage: 4288 cells
+INFO:     127.0.0.1:43354 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43356 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43368 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43370 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43386 - "POST /generate_stream HTTP/1.1" 200 OK
+load 2 adapters, 40 in total
+INFO:     127.0.0.1:43392 - "POST /generate_stream HTTP/1.1" 200 OK
+[Worker 0] Loaded 7 adapters: ['alpaca-lora-7b-12', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-1', 'bactrian-x-llama-7b-lora-9', 'alpaca-lora-7b-11']
+[Worker 0] Updated actual adapter usage: 5824 cells
+INFO:     127.0.0.1:43408 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43412 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43414 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43426 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43442 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43444 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43456 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 26 in total
+   [加载时] 保护活跃批次的 10 个适配器
+[Worker 1] Loaded 3 adapters: ['alpaca-lora-7b-19', 'alpaca-lora-7b-5', 'alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4352 cells
+INFO:     127.0.0.1:43462 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43464 - "POST /generate_stream HTTP/1.1" 200 OK
+load 1 adapters, 41 in total
+   [加载时] 保护活跃批次的 7 个适配器
+[Worker 0] Loaded 7 adapters: ['alpaca-lora-7b-25', 'bactrian-x-llama-7b-lora-21', 'alpaca-lora-7b-48', 'bactrian-x-llama-7b-lora-14', 'bactrian-x-llama-7b-lora-0']
+[Worker 0] Updated actual adapter usage: 5888 cells
+INFO:     127.0.0.1:43474 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43488 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43498 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43506 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43510 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43514 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43520 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43526 - "POST /generate_stream HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43530 - "POST /generate_stream HTTP/1.1" 200 OK
+load 0 adapters, 26 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-34']
+[Worker 1] Updated actual adapter usage: 4352 cells
+load 0 adapters, 26 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-2']
+[Worker 1] Updated actual adapter usage: 4352 cells
+load 1 adapters, 42 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 2 adapters: ['alpaca-lora-7b-30', 'alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 5952 cells
+   [RPC] 接收到保护列表: 15 个适配器
+
+⚠️  LoRA 内存使用率 86.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5952/15000 cells (39.7%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 6 个适配器
+   淘汰列表（前5个）: ['alpaca-lora-7b-8', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-3', 'alpaca-lora-7b-23', 'alpaca-lora-7b-21']...
+offload 6 adapters, 36 remains
+   淘汰完成: 使用率 86.1% → 81.0%
+   释放空间: 768 cells, 剩余 36 个适配器
+
+[Worker 0] Updated actual adapter usage: 5184 cells
+load 2 adapters, 38 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-2', 'bactrian-x-llama-7b-lora-35', 'bactrian-x-llama-7b-lora-19']
+[Worker 0] Updated actual adapter usage: 5696 cells
+   [RPC] 接收到保护列表: 12 个适配器
+
+⚠️  LoRA 内存使用率 85.3% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4352/15000 cells (29.0%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['alpaca-lora-7b-16', 'bactrian-x-llama-7b-lora-43']
+offload 2 adapters, 24 remains
+   淘汰完成: 使用率 85.3% → 83.1%
+   释放空间: 320 cells, 剩余 24 个适配器
+
+[Worker 1] Updated actual adapter usage: 4032 cells
+load 0 adapters, 24 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4032 cells
+load 4 adapters, 25 in total
+[Worker 2] Loaded 7 adapters: ['alpaca-lora-7b-39', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-0', 'bactrian-x-llama-7b-lora-17', 'alpaca-lora-7b-20']
+[Worker 2] Updated actual adapter usage: 3904 cells
+   [RPC] 接收到保护列表: 16 个适配器
+
+⚠️  LoRA 内存使用率 85.6% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5696/15000 cells (38.0%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['alpaca-lora-7b-12', 'bactrian-x-llama-7b-lora-11', 'alpaca-lora-7b-16', 'alpaca-lora-7b-29']
+offload 4 adapters, 34 remains
+   淘汰完成: 使用率 85.6% → 82.6%
+   释放空间: 448 cells, 剩余 34 个适配器
+
+[Worker 0] Updated actual adapter usage: 5248 cells
+load 0 adapters, 34 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-26']
+[Worker 0] Updated actual adapter usage: 5248 cells
+load 0 adapters, 24 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4032 cells
+load 0 adapters, 34 in total
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-35', 'alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 5248 cells
+load 3 adapters, 28 in total
+   [加载时] 保护活跃批次的 7 个适配器
+[Worker 2] Loaded 6 adapters: ['alpaca-lora-7b-0', 'alpaca-lora-7b-25', 'alpaca-lora-7b-15', 'bactrian-x-llama-7b-lora-47', 'alpaca-lora-7b-10']
+load 1 adapters, 25 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-13']
+[Worker 1] Updated actual adapter usage: 4096 cells
+[Worker 2] Updated actual adapter usage: 4480 cells
+load 0 adapters, 34 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 5248 cells
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 85.0% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4096/15000 cells (27.3%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-36', 'alpaca-lora-7b-15']
+offload 2 adapters, 23 remains
+   淘汰完成: 使用率 85.0% → 82.9%
+   释放空间: 320 cells, 剩余 23 个适配器
+
+[Worker 1] Updated actual adapter usage: 3776 cells
+load 0 adapters, 28 in total
+[Worker 2] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-47', 'alpaca-lora-7b-19', 'bactrian-x-llama-7b-lora-2']
+[Worker 2] Updated actual adapter usage: 4480 cells
+load 1 adapters, 24 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-22']
+[Worker 1] Updated actual adapter usage: 4032 cells
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 85.9% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4032/15000 cells (26.9%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['alpaca-lora-7b-31', 'alpaca-lora-7b-6']
+offload 2 adapters, 22 remains
+   淘汰完成: 使用率 85.9% → 85.1%
+   释放空间: 128 cells, 剩余 22 个适配器
+
+[Worker 1] Updated actual adapter usage: 3904 cells
+load 0 adapters, 22 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 3904 cells
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 85.6% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 5248/15000 cells (35.0%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['alpaca-lora-7b-10', 'bactrian-x-llama-7b-lora-44', 'alpaca-lora-7b-37', 'bactrian-x-llama-7b-lora-12']
+offload 4 adapters, 30 remains
+   淘汰完成: 使用率 85.6% → 81.4%
+   释放空间: 640 cells, 剩余 30 个适配器
+
+[Worker 0] Updated actual adapter usage: 4608 cells
+load 1 adapters, 31 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-42']
+[Worker 0] Updated actual adapter usage: 4672 cells
+load 0 adapters, 22 in total
+[Worker 1] Loaded 1 adapters: ['alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 3904 cells
+load 1 adapters, 32 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-7']
+[Worker 0] Updated actual adapter usage: 4928 cells
+load 0 adapters, 32 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-10']
+[Worker 0] Updated actual adapter usage: 4928 cells
+load 0 adapters, 22 in total
+[Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-33']
+[Worker 1] Updated actual adapter usage: 3904 cells
+load 0 adapters, 32 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-3']
+[Worker 0] Updated actual adapter usage: 4928 cells
+load 1 adapters, 23 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 1] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-1', 'bactrian-x-llama-7b-lora-15']
+[Worker 1] Updated actual adapter usage: 4160 cells
+load 0 adapters, 32 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-0']
+[Worker 0] Updated actual adapter usage: 4928 cells
+load 0 adapters, 23 in total
+[Worker 1] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-1', 'alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4160 cells
+   [RPC] 接收到保护列表: 12 个适配器
+
+⚠️  LoRA 内存使用率 88.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4480/15000 cells (29.9%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 4 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-31', 'bactrian-x-llama-7b-lora-7', 'bactrian-x-llama-7b-lora-29', 'alpaca-lora-7b-5']
+offload 4 adapters, 24 remains
+   淘汰完成: 使用率 88.1% → 82.5%
+   释放空间: 832 cells, 剩余 24 个适配器
+
+[Worker 2] Updated actual adapter usage: 3648 cells
+load 1 adapters, 25 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 2] Loaded 3 adapters: ['alpaca-lora-7b-8', 'alpaca-lora-7b-34', 'alpaca-lora-7b-0']
+[Worker 2] Updated actual adapter usage: 3712 cells
+   [RPC] 接收到保护列表: 14 个适配器
+
+⚠️  LoRA 内存使用率 85.9% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3712/15000 cells (24.7%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['alpaca-lora-7b-11', 'alpaca-lora-7b-14']
+offload 2 adapters, 23 remains
+   淘汰完成: 使用率 85.9% → 85.1%
+   释放空间: 128 cells, 剩余 23 个适配器
+
+[Worker 2] Updated actual adapter usage: 3584 cells
+   [RPC] 接收到保护列表: 11 个适配器
+
+⚠️  LoRA 内存使用率 85.1% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 4160/15000 cells (27.7%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-35', 'bactrian-x-llama-7b-lora-28']
+offload 2 adapters, 21 remains
+   淘汰完成: 使用率 85.1% → 81.7%
+   释放空间: 512 cells, 剩余 21 个适配器
+
+[Worker 1] Updated actual adapter usage: 3648 cells
+load 1 adapters, 33 in total
+   [加载时] 保护活跃批次的 14 个适配器
+[Worker 0] Loaded 2 adapters: ['alpaca-lora-7b-19', 'alpaca-lora-7b-1']
+[Worker 0] Updated actual adapter usage: 4992 cells
+   [RPC] 接收到保护列表: 13 个适配器
+
+⚠️  LoRA 内存使用率 86.0% 超过阈值 85.0%，触发淘汰
+   LoRA 当前占用: 3584/15000 cells (23.9%)
+   LoRA 上限设置: 6000 cells (40.0%)
+   需释放空间: 0 cells
+
+   执行淘汰: 淘汰 2 个适配器
+   淘汰列表: ['bactrian-x-llama-7b-lora-12', 'bactrian-x-llama-7b-lora-40']
+offload 2 adapters, 21 remains
+   淘汰完成: 使用率 86.0% → 82.6%
+   释放空间: 512 cells, 剩余 21 个适配器
+
+[Worker 2] Updated actual adapter usage: 3072 cells
+load 1 adapters, 22 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 2] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-48']
+[Worker 2] Updated actual adapter usage: 3328 cells
+load 0 adapters, 22 in total
+[Worker 2] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-6']
+[Worker 2] Updated actual adapter usage: 3328 cells
+load 1 adapters, 34 in total
+   [加载时] 保护活跃批次的 12 个适配器
+[Worker 0] Loaded 3 adapters: ['bactrian-x-llama-7b-lora-4', 'bactrian-x-llama-7b-lora-22', 'bactrian-x-llama-7b-lora-6']
+[Worker 0] Updated actual adapter usage: 5248 cells
+load 0 adapters, 34 in total
+[Worker 0] Loaded 1 adapters: ['alpaca-lora-7b-3']
+[Worker 0] Updated actual adapter usage: 5248 cells
+load 1 adapters, 35 in total
+   [加载时] 保护活跃批次的 13 个适配器
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-25']
+[Worker 0] Updated actual adapter usage: 5504 cells
+load 0 adapters, 35 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 0] Updated actual adapter usage: 5504 cells
+load 0 adapters, 35 in total
+[Worker 0] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-1']
+[Worker 0] Updated actual adapter usage: 5504 cells
+load 0 adapters, 35 in total
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-21', 'alpaca-lora-7b-36']
+[Worker 0] Updated actual adapter usage: 5504 cells
+load 1 adapters, 22 in total
+[Worker 1] Loaded 5 adapters: ['alpaca-lora-7b-0', 'alpaca-lora-7b-7', 'bactrian-x-llama-7b-lora-18', 'bactrian-x-llama-7b-lora-3', 'bactrian-x-llama-7b-lora-4']
+[Worker 1] Updated actual adapter usage: 3904 cells
+load 2 adapters, 24 in total
+   [加载时] 保护活跃批次的 5 个适配器
+[Worker 1] Loaded 7 adapters: ['bactrian-x-llama-7b-lora-43', 'alpaca-lora-7b-31', 'alpaca-lora-7b-0', 'bactrian-x-llama-7b-lora-5', 'alpaca-lora-7b-44']
+[Worker 1] Updated actual adapter usage: 4224 cells
+load 0 adapters, 24 in total
+[Worker 1] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-5', 'alpaca-lora-7b-0']
+[Worker 1] Updated actual adapter usage: 4224 cells
+[Worker 1] Heartbeat: received=169, queue=0, batch=20
+load 1 adapters, 36 in total
+[Worker 0] Loaded 2 adapters: ['bactrian-x-llama-7b-lora-11', 'alpaca-lora-7b-45']
+[Worker 0] Updated actual adapter usage: 5760 cells
+[Worker 0] Heartbeat: received=155, queue=0, batch=3
+[Worker 2] Heartbeat: received=156, queue=0, batch=0
+INFO:     127.0.0.1:55582 - "GET /routing_stats HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [462623]
+/home/hzheng/.conda/envs/slora/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 3 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

@@ -74,8 +74,8 @@ class HttpServerManager:
                 timeout_count = 0  # 收到响应，重置计数
             except asyncio.TimeoutError:
                 timeout_count += 1
-                # 每 6 次超时（30秒）打印一次警告
-                if timeout_count % 6 == 0:
+                # 每 12 次超时（60秒）打印一次警告
+                if timeout_count % 12 == 0:
                     print(f"[HttpServerManager] Request {request_id[:8]}... waiting (no response for {timeout_count * 5}s)")
                 pass
             event.clear()

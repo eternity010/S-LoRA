@@ -14,6 +14,7 @@ Requirements:
     - 4.5: 确保响应消息包含 request_id、worker_id、output_ids 和 success 状态
 """
 
+import os
 import zmq
 import zmq.asyncio
 import asyncio
@@ -198,9 +199,9 @@ class ResponseMerger:
         # 转换为 Detokenization 格式
         detoken_msg = self._convert_to_detoken_format(response)
         
-        # 只在请求完成时打印日志
+        # 只在 DEBUG 模式下打印完成日志
         finished = response.get('finished', False)
-        if finished:
+        if finished and os.environ.get('DEBUG', '0') == '1':
             request_id = response['request_id']
             worker_id = response['worker_id']
             print(f"[ResponseMerger] FINISHED: req={request_id[:8]}..., worker={worker_id}")

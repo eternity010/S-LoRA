@@ -174,4 +174,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # print(cmd)
-    os.system(cmd)
+    import subprocess
+    import shlex
+    result = subprocess.run(shlex.split(cmd), check=False)
+    sys.exit(result.returncode)

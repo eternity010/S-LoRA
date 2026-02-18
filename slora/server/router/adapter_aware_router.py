@@ -547,12 +547,25 @@ class AdapterAwareRouter:
         stats['unhealthy_workers'] = self.num_workers - len(healthy_workers)
         stats['total_cached_adapters'] = len(self.adapter_to_workers)
         
+        # 添加当前路由配置参数 (w1, w2, w3)
+        stats['w1'] = self.config.w1
+        stats['w2'] = self.config.w2
+        stats['w3'] = self.config.w3
+        
         # 添加 Rank-Aware 路由配置信息 (Requirements: 7.4)
         stats['rank_aware_enabled'] = self.config.w3 > 0
-        stats['w3'] = self.config.w3
         stats['loaded_adapter_ranks'] = len(self.adapter_ranks)
         
         return stats
+    
+    def get_cache_hit_rate(self) -> float:
+        """
+        获取缓存命中率
+        
+        Returns:
+            缓存命中率（0.0 - 1.0）
+        """
+        return self.stats.cache_hit_rate
     
     def log_stats_summary(self) -> None:
         """
@@ -629,6 +642,56 @@ class AdapterAwareRouter:
         Requirements: 5.1
         """
         return self._rate_tracker.is_hot(adapter_dir, self.config.hot_adapter_threshold)
+    
+    def update_config(self,
+                     w1: float = None,
+                     w2: float = None,
+                     w3: float = None,
+                     reset_stats: bool = True) -> dict:
+        """
+        动态更新路由配置
+        
+        允许在运行时更新路由权重参数，无需重启服务器。
+        
+        Args:
+            w1: 缓存亲和性权重（None 表示不更新）
+            w2: 负载惩罚权重（None 表示不更新）
+            w3: Rank 不匹配惩罚权重（None 表示不更新）
+            reset_stats: 是否重置统计信息，默认 True
+        
+        Returns:
+            更新后的配置字典，包含 w1, w2, w3 的当前值
+        
+        Note:
+            - 参数值必须为非负数，否则忽略该更新
+            - 更新后建议重置统计以便观察新配置的效果
+        """
+        updated = []
+        
+        if w1 is not None and w1 >= 0:
+            self.config.w1 = w1
+            updated.append(f"w1={w1}")
+        
+        if w2 is not None and w2 >= 0:
+            self.config.w2 = w2
+            updated.append(f"w2={w2}")
+        
+        if w3 is not None and w3 >= 0:
+            self.config.w3 = w3
+            updated.append(f"w3={w3}")
+        
+        if reset_stats:
+            self.stats.reset()
+            updated.append("stats_reset=True")
+        
+        if updated:
+            logger.info(f"Routing config updated: {', '.join(updated)}")
+        
+        return {
+            'w1': self.config.w1,
+            'w2': self.config.w2,
+            'w3': self.config.w3
+        }
     
     def reset_stats(self) -> None:
         """重置统计信息"""
