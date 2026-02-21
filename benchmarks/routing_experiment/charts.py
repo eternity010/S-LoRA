@@ -243,16 +243,278 @@ class ChartGenerator:
         filename = f"worker_load_{result.routing_strategy}_alpha{result.alpha}"
         self._save_figure(fig, filename)
     
-    def plot_all_comparisons(self, results: List[ExperimentResult]) -> None:
+    def plot_throughput_by_w2(self, results: List[ExperimentResult], records: List = None) -> None:
+        """
+        Generate throughput vs w2 (load penalty weight) chart.
+        
+        Args:
+            results: List of experiment results with varying w2 values
+            records: List of ExperimentRecord objects (optional, for getting w2 from config)
+        """
+        fig, ax = plt.subplots()
+        
+        # Filter adapter-aware results
+        aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+        
+        # Group by w2 value
+        w2_throughput = {}
+        
+        if records:
+            # Get w2 from config in records
+            for record in records:
+                if record.result.routing_strategy == "adapter-aware":
+                    w2 = record.config.get('routing_w2', 0.1)
+                    if w2 not in w2_throughput:
+                        w2_throughput[w2] = []
+                    w2_throughput[w2].append(record.result.throughput)
+        else:
+            # Fallback: try to get from result attribute
+            for r in aa_results:
+                w2 = getattr(r, 'routing_w2', None)
+                if w2 is not None:
+                    if w2 not in w2_throughput:
+                        w2_throughput[w2] = []
+                    w2_throughput[w2].append(r.throughput)
+        
+        if not w2_throughput:
+            print("No w2 data found in results, skipping w2 charts")
+            return
+        
+        w2_values = sorted(w2_throughput.keys())
+        throughputs = [np.mean(w2_throughput[w2]) for w2 in w2_values]
+        
+        ax.plot(w2_values, throughputs, 'o-', color=COLORS['adapter-aware'], 
+                linewidth=2, markersize=10)
+        
+        ax.set_xlabel('w2 (Load Penalty Weight)')
+        ax.set_ylabel('Throughput (req/s)')
+        ax.set_title('Throughput vs Load Penalty Weight (w2)')
+        ax.grid(alpha=0.3)
+        
+        self._save_figure(fig, "throughput_by_w2")
+    
+    def plot_latency_by_w2(self, results: List[ExperimentResult], records: List = None) -> None:
+        """
+        Generate latency vs w2 chart.
+        
+        Args:
+            results: List of experiment results with varying w2 values
+            records: List of ExperimentRecord objects (optional)
+        """
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Group by w2
+        w2_avg_latency = {}
+        w2_first_token = {}
+        
+        if records:
+            for record in records:
+                if record.result.routing_strategy == "adapter-aware":
+                    w2 = record.config.get('routing_w2', 0.1)
+                    if w2 not in w2_avg_latency:
+                        w2_avg_latency[w2] = []
+                        w2_first_token[w2] = []
+                    w2_avg_latency[w2].append(record.result.avg_latency)
+                    w2_first_token[w2].append(record.result.avg_first_token_latency)
+        else:
+            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+            for r in aa_results:
+                w2 = getattr(r, 'routing_w2', None)
+                if w2 is not None:
+                    if w2 not in w2_avg_latency:
+                        w2_avg_latency[w2] = []
+                        w2_first_token[w2] = []
+                    w2_avg_latency[w2].append(r.avg_latency)
+                    w2_first_token[w2].append(r.avg_first_token_latency)
+        
+        if not w2_avg_latency:
+            return
+        
+        w2_values = sorted(w2_avg_latency.keys())
+        
+        # Average latency
+        avg_latencies = [np.mean(w2_avg_latency[w2]) for w2 in w2_values]
+        axes[0].plot(w2_values, avg_latencies, 'o-', color=COLORS['adapter-aware'], 
+                     linewidth=2, markersize=10)
+        axes[0].set_xlabel('w2 (Load Penalty Weight)')
+        axes[0].set_ylabel('Average Latency (s)')
+        axes[0].set_title('Average Latency vs w2')
+        axes[0].grid(alpha=0.3)
+        
+        # First token latency
+        first_tokens = [np.mean(w2_first_token[w2]) for w2 in w2_values]
+        axes[1].plot(w2_values, first_tokens, 's-', color=COLORS['adapter-aware'], 
+                     linewidth=2, markersize=10)
+        axes[1].set_xlabel('w2 (Load Penalty Weight)')
+        axes[1].set_ylabel('First Token Latency (s)')
+        axes[1].set_title('First Token Latency vs w2')
+        axes[1].grid(alpha=0.3)
+        
+        plt.tight_layout()
+        self._save_figure(fig, "latency_by_w2")
+    
+    def plot_cache_hit_rate_by_w2(self, results: List[ExperimentResult], records: List = None) -> None:
+        """
+        Generate cache hit rate vs w2 chart.
+        
+        Args:
+            results: List of experiment results with varying w2 values
+            records: List of ExperimentRecord objects (optional)
+        """
+        fig, ax = plt.subplots()
+        
+        # Group by w2
+        w2_cache_hit = {}
+        
+        if records:
+            for record in records:
+                if record.result.routing_strategy == "adapter-aware":
+                    w2 = record.config.get('routing_w2', 0.1)
+                    if w2 not in w2_cache_hit:
+                        w2_cache_hit[w2] = []
+                    w2_cache_hit[w2].append(record.result.cache_hit_rate * 100)
+        else:
+            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+            for r in aa_results:
+                w2 = getattr(r, 'routing_w2', None)
+                if w2 is not None:
+                    if w2 not in w2_cache_hit:
+                        w2_cache_hit[w2] = []
+                    w2_cache_hit[w2].append(r.cache_hit_rate * 100)
+        
+        if not w2_cache_hit:
+            return
+        
+        w2_values = sorted(w2_cache_hit.keys())
+        cache_hits = [np.mean(w2_cache_hit[w2]) for w2 in w2_values]
+        
+        ax.plot(w2_values, cache_hits, 'o-', color=COLORS['adapter-aware'], 
+                linewidth=2, markersize=10)
+        
+        ax.set_xlabel('w2 (Load Penalty Weight)')
+        ax.set_ylabel('Cache Hit Rate (%)')
+        ax.set_title('Cache Hit Rate vs Load Penalty Weight (w2)')
+        ax.grid(alpha=0.3)
+        ax.set_ylim(0, 100)
+        
+        self._save_figure(fig, "cache_hit_rate_by_w2")
+    
+    def plot_w2_comparison_summary(self, results: List[ExperimentResult], records: List = None) -> None:
+        """
+        Generate a summary chart comparing all metrics across w2 values.
+        
+        Args:
+            results: List of experiment results with varying w2 values
+            records: List of ExperimentRecord objects (optional)
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        
+        # Group by w2
+        w2_data = {}
+        
+        if records:
+            for record in records:
+                if record.result.routing_strategy == "adapter-aware":
+                    w2 = record.config.get('routing_w2', 0.1)
+                    if w2 not in w2_data:
+                        w2_data[w2] = {'throughput': [], 'latency': [], 'cache_hit': [], 'first_token': []}
+                    w2_data[w2]['throughput'].append(record.result.throughput)
+                    w2_data[w2]['latency'].append(record.result.avg_latency)
+                    w2_data[w2]['cache_hit'].append(record.result.cache_hit_rate * 100)
+                    w2_data[w2]['first_token'].append(record.result.avg_first_token_latency)
+        else:
+            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+            for r in aa_results:
+                w2 = getattr(r, 'routing_w2', None)
+                if w2 is not None:
+                    if w2 not in w2_data:
+                        w2_data[w2] = {'throughput': [], 'latency': [], 'cache_hit': [], 'first_token': []}
+                    w2_data[w2]['throughput'].append(r.throughput)
+                    w2_data[w2]['latency'].append(r.avg_latency)
+                    w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
+                    w2_data[w2]['first_token'].append(r.avg_first_token_latency)
+        
+        if not w2_data:
+            return
+        
+        w2_values = sorted(w2_data.keys())
+        
+        # Throughput
+        axes[0, 0].bar(range(len(w2_values)), 
+                       [np.mean(w2_data[w2]['throughput']) for w2 in w2_values],
+                       color=COLORS['adapter-aware'], alpha=0.8)
+        axes[0, 0].set_xticks(range(len(w2_values)))
+        axes[0, 0].set_xticklabels([f'{w2}' for w2 in w2_values])
+        axes[0, 0].set_xlabel('w2')
+        axes[0, 0].set_ylabel('Throughput (req/s)')
+        axes[0, 0].set_title('Throughput')
+        axes[0, 0].grid(axis='y', alpha=0.3)
+        
+        # Average Latency
+        axes[0, 1].bar(range(len(w2_values)), 
+                       [np.mean(w2_data[w2]['latency']) for w2 in w2_values],
+                       color=COLORS['adapter-aware'], alpha=0.8)
+        axes[0, 1].set_xticks(range(len(w2_values)))
+        axes[0, 1].set_xticklabels([f'{w2}' for w2 in w2_values])
+        axes[0, 1].set_xlabel('w2')
+        axes[0, 1].set_ylabel('Avg Latency (s)')
+        axes[0, 1].set_title('Average Latency')
+        axes[0, 1].grid(axis='y', alpha=0.3)
+        
+        # Cache Hit Rate
+        axes[1, 0].bar(range(len(w2_values)), 
+                       [np.mean(w2_data[w2]['cache_hit']) for w2 in w2_values],
+                       color=COLORS['adapter-aware'], alpha=0.8)
+        axes[1, 0].set_xticks(range(len(w2_values)))
+        axes[1, 0].set_xticklabels([f'{w2}' for w2 in w2_values])
+        axes[1, 0].set_xlabel('w2')
+        axes[1, 0].set_ylabel('Cache Hit Rate (%)')
+        axes[1, 0].set_title('Cache Hit Rate')
+        axes[1, 0].set_ylim(0, 100)
+        axes[1, 0].grid(axis='y', alpha=0.3)
+        
+        # First Token Latency
+        axes[1, 1].bar(range(len(w2_values)), 
+                       [np.mean(w2_data[w2]['first_token']) for w2 in w2_values],
+                       color=COLORS['adapter-aware'], alpha=0.8)
+        axes[1, 1].set_xticks(range(len(w2_values)))
+        axes[1, 1].set_xticklabels([f'{w2}' for w2 in w2_values])
+        axes[1, 1].set_xlabel('w2')
+        axes[1, 1].set_ylabel('First Token Latency (s)')
+        axes[1, 1].set_title('First Token Latency')
+        axes[1, 1].grid(axis='y', alpha=0.3)
+        
+        plt.suptitle('Performance Metrics vs Load Penalty Weight (w2)', fontsize=14, y=1.02)
+        plt.tight_layout()
+        self._save_figure(fig, "w2_comparison_summary")
+    
+    def plot_all_comparisons(self, results: List[ExperimentResult], records: List = None) -> None:
         """
         Generate all standard comparison charts.
         
         Args:
             results: List of experiment results
+            records: List of ExperimentRecord objects (optional, for w2 charts)
         """
         # Determine grouping based on available data
         alphas = set(r.alpha for r in results)
         adapters = set(r.num_adapters for r in results)
+        
+        # Check for w2 variation (routing-weight-comparison suite)
+        w2_values = set()
+        if records:
+            for record in records:
+                w2 = record.config.get('routing_w2')
+                if w2 is not None:
+                    w2_values.add(w2)
+        
+        # Generate w2-specific charts if multiple w2 values exist
+        if len(w2_values) > 1:
+            print(f"Detected {len(w2_values)} different w2 values, generating w2 comparison charts...")
+            self.plot_throughput_by_w2(results, records)
+            self.plot_latency_by_w2(results, records)
+            self.plot_cache_hit_rate_by_w2(results, records)
+            self.plot_w2_comparison_summary(results, records)
         
         # Generate charts grouped by alpha if multiple alphas exist
         if len(alphas) > 1:

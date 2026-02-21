@@ -1,49 +1,6 @@
-[08:32:44] ExperimentRunner initialized: output=routing_comparison_results, model=Real
-[08:32:44] backed up old log: server_adapter-aware_adapters100.log -> server_adapter-aware_adapters100_20260218_083244.log
-[08:32:44] run_suite: routing-weight-comparison, resume=False
-[08:32:44] exp[1/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.1
-[08:32:44] needs_restart=True
-[08:32:44] start_server: adapter-aware, adapters=100
-[08:51:16] server ready in 1111.0s
-[08:51:16] _update_routing_config: {'w1': 1.0, 'w2': 0.1, 'w3': 0.0, 'reset_stats': True}
-[08:51:16] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.1, 'w3': 0.0, 'reset_stats': True}}
-[08:52:49] success: tput=5.89, lat=13.915
-[08:52:49] exp[2/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.2
-[08:52:49] needs_restart=False
-[08:52:49] _update_routing_config: {'w1': 1.0, 'w2': 0.2, 'w3': 0.0, 'reset_stats': True}
-[08:52:49] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.2, 'w3': 0.0, 'reset_stats': True}}
-[08:54:19] success: tput=6.03, lat=14.360
-[08:54:19] exp[3/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.3
-[08:54:19] needs_restart=False
-[08:54:19] _update_routing_config: {'w1': 1.0, 'w2': 0.3, 'w3': 0.0, 'reset_stats': True}
-[08:54:19] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.3, 'w3': 0.0, 'reset_stats': True}}
-[08:55:55] success: tput=5.66, lat=16.556
-[08:55:55] exp[4/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.4
-[08:55:55] needs_restart=False
-[08:55:55] _update_routing_config: {'w1': 1.0, 'w2': 0.4, 'w3': 0.0, 'reset_stats': True}
-[08:55:55] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.4, 'w3': 0.0, 'reset_stats': True}}
-[08:57:35] success: tput=5.38, lat=16.892
-[08:57:35] exp[5/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.5
-[08:57:35] needs_restart=False
-[08:57:35] _update_routing_config: {'w1': 1.0, 'w2': 0.5, 'w3': 0.0, 'reset_stats': True}
-[08:57:35] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.5, 'w3': 0.0, 'reset_stats': True}}
-[08:59:08] success: tput=5.90, lat=15.633
-[08:59:08] exp[6/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.7
-[08:59:08] needs_restart=False
-[08:59:08] _update_routing_config: {'w1': 1.0, 'w2': 0.7, 'w3': 0.0, 'reset_stats': True}
-[08:59:08] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.7, 'w3': 0.0, 'reset_stats': True}}
-[09:00:44] success: tput=5.66, lat=15.940
-[09:00:44] exp[7/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.8
-[09:00:44] needs_restart=False
-[09:00:44] _update_routing_config: {'w1': 1.0, 'w2': 0.8, 'w3': 0.0, 'reset_stats': True}
-[09:00:44] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.8, 'w3': 0.0, 'reset_stats': True}}
-[09:02:22] success: tput=5.52, lat=16.022
-[09:02:22] exp[8/8]: adapter-aware_alpha0.3_adapters100_w11.0_w20.9
-[09:02:22] needs_restart=False
-[09:02:22] _update_routing_config: {'w1': 1.0, 'w2': 0.9, 'w3': 0.0, 'reset_stats': True}
-[09:02:22] config update success: {'status': 'submitted', 'message': 'Config update request submitted. Changes will be applied within 5 seconds.', 'config': {'w1': 1.0, 'w2': 0.9, 'w3': 0.0, 'reset_stats': True}}
-[09:03:58] success: tput=5.64, lat=15.589
-[09:03:58] suite done, stopping server
-[09:03:58] stop_server called
-[09:03:58] killing pgid 3666342
-[09:03:58] server stopped gracefully
+[22:00:09] ExperimentRunner initialized: output=routing_comparison_results, model=Real
+[22:00:09] backed up old log: server_adapter-aware_adapters100.log -> server_adapter-aware_adapters100_20260221_220009.log
+[22:00:09] run_suite: routing-weight-comparison, resume=False
+[22:00:09] exp[1/4]: adapter-aware_alpha0.3_adapters100_w11.0_w20.08
+[22:00:09] needs_restart=True
+[22:00:09] start_server: adapter-aware, adapters=100

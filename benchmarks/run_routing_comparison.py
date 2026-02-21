@@ -180,7 +180,7 @@ def generate_charts(args):
     generator = ChartGenerator(output_dir=str(chart_dir))
     
     print(f"\nGenerating charts in {chart_dir}...")
-    generator.plot_all_comparisons(results)
+    generator.plot_all_comparisons(results, records=records)
     
     print("\n✓ Charts generated successfully!")
     print(f"  Location: {chart_dir}/")

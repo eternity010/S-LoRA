@@ -38,13 +38,14 @@ class ExperimentSuite:
             # 仅测试 adapter-aware 策略下不同 w2 (负载惩罚权重) 组合
             # w1 保持默认值 1.0，只变化 w2
             # 服务器只需启动一次，w2 通过 API 动态更新
+            # 甜点区：w2 ∈ [0.08, 0.15]
             "routing_strategy": ["adapter-aware"],
             "alpha": [0.3],
             "num_adapters": [100],
             "req_rate": [8.0],
             "duration": [60],
             "routing_w1": [1.0],  # 缓存亲和性权重（固定）
-            "routing_w2": [0.1, 0.2, 0.3 ,0.4, 0.5, 0.7, 0.8, 0.9],  # 负载惩罚权重（从0.1开始增大）
+            "routing_w2": [0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2],  # 负载惩罚权重（甜点区微调）
         },
     }
     

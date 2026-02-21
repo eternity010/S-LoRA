@@ -13050,3 +13050,9 @@ load 0 adapters, 29 in total
 [Worker 1] Loaded 1 adapters: ['bactrian-x-llama-7b-lora-6']
 [Worker 1] Updated actual adapter usage: 4352 cells
 INFO:     127.0.0.1:35084 - "GET /routing_stats HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3666352]
+/home/hzheng/.conda/envs/slora/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 3 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
