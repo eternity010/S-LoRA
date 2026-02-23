@@ -363,7 +363,7 @@ class ExperimentRunner:
         # Track current server configuration
         self._current_server_config = self._get_server_config_key(config)
     
-    def _wait_for_server(self, timeout: int = 1800) -> None:
+    def _wait_for_server(self, timeout: int = 4200) -> None:
         """
         Wait for server to be ready.
         
@@ -374,8 +374,8 @@ class ExperimentRunner:
         Therefore, when /health endpoint responds, the model is guaranteed to be ready.
         
         Args:
-            timeout: Maximum wait time in seconds (default: 1800s = 30 minutes)
-                    Loading 100 adapters can take 15-20 minutes on RTX 3090
+            timeout: Maximum wait time in seconds (default: 4200s = 70 minutes)
+                    Loading 100 adapters can take 30-60 minutes on RTX 3090 in data parallel mode
         """
         start = time.time()
         log_file = self._current_log_file

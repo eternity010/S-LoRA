@@ -1,103 +1,89 @@
-# Benchmarks
+# Benchmarks 结构说明
 
 ## 目录结构
 
 ```
 benchmarks/
-├── launch_server.py      # 启动服务器
-├── run_exp.py            # 运行基准测试
-├── run_exp_peft.py       # PEFT 基线对比
-├── trace.py              # 请求生成（Power Law 分布）
-├── exp_suite.py          # 实验配置套件
-└── time_stats.py         # 性能统计
+├── launch_server.py          # 服务器启动脚本（原始 + 扩展了数据并行/路由参数）
+├── exp_suite.py              # 模型路径配置 & 实验套件定义（BASE_MODEL, LORA_DIR）
+├── trace.py                  # 请求生成（Power Law 分布 + Gamma 到达间隔）
+├── run_exp.py                # 原始单机 benchmark 运行脚本
+├── run_exp_peft.py           # PEFT 基线对比脚本
+├── run_routing_comparison.py # 路由策略对比实验入口（新增）
+├── time_stats.py             # 性能统计工具
+│
+├── routing_experiment/       # 路由对比实验框架（新增）
+│   ├── config.py             # 单次实验参数定义（ExperimentConfig）
+│   ├── suite.py              # 实验套件，笛卡尔积展开参数组合（ExperimentSuite）
+│   ├── runner.py             # 实验执行引擎（启动服务器、发请求、收指标）
+│   ├── result.py             # 结果数据结构与 JSONL 持久化（ExperimentResult）
+│   ├── analyzer.py           # 结果分析（改进比率、统计量、负载均衡 CV）
+│   └── charts.py             # 可视化（吞吐量/延迟/缓存命中率/w2 调优图）
+│
+└── routing_comparison_results/  # 实验输出目录
+    ├── results.jsonl            # 所有实验结果（追加写入）
+    ├── checkpoint.json          # 断点续跑记录
+    ├── charts/                  # 生成的图表（PNG + PDF）
+    └── logs/                    # 各次实验的服务器日志
 ```
 
-## 快速开始
+## 文件复用关系
+
+`routing_experiment/` 框架复用了以下原始文件，未做修改：
+
+- **`exp_suite.py`** — 提供 `BASE_MODEL`、`LORA_DIR` 路径配置
+- **`trace.py`** — 提供 `generate_requests()`，按 alpha/cv/req_rate 生成合成请求
+
+**`launch_server.py`** 在原始基础上扩展，新增了 `--parallel-mode`、`--routing-strategy`、`--routing-w1/w2/w3`、`--evict-*`、`--max-lora-ratio` 等参数，由 `runner.py` 通过 `subprocess` 调用。
+
+## 实验框架数据流
+
+```
+ExperimentSuite.get_configs(suite_name)
+        │  笛卡尔积展开所有参数组合
+        ▼
+ExperimentRunner.run_suite()
+        │  对每个 ExperimentConfig：
+        │  1. 判断是否需要重启服务器（alpha/w2 变化不需要重启）
+        │  2. 启动 launch_server.py（subprocess）
+        │  3. 动态更新路由权重（POST /update_routing_config）
+        │  4. 调用 trace.generate_requests() 生成请求
+        │  5. aiohttp 异步发送，按时间戳控制速率
+        │  6. 收集 /routing_stats 前后 delta
+        ▼
+ExperimentResult  →  results.jsonl
+        │
+        ▼
+ResultAnalyzer    →  改进比率、统计量、Markdown 汇总表
+ChartGenerator    →  charts/*.png / *.pdf
+```
+
+## 预定义实验套件
+
+| 套件名 | 变量 | 用途 |
+|--------|------|------|
+| `routing-alpha-comparison` | alpha × 策略 | 热点程度对路由效果的影响 |
+| `routing-adapter-scaling` | num_adapters × 策略 | adapter 规模扩展性 |
+| `routing-full-comparison` | alpha × adapters × 策略 | 完整对比 |
+| `routing-weight-comparison` | w2 ∈ [0.08, 0.2] | 负载惩罚权重调优 |
+
+## 快速使用
 
 ```bash
 cd benchmarks
 
-# 1. 启动服务器
-# 张量并行（默认）
-python launch_server.py --num-adapter 100 --num-token 10000 --dummy
+# 运行路由对比实验
+python run_routing_comparison.py --suite routing-alpha-comparison
 
-# 数据并行（3 GPU）
-python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
-    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3
+# 断点续跑
+python run_routing_comparison.py --suite routing-full-comparison --resume
 
-# 数据并行 + 智能路由
-python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
-    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3 \
-    --routing-strategy adapter-aware
+# 仅分析已有结果
+python run_routing_comparison.py --analyze-only --output-dir routing_comparison_results
 
-# 数据并行 + Rank-Aware 路由
-python launch_server.py --dummy --num-adapter 100 --num-token 10000 \
-    --parallel-mode data --num-workers 3 --gpu-ids 1,2,3 \
-    --routing-w3 5.0
+# 仅生成图表
+python run_routing_comparison.py --generate-charts --output-dir routing_comparison_results
 
-# 2. 运行测试（另一个终端）
-python run_exp.py --debug                          # 默认配置（均匀分布）
-python run_exp.py --suite routing-test --debug     # 智能路由测试（热点分布）
+# 列出所有套件
+python run_routing_comparison.py --list-suites
 ```
-
-> 使用真实模型时，将 `--dummy` 替换为 `--model-setting Real`，两者不要同时使用。
-
-## launch_server.py 参数
-
-| 参数 | 说明 |
-|------|------|
-| `--model-setting` | 模型配置：`S1`/`S2`(7B) `S3`/`S4`(13B) `Real`(本地) |
-| `--dummy` | 虚拟权重，快速测试用 |
-| `--num-adapter` | LoRA 适配器数量 |
-| `--num-token` | 最大 token 容量 |
-| `--parallel-mode` | `tensor`(默认) / `data` |
-| `--num-workers` | 数据并行 Worker 数量 |
-| `--gpu-ids` | GPU ID，逗号分隔 |
-| `--routing-strategy` | 路由策略：`round-robin`(默认) / `adapter-aware` |
-| `--routing-w3` | Rank-Aware 权重（0=禁用，5.0=中度，10.0=强） |
-
-## 测试套件（exp_suite.py）
-
-### debug_suite（开发测试用）
-
-| 套件名 | alpha | num_adapters | 说明 |
-|--------|-------|-------------|------|
-| `default` | 1.0 | 100 | 均匀分布，baseline |
-| `routing-test` | 0.6 | 100 | 热点分布，测试智能路由 |
-| `debug` | 1.0 | 20 | 小规模快速测试 |
-
-### paper_suite（论文实验用）
-
-`a10g-num-adapter`, `a10g-alpha`, `a10g-cv`, `a10g-req-rate` 等，详见代码。
-
-## Alpha 参数（trace.py）
-
-`alpha` 控制 Power Law 分布，决定 adapter 访问的热点程度：
-
-```python
-probs = np.random.power(alpha, tot_req)
-ind = (probs * num_adapters).astype(int)
-```
-
-| alpha | 分布 | 说明 |
-|-------|------|------|
-| 0.1-0.3 | 极端热点 | 少数 adapter 占 80%+ 流量 |
-| **0.6** | **明显热点** | **前 20% adapter 占 60%+ 流量（推荐测试智能路由）** |
-| 1.0 | 均匀分布 | 所有 adapter 等概率访问 |
-
-alpha < 1 时热点越集中，智能路由的缓存亲和性优势越明显。alpha = 1 是均匀分布，难以体现路由优化效果。
-
-## 并行模式对比
-
-| 特性 | 张量并行 | 数据并行 |
-|------|---------|---------|
-| 场景 | 模型放不下单卡 | 模型放得下，要高吞吐 |
-| 吞吐量 | 1x | 2.5x ~ 3x |
-| 显存占用 | 低（模型切分） | 高（每 GPU 一份） |
-
-## 注意事项
-
-- 服务器必须先启动，再运行 `run_exp.py`
-- 数据并行模式下每个 GPU 需放下完整模型（7B 需 24GB+，13B 需 40GB+）
-- Worker 数量推荐等于 GPU 数量
-- 监控 GPU：`watch -n 1 nvidia-smi`

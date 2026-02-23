@@ -33,6 +33,9 @@ class ExperimentConfig:
     routing_w1: float = 1.0  # Cache affinity weight
     routing_w2: float = 0.1  # Load penalty weight
     routing_w3: float = 0.0  # Rank mismatch penalty
+
+    # Memory parameters
+    max_lora_ratio: float = 0.4  # Max LoRA memory ratio (0-1)
     
     def validate(self) -> None:
         """Validate configuration parameters"""
@@ -61,6 +64,9 @@ class ExperimentConfig:
         
         if self.num_token <= 0:
             raise ValueError(f"num_token must be positive, got {self.num_token}")
+
+        if not 0.0 < self.max_lora_ratio < 1.0:
+            raise ValueError(f"max_lora_ratio must be in (0, 1), got {self.max_lora_ratio}")
     
     def to_server_args(self) -> List[str]:
         """Convert to launch_server.py command line arguments"""
@@ -71,6 +77,7 @@ class ExperimentConfig:
             "--num-adapter", str(self.num_adapters),
             "--num-token", str(self.num_token),
             "--routing-strategy", self.routing_strategy,
+            "--max-lora-ratio", str(self.max_lora_ratio),
         ]
         
         if self.routing_strategy == "adapter-aware":

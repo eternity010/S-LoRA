@@ -488,7 +488,7 @@ class DataParallelRouterManager:
         print(f"[DataParallelRouterManager] (This may take a few minutes while models are loading)")
         
         ready_workers = set()
-        max_wait_time = 1200  # 最多等待 20 分钟
+        max_wait_time = 3600  # 最多等待 60 分钟（加载大量真实 adapter 可能需要较长时间）
         start_wait = asyncio.get_event_loop().time()
         
         while len(ready_workers) < self.num_workers:

@@ -18,7 +18,7 @@ class ExperimentSuite:
             "alpha": [0.3, 0.6, 0.8, 1.0],
             "num_adapters": [100],
             "req_rate": [8.0],
-            "duration": [60],
+            "duration": [120],
         },
         "routing-adapter-scaling": {
             "routing_strategy": ["round-robin", "adapter-aware"],
@@ -43,7 +43,7 @@ class ExperimentSuite:
             "alpha": [0.3],
             "num_adapters": [100],
             "req_rate": [8.0],
-            "duration": [60],
+            "duration": [120],
             "routing_w1": [1.0],  # 缓存亲和性权重（固定）
             "routing_w2": [0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2],  # 负载惩罚权重（甜点区微调）
         },

@@ -31255,9 +31255,3 @@ offload 4 adapters, 26 remains
 
 [Worker 0] Updated actual adapter usage: 4352 cells
 INFO:     127.0.0.1:50678 - "GET /routing_stats HTTP/1.1" 200 OK
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [395644]
-/home/hzheng/.conda/envs/slora/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 3 leaked semaphore objects to clean up at shutdown
-  warnings.warn('resource_tracker: There appear to be %d '
