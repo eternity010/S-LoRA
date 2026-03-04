@@ -84,6 +84,12 @@ class GPUWorker:
         
         # 状态上报器（用于 Adapter-Aware Routing）
         self.state_reporter: Optional[WorkerStateReporter] = None
+        
+        # Profiled decode cost alpha（运行时测量或手动指定）
+        self._profiled_alpha: float = 0.1  # 默认回退值
+        
+        # 模型 hidden_dim（从 model config 自动检测，回退到 args 或默认 4096）
+        self._hidden_dim: int = getattr(self.args, 'hidden_dim', None) or 4096
     
     def _setup_gpu(self) -> None:
         """
@@ -175,8 +181,12 @@ class GPUWorker:
             - avg_rank: 当前批次的平均 rank
             - min_rank: 当前批次的最小 rank
             - max_rank: 当前批次的最大 rank
+            - pending_prefill_tokens: Rank 加权后的等待 token 总数 Σ(len_j·(1+γ·r_j))
+            - active_decode_seqs: 当前 batch 中 decode 序列数
+            - pool_used_ratio: 内存池使用率 (0.0-1.0)
+            - profiled_alpha: 运行时测量的 decode/prefill 时间比
         
-        Requirements: 1.1, 1.2, 1.3, 1.4
+        Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4
         """
         # 获取已缓存的 adapters
         cached_adapters = set(self.adapter_cache.keys()) if self.adapter_cache else set()
@@ -215,13 +225,62 @@ class GPUWorker:
                 min_rank = min(ranks)
                 max_rank = max(ranks)
         
+        # 采集 pending_prefill_tokens（Rank 加权）和 pending_raw_tokens（原始值）：
+        # RWPT 公式要求 Σ(input_len_j · (1 + γ·r_j))，其中 γ = 2/(3·d)
+        # 推导：LoRA 对 Q/K/V/O 四个投影各加 4dr FLOPs，共 16dr；Base 每层 24d²
+        #       增比 = 16dr/24d² = 2r/(3d)，提取 r 后 γ = 2/(3d)
+        # Worker 端完成加权，上报的是加权后的值，Router 端直接使用
+        # pending_raw_tokens = Σ(input_len)，不含 rank 加权，用于 token_count 消融变体
+        # Requirements: 2.1, 2.4
+        pending_prefill_tokens = 0
+        pending_raw_tokens = 0
+        try:
+            if self.req_queue and self.req_queue.waiting_req_list:
+                gamma = 2.0 / (3.0 * self._hidden_dim)
+                for req in self.req_queue.waiting_req_list:
+                    input_len = len(req.prompt_ids)
+                    rank = self.lora_ranks.get(req.adapter_dir, 0)
+                    # base adapter (rank=0) 时 factor=1.0，无额外开销
+                    pending_prefill_tokens += input_len * (1.0 + gamma * rank)
+                    pending_raw_tokens += input_len
+            pending_prefill_tokens = int(pending_prefill_tokens)
+            pending_raw_tokens = int(pending_raw_tokens)
+        except Exception:
+            pending_prefill_tokens = 0
+            pending_raw_tokens = 0
+
+        # 采集 active_decode_seqs：当前 batch 中正在 decode 的序列数
+        # Requirements: 2.2, 2.4
+        active_decode_seqs = 0
+        try:
+            if self.current_batch and self.current_batch.reqs:
+                active_decode_seqs = len(self.current_batch.reqs)
+        except Exception:
+            active_decode_seqs = 0
+
+        # 采集 pool_used_ratio：内存池使用率
+        # Requirements: 2.3, 2.4
+        pool_used_ratio = 0.0
+        try:
+            if self.model_rpc and hasattr(self.model_rpc, 'mem_manager'):
+                mm = self.model_rpc.mem_manager
+                pool_used_ratio = 1.0 - (mm.can_use_mem_size / mm.tot_size)
+        except Exception:
+            pool_used_ratio = 0.0
+
         return {
             'cached_adapters': cached_adapters,
             'queue_length': queue_length,
             'gpu_memory_free': gpu_memory_free,
             'avg_rank': avg_rank,
             'min_rank': min_rank,
-            'max_rank': max_rank
+            'max_rank': max_rank,
+            'pending_prefill_tokens': pending_prefill_tokens,
+            'pending_raw_tokens': pending_raw_tokens,
+            'active_decode_seqs': active_decode_seqs,
+            'pool_used_ratio': pool_used_ratio,
+            'profiled_alpha': self._profiled_alpha,
+            'hidden_dim': self._hidden_dim,
         }
     
     def _setup_state_reporter(self, state_report_port: Optional[int] = None) -> None:
@@ -489,6 +548,114 @@ class GPUWorker:
         except Exception as e:
             print(f"[Worker {self.worker_id}] Failed to load model: {str(e)}")
             raise
+
+    async def profile_decode_cost_alpha(self, prefill_len: int = 512,
+                                         num_warmup: int = 3,
+                                         num_runs: int = 10) -> float:
+        """
+        运行时 micro-benchmark 实测 decode/prefill 时间比。
+
+        通过引擎真实推理接口（含 KV Block 分配与 PagedAttention Kernel）
+        分别测量 prefill 每 token 耗时和 decode 每 step 耗时，计算 alpha。
+
+        Args:
+            prefill_len: prefill 测试的 token 数（默认 512，典型上下文长度）
+            num_warmup: 预热轮数
+            num_runs: 正式测量轮数
+
+        Returns:
+            alpha: decode_per_step / prefill_per_token（LLaMA-7B 典型值 50~200）
+        """
+        import time
+        import uuid
+
+        # Worker 进程通过 CUDA_VISIBLE_DEVICES 只暴露一张卡，进程内始终是 cuda:0
+        device = "cuda:0"
+        profiling_batch_id = f"__profiling_{self.worker_id}"
+
+        # 构造 dummy request，走引擎真实推理路径
+        dummy_prompt_ids = list(range(1, prefill_len + 1))
+        dummy_sampling = SamplingParams(
+            do_sample=False,
+            max_new_tokens=num_warmup + num_runs + 5,
+            ignore_eos=True,
+        )
+        # 使用 adapter_dir=None 让引擎走 base model 路径，
+        # 避免查找不存在的 adapter（"base" 会触发 KeyError）
+        dummy_req = Req(
+            adapter_dir=None,
+            request_id=f"__profile_{uuid.uuid4().hex[:8]}",
+            prompt_ids=dummy_prompt_ids,
+            sample_params=dummy_sampling,
+        )
+        rpc_req = dummy_req.to_rpc_obj()
+
+        # ── Helper: 完整的 prefill 一轮（init_batch + prefill_batch + remove_batch）──
+        async def _run_prefill_once(bid):
+            await self.model_rpc.init_batch(bid, [rpc_req])
+            await self.model_rpc.prefill_batch(bid)
+            await self.model_rpc.remove_batch(bid)
+
+        # ── Warmup prefill ──
+        for i in range(num_warmup):
+            bid = f"{profiling_batch_id}_wp_{i}"
+            await _run_prefill_once(bid)
+        torch.cuda.synchronize(device)
+
+        # ── 测量 Prefill ──
+        torch.cuda.synchronize(device)
+        t0 = time.perf_counter()
+        for i in range(num_runs):
+            bid = f"{profiling_batch_id}_mp_{i}"
+            await _run_prefill_once(bid)
+            torch.cuda.synchronize(device)
+        prefill_total = time.perf_counter() - t0
+        prefill_per_token = prefill_total / (num_runs * prefill_len)
+
+        # ── 建立 KV Cache 用于 decode 测量 ──
+        decode_bid = f"{profiling_batch_id}_decode"
+        await self.model_rpc.init_batch(decode_bid, [rpc_req])
+        await self.model_rpc.prefill_batch(decode_bid)
+
+        # ── Warmup decode ──
+        for _ in range(num_warmup):
+            await self.model_rpc.decode_batch(decode_bid)
+        torch.cuda.synchronize(device)
+
+        # ── 测量 Decode ──
+        torch.cuda.synchronize(device)
+        t0 = time.perf_counter()
+        for _ in range(num_runs):
+            await self.model_rpc.decode_batch(decode_bid)
+            torch.cuda.synchronize(device)
+        decode_total = time.perf_counter() - t0
+        decode_per_step = decode_total / num_runs
+
+        # ── 清理 ──
+        await self.model_rpc.remove_batch(decode_bid)
+
+        alpha = decode_per_step / prefill_per_token
+
+        # 合理性校验
+        # alpha = decode_per_step / prefill_per_token
+        # 物理含义：一个 decode step 等价于多少个 prefill token 的计算量
+        # LLaMA-7B on RTX 3090: prefill ~0.1-0.2 ms/tok, decode ~10-20 ms/step → alpha ≈ 50-200
+        # 更大模型或更慢 GPU 可能更高，但不应超过 1000
+        if alpha > 1000 or alpha < 0.1:
+            print(
+                f"[Profiler] GPU-{self.gpu_id} | alpha={alpha:.4f} 超出合理范围 "
+                f"[0.1, 1000]，回退默认值 0.1"
+            )
+            return 0.1
+
+        print(
+            f"[Profiler] GPU-{self.gpu_id} | "
+            f"Prefill: {prefill_per_token * 1e6:.1f} us/tok | "
+            f"Decode: {decode_per_step * 1e6:.1f} us/step | "
+            f"Alpha: {alpha:.4f}"
+        )
+        return round(alpha, 4)
+
     
     async def _init_model_rpc(self) -> None:
         """
@@ -615,6 +782,40 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}] ========== Model Loading Complete ==========")
             print(f"[Worker {self.worker_id}] Total initialization time: {total_time:.2f}s")
             print(f"[Worker {self.worker_id}] Model RPC initialized successfully on GPU {self.gpu_id}")
+            
+            # ── 自动检测 hidden_dim（仅当用户未手动指定时） ──
+            manual_hidden_dim = getattr(self.args, 'hidden_dim', None)
+            if manual_hidden_dim is not None:
+                self._hidden_dim = manual_hidden_dim
+                print(f"[Worker {self.worker_id}] hidden_dim manual override: {self._hidden_dim}")
+            else:
+                try:
+                    from slora.utils.model_utils import get_model_config
+                    model_cfg = get_model_config(
+                        self.args.model_dir,
+                        dummy=getattr(self.args, 'dummy', False)
+                    )
+                    detected = model_cfg.get("hidden_size")
+                    if detected and isinstance(detected, int) and detected > 0:
+                        self._hidden_dim = detected
+                        print(f"[Worker {self.worker_id}] hidden_dim auto-detected from model config: {self._hidden_dim}")
+                    else:
+                        print(f"[Worker {self.worker_id}] hidden_size not found in model config, using default: {self._hidden_dim}")
+                except Exception as cfg_e:
+                    print(f"[Worker {self.worker_id}] Failed to read model config for hidden_dim: {cfg_e}, using default: {self._hidden_dim}")
+            
+            # ── 运行时 Profiling: 自动测量 decode_cost_alpha ──
+            manual_alpha = getattr(self.args, 'decode_cost_alpha', None)
+            if manual_alpha is None:
+                try:
+                    self._profiled_alpha = await self.profile_decode_cost_alpha()
+                    print(f"[Worker {self.worker_id}] decode_cost_alpha auto-profiled: {self._profiled_alpha}")
+                except Exception as prof_e:
+                    print(f"[Worker {self.worker_id}] Profiling failed: {prof_e}, fallback alpha=0.1")
+                    self._profiled_alpha = 0.1
+            else:
+                self._profiled_alpha = float(manual_alpha)
+                print(f"[Worker {self.worker_id}] decode_cost_alpha manual override: {self._profiled_alpha}")
             
         except Exception as e:
             print(f"[Worker {self.worker_id}] ========== Model Loading Failed ==========")

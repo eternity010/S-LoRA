@@ -185,6 +185,7 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager]   Max rank diff: {routing_config.max_rank_diff}")
             print(f"[DataParallelRouterManager]   Max queue length: {routing_config.max_queue_length}")
             print(f"[DataParallelRouterManager]   Hot adapter threshold: {routing_config.hot_adapter_threshold} req/s")
+            print(f"[DataParallelRouterManager]   Load metric: {routing_config.load_metric}")
         print(f"[DataParallelRouterManager] ==========================================")
     
     def _detect_gpus(self) -> int:
@@ -296,14 +297,19 @@ class DataParallelRouterManager:
         return RoutingConfig(
             strategy=getattr(self.args, 'routing_strategy', 'round-robin'),
             w1=getattr(self.args, 'routing_w1', 1.0),
-            w2=getattr(self.args, 'routing_w2', 0.1),
+            w2=getattr(self.args, 'routing_w2', 4.0),
             w3=getattr(self.args, 'routing_w3', 0.0),  # Rank mismatch penalty weight
             default_lora_rank=getattr(self.args, 'default_lora_rank', 16),  # Default rank for unknown adapters
             max_rank_diff=getattr(self.args, 'max_rank_diff', 64),  # Max rank difference for normalization
             heartbeat_interval_ms=getattr(self.args, 'heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=getattr(self.args, 'heartbeat_timeout_ms', 300),
             max_queue_length=getattr(self.args, 'max_queue_length', 100),
-            hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 10.0)
+            hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 10.0),
+            max_total_token_num=getattr(self.args, 'max_total_token_num', 6000),
+            batch_max_tokens=getattr(self.args, 'batch_max_tokens', 1000),
+            hidden_dim=getattr(self.args, 'hidden_dim', None) or 4096,  # Worker 会通过心跳自动更新
+            decode_cost_alpha=getattr(self.args, 'decode_cost_alpha', None),
+            load_metric=getattr(self.args, 'load_metric', 'rwpt'),
         )
     
     def _load_adapter_ranks(self) -> dict:
@@ -374,8 +380,11 @@ class DataParallelRouterManager:
                 num_workers=self.num_workers,
                 config=routing_config
             )
+            alpha_status = "auto-profiled" if routing_config.decode_cost_alpha is None else f"{routing_config.decode_cost_alpha}"
             print(f"[DataParallelRouterManager] Created AdapterAwareRouter with config: "
                   f"w1={routing_config.w1}, w2={routing_config.w2}, "
+                  f"w3={routing_config.w3}, hidden_dim={routing_config.hidden_dim}, "
+                  f"decode_cost_alpha={alpha_status}, "
                   f"max_queue={routing_config.max_queue_length}")
             return router
         else:
@@ -1251,8 +1260,44 @@ class DataParallelRouterManager:
                     queue_length=message.get('queue_length', 0),
                     gpu_memory_free=message.get('gpu_memory_free', 0),
                     last_heartbeat=message.get('timestamp', time.time()),
-                    is_healthy=True
+                    is_healthy=True,
+                    # RWPT fields
+                    pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
+                    pending_raw_tokens=message.get('pending_raw_tokens', 0),
+                    active_decode_seqs=message.get('active_decode_seqs', 0),
+                    pool_used_ratio=message.get('pool_used_ratio', 0.0),
                 )
+                
+                # 缓存 profiled_alpha（一次性，首次收到后不再更新）
+                profiled_alpha = message.get('profiled_alpha')
+                if profiled_alpha is not None:
+                    if not hasattr(self, '_worker_profiled_alphas'):
+                        self._worker_profiled_alphas = {}
+                    if worker_id not in self._worker_profiled_alphas:
+                        self._worker_profiled_alphas[worker_id] = profiled_alpha
+                        logger.info(f"Worker {worker_id} profiled_alpha={profiled_alpha}")
+                        # 取所有已上报 Worker 的中位数更新 Router 的 decode_cost_alpha
+                        alphas = sorted(self._worker_profiled_alphas.values())
+                        median_alpha = alphas[len(alphas) // 2]
+                        if isinstance(self.router, AdapterAwareRouter):
+                            self.router.config.decode_cost_alpha = median_alpha
+                            self.router._decode_cost_alpha = median_alpha
+                            logger.info(f"Router decode_cost_alpha updated to {median_alpha} "
+                                       f"(median of {len(alphas)} workers)")
+                
+                # 缓存 hidden_dim（一次性，首次收到后不再更新）
+                hidden_dim = message.get('hidden_dim')
+                if hidden_dim is not None:
+                    if not hasattr(self, '_worker_hidden_dim'):
+                        self._worker_hidden_dim = None
+                    if self._worker_hidden_dim is None:
+                        self._worker_hidden_dim = hidden_dim
+                        if isinstance(self.router, AdapterAwareRouter):
+                            self.router.config.hidden_dim = hidden_dim
+                            self.router._gamma = 2.0 / (3.0 * hidden_dim)
+                            logger.info(f"Router hidden_dim updated to {hidden_dim} "
+                                       f"(auto-detected from Worker {worker_id}), "
+                                       f"gamma={self.router._gamma:.6f}")
                 
                 # 更新路由器状态
                 if isinstance(self.router, AdapterAwareRouter):

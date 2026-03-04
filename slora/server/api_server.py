@@ -133,7 +133,7 @@ async def update_routing_config(request: Request):
         }, status_code=400)
     
     # 验证参数
-    valid_keys = {"w1", "w2", "w3", "reset_stats"}
+    valid_keys = {"w1", "w2", "w3", "load_metric", "reset_stats"}
     invalid_keys = set(request_dict.keys()) - valid_keys
     if invalid_keys:
         return JSONResponse({
@@ -162,6 +162,15 @@ async def update_routing_config(request: Request):
             return JSONResponse({
                 "error": "Invalid parameter type",
                 "message": f"reset_stats must be a boolean"
+            }, status_code=400)
+    
+    # 验证 load_metric 参数
+    if "load_metric" in request_dict:
+        valid_metrics = ("queue_length", "token_count", "rwpt")
+        if request_dict["load_metric"] not in valid_metrics:
+            return JSONResponse({
+                "error": "Invalid load_metric value",
+                "message": f"load_metric must be one of {valid_metrics}, got '{request_dict['load_metric']}'"
             }, status_code=400)
     
     # 写入配置文件
@@ -488,8 +497,9 @@ def main():
                         help="Routing strategy for data parallel mode: 'round-robin' (default) or 'adapter-aware'")
     parser.add_argument("--routing-w1", type=float, default=1.0,
                         help="Cache affinity weight for adapter-aware routing (default: 1.0)")
-    parser.add_argument("--routing-w2", type=float, default=0.1,
-                        help="Load penalty weight for adapter-aware routing (default: 0.1)")
+    parser.add_argument("--routing-w2", type=float, default=4.0,
+                        help="Load penalty weight for adapter-aware routing (default: 1.0). "
+                             "RWPT/Capacity is normalized to ~[0,1], so w2 should be comparable to w1.")
     parser.add_argument("--routing-w3", type=float, default=0.0,
                         help="Rank mismatch penalty weight for rank-aware routing (default: 0.0, disabled)")
     parser.add_argument("--default-lora-rank", type=int, default=16,
@@ -498,6 +508,16 @@ def main():
                         help="Maximum queue length threshold for routing (default: 100)")
     parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,
                         help="Hot adapter request rate threshold in req/s (default: 10.0)")
+    
+    # RWPT (Rank-Weighted Pending Tokens) 相关参数
+    parser.add_argument("--hidden-dim", type=int, default=None,
+                        help="模型隐藏层维度，用于计算 LoRA rank 加权系数 γ=2/(3·d) (默认: 从模型 config.json 自动检测，检测失败时回退 4096)")
+    parser.add_argument("--decode-cost-alpha", type=float, default=None,
+                        help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
+    parser.add_argument("--load-metric", type=str, default="rwpt",
+                        choices=["queue_length", "token_count", "rwpt"],
+                        help="负载度量类型: queue_length (仅队列长度), "
+                             "token_count (token 级无 rank 加权), rwpt (完整 RWPT, 默认)")
 
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,

@@ -35,17 +35,51 @@ class ExperimentSuite:
             "duration": [180],
         },
         "routing-weight-comparison": {
-            # 仅测试 adapter-aware 策略下不同 w2 (负载惩罚权重) 组合
-            # w1 保持默认值 1.0，只变化 w2
-            # 服务器只需启动一次，w2 通过 API 动态更新
-            # 甜点区：w2 ∈ [0.08, 0.15]
+            # [已过期] alpha=0.1 回退值下的 w2 搜索结果，保留供参考
+            # 甜点 w2≈4.0（alpha=0.1 时 RWPT/Cap 偏小，需要较大 w2 补偿）
             "routing_strategy": ["adapter-aware"],
             "alpha": [0.3],
             "num_adapters": [100],
-            "req_rate": [8.0],
-            "duration": [120],
-            "routing_w1": [1.0],  # 缓存亲和性权重（固定）
-            "routing_w2": [0.08, 0.1, 0.12, 0.14, 0.16, 0.18, 0.2],  # 负载惩罚权重（甜点区微调）
+            "req_rate": [6.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [4.5, 4.7, 5.0, 5.2, 5.5],
+        },
+        "routing-weight-v2": {
+            # alpha 修正后的 w2 甜点重搜（decode_cost_alpha ≈ 90）
+            # Score = w1·Cache - w2·(RWPT/Capacity)
+            # RWPT = pending_prefill_tokens + α·active_decode_seqs
+            # Capacity = batch_max_tokens ≈ 2500
+            #
+            # 量纲分析（alpha≈90, avg≈320 tokens/req）：
+            #   3 req + 5 decode → RWPT/Cap ≈ 0.56
+            #   8 req + 10 decode → RWPT/Cap ≈ 1.38
+            # 旧甜点 w2=4.0 在新 alpha 下负载惩罚过重
+            # 预判新甜点 w2 ∈ [1.5, 4.0]
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+        },
+        "load-metric-ablation": {
+            # 负载度量消融实验：对比三种负载度量粒度
+            # queue_length: V2 基线（仅请求数）
+            # token_count:  token 级但无 rank 加权（消融 γ·r 项）
+            # rwpt:         完整 V3 RWPT（默认）
+            #
+            # 注意：w2 需要在 routing-weight-v2 确认新甜点后更新
+            # TODO: 用 routing-weight-v2 的最优 w2 替换此处的 4.0
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [4.0],
+            "load_metric": ["queue_length", "token_count", "rwpt"],
         },
     }
     

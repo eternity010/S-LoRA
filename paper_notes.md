@@ -1,6 +1,6 @@
 # 多租户 LoRA 推理系统论文思路整理
 
-> **� 最后更新**: 2025-02-08
+> **📅 最后更新**: 2026-03-04
 > **📌 状态**: 基于已实现功能整理
 
 ---
@@ -245,20 +245,58 @@ $RWPT_i = \sum_{j \in WaitQueue_i} input\_len_j \cdot (1 + \gamma \cdot r_j) + \
 | $r_j$ | 第 j 个请求对应 Adapter 的 LoRA Rank |
 | $\gamma$ | Rank 开销系数（从模型结构推导，非超参数） |
 | $DecodeSeqs_i$ | 当前 batch 中正在 decode 的序列数 |
-| $\alpha$ | decode 序列的负载折算系数（decode 是带宽瓶颈，代价远低于 prefill） |
-| $Capacity_i$ | Worker 容量上限（KV cache 总 slot 数），用于归一化 |
+| $\alpha$ | decode/prefill 时间比（Worker 启动时 micro-benchmark 实测，非超参数） |
+| $Capacity_i$ | 单次 prefill 批次最大 token 数（由 `max_total_token_num / 6` 自动推算），RWPT/Capacity ≈ 排队批次数 |
 
 **γ 的理论推导（非超参数）**：
 
-LoRA 在 Q/K/V/O 四个位置各加一对低秩矩阵 A(d×r) 和 B(r×d)，额外 FLOPs = 16dr。
-Base Model 每层每 token 的 FLOPs ≈ 24d²（attention 4 个投影 + MLP 3 个矩阵）。
+尽管早期文献仅对 Q 和 V 投影注入 LoRA，但现代 LLM 部署的默认配置通常对 Attention 的全部四个投影（Q, K, V, O）应用 LoRA 以保证模型能力。每个 LoRA 投影额外 FLOPs = 4dr（A 矩阵 2dr + B 矩阵 2dr），四个投影共 16dr。Base Model 每层每 token 总 FLOPs ≈ 24d²（Attention 8d² + MLP 16d²）。
 
-$\gamma = \frac{2}{3d}$
+计算量增比 = 16dr / 24d² = 2r/(3d)，即 γ·r，提取 r 后得：
 
-对 Llama-7B（d=4096）：γ ≈ 0.000163。代码中直接从 hidden_dim 计算：
+$$\gamma = \frac{2}{3d}$$
+
+对 LLaMA-7B（d=4096）：γ ≈ 1.63×10⁻⁴。`hidden_dim` 从模型 `config.json` 的 `hidden_size` 字段自动检测，无需手动指定：
 ```python
-gamma = 2.0 / (3.0 * hidden_dim)  # 理论推导，不需要调参
+gamma = 2.0 / (3.0 * hidden_dim)  # 理论推导，从模型配置自动获取
 ```
+
+**α 的运行时实测（非超参数）**：
+
+α = decode_per_step / prefill_per_token，表示生成一个 decode token 相对于处理一个 prefill token 的实际耗时比。
+
+为什么不用 Roofline Model 理论估算：理论值 α_theory ≈ FLOPS_peak / BW_mem ≈ 153（A100），因为 prefill 是 compute-bound 而 decode 是 memory-bound，两者差距极大。但该理论值不可用于调度权重，原因：(1) 真实服务中 decode batch > 1，权重读取成本被均摊；(2) GPU 利用率远低于峰值；(3) KV Cache 读取未计入；(4) α 是调度权重而非物理耗时比。
+
+实测方案：Worker 启动时执行一次轻量 micro-benchmark，调用引擎真实推理接口（含 PagedAttention + KV Block 分配），测量 prefill 512 tokens 和 decode 1 step 的耗时，计算比值。
+
+```python
+# Worker 启动时自动实测，不需要手动指定
+alpha = profile_decode_cost_alpha()
+```
+
+**本环境实测值（RTX 3090 × 3 + LLaMA-7B, d=4096）**：
+
+| Worker | GPU | alpha |
+|--------|-----|-------|
+| Worker 0 | GPU-1 | 90.89 |
+| Worker 1 | GPU-2 | 97.09 |
+| Worker 2 | GPU-3 | 82.90 |
+
+三卡中位数 α ≈ 90.89。物理含义：一个 decode step 的计算量约等于 prefill 91 个 token。
+
+α 的量级分析：prefill 是 compute-bound（≈ 0.1~0.2 ms/token），decode 是 memory-bound（≈ 10~20 ms/step），两者耗时比 ≈ 50~200，与实测值一致。注意 α 远大于 1，因为 decode 虽然 FLOPs 少但受限于显存带宽，单步耗时远高于 prefill 单 token。
+
+**非超参数汇总**：
+
+公式中仅 w1、w2、w3 为超参数，其余参数均由系统自动获取：
+
+| 参数 | 获取方式 | 说明 |
+|------|---------|------|
+| γ | 从模型 `config.json` 的 `hidden_size` 推导 | 数学推导，非经验值 |
+| α | Worker 启动时 micro-benchmark 实测 | 反映当前硬件真实耗时比 |
+| Capacity | 由 `max_total_token_num / 6` 自动推算（`batch_max_tokens`） | 单次 prefill 批次容量，RWPT/Capacity ≈ 排队批次数 |
+| r_j | 各 adapter 的 `adapter_config.json` | 训练时确定 |
+| input_len_j, DecodeSeqs_i | Worker 实时采集 | 运行时状态量 |
 
 Rank 影响示例：Rank 8 额外 0.13%，Rank 32 额外 0.52%，Rank 128 额外 2.1%。
 绝对比例虽小，但队列中数百请求累积后差异显著。
@@ -284,6 +322,12 @@ Worker B: 等待 1 个请求 (input_len=1024, rank=128)
 | Variant C (Ours) | RWPT（Rank 加权 Token 数） | 最优，尤其在异构 Rank 场景 |
 
 重点验证指标：P95/P99 尾部延迟、Worker 间负载均衡度（Jain's Fairness Index）。
+
+**w2 甜点搜索**：
+
+alpha 修正前（decode_cost_alpha 回退值 0.1）曾搜索得到 w2≈4.0，但该结果无效——alpha=0.1 时 decode 序列几乎不计入 RWPT，等价于纯 prefill token 负载。alpha 修正为 ~90 后 RWPT 数值尺度显著变化（decode 序列贡献从可忽略变为主导），需要重新搜索 w2 甜点。
+
+待办：运行 `routing-weight-v2` 套件（w2 ∈ [1.5, 4.0]）确认新甜点。
 
 **Worker 新增上报字段**：
 - `pending_prefill_tokens`: 等待队列中 input_len 总和

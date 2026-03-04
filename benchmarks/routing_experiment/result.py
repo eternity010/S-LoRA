@@ -39,6 +39,7 @@ class ExperimentResult:
     # Optional fields with defaults (must come after required fields)
     p50_first_token_latency: float = 0.0
     p90_first_token_latency: float = 0.0
+    p95_first_token_latency: float = 0.0
     avg_rank_mismatch: Optional[float] = None
     
     def to_dict(self) -> dict:

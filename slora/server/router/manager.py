@@ -793,7 +793,7 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
         print(f"[DataParallelRouter] Routing Strategy: {routing_strategy}")
         if routing_strategy == 'adapter-aware':
             routing_w1 = getattr(args, 'routing_w1', 1.0)
-            routing_w2 = getattr(args, 'routing_w2', 0.1)
+            routing_w2 = getattr(args, 'routing_w2', 4.0)
             routing_w3 = getattr(args, 'routing_w3', 0.0)
             default_lora_rank = getattr(args, 'default_lora_rank', 16)
             max_queue_length = getattr(args, 'max_queue_length', 100)

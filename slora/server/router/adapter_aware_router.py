@@ -112,7 +112,11 @@ class AdapterAwareRouter:
     基于亲和性的智能路由器
     
     Implements the scoring function:
-    Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i - w3 · RankMismatch_i
+    Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · RWPT_i/Capacity_i - w3 · RankMismatch_i
+    
+    RWPT_i = pending_prefill_tokens + α · active_decode_seqs
+    
+    当 Worker 未上报 RWPT 字段时，回退到 QueueLen 逻辑保证向后兼容。
     
     Attributes:
         num_workers: Worker 数量
@@ -121,8 +125,11 @@ class AdapterAwareRouter:
         adapter_to_workers: Adapter 到 Worker 的倒排索引
         adapter_ranks: Adapter 到 rank 的映射（用于 Rank-Aware Routing）
         stats: 路由统计信息
+        _gamma: γ = 2/(3·d)，LoRA 对 Q/K/V/O 四投影的 FLOPs 增比推导
+        _capacity: 归一化容量（KV Cache token 容量）
+        _decode_cost_alpha: Decode 序列负载折算系数 α
     
-    Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 3.4
+    Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 3.4, 4.2, 4.3, 4.4, 4.5
     """
     
     def __init__(self, 
@@ -169,17 +176,32 @@ class AdapterAwareRouter:
         self._last_stats_log_time = time.time()
         self._stats_log_interval = 10.0  # 每 10 秒输出一次统计
         
+        # RWPT parameters (Requirements: 4.2)
+        # γ = 2/(3d): LoRA 对 Q/K/V/O 四投影各加 4dr FLOPs，共 16dr / 24d² = 2r/(3d)
+        self._gamma = 2.0 / (3.0 * self.config.hidden_dim)
+        # RWPT 归一化分母：用 batch_max_tokens（单次 prefill 批次容量）而非 max_total_token_num（KV Cache 总槽位）
+        # 物理意义：RWPT/batch_max_tokens ≈ "排队批次数"（Expected Batches to Process）
+        self._capacity = self.config.batch_max_tokens
+        # decode_cost_alpha: None means waiting for Worker profiling, fallback to 0.1
+        self._decode_cost_alpha = self.config.decode_cost_alpha if self.config.decode_cost_alpha is not None else 0.1
+        
+        alpha_status = "auto-profiling (pending)" if self.config.decode_cost_alpha is None else f"{self._decode_cost_alpha}"
         logger.info(f"AdapterAwareRouter initialized with {num_workers} workers, "
                    f"strategy={self.config.strategy}, w1={self.config.w1}, w2={self.config.w2}, "
-                   f"w3={self.config.w3}")
+                   f"w3={self.config.w3}, load_metric={self.config.load_metric}, "
+                   f"gamma={self._gamma:.6f}, "
+                   f"capacity(batch_max_tokens)={self._capacity}, decode_cost_alpha={alpha_status}")
     
     def calculate_score(self, worker_id: int, adapter_dir: str) -> float:
         """
         计算 Worker 对请求的评分
         
-        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · QueueLen_i - w3 · RankMismatch_i
+        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · RWPT_i/Capacity_i - w3 · RankMismatch_i
         
-        其中 RankMismatch = |request_rank - worker_avg_rank| / max_rank_diff
+        RWPT_i = pending_prefill_tokens + α · active_decode_seqs
+        
+        当 Worker 未上报 RWPT 字段时（pending_prefill_tokens == 0 且 queue_length > 0），
+        回退到原有 QueueLen 逻辑，保证向后兼容。
         
         Args:
             worker_id: Worker ID
@@ -188,17 +210,54 @@ class AdapterAwareRouter:
         Returns:
             评分值
         
-        Requirements: 2.2, 5.1, 5.2, 5.4, 5.5
+        Requirements: 2.2, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.4, 5.5
         """
         state = self.worker_states.get(worker_id)
         if state is None:
             return float('-inf')
         
-        # I(adapter ∈ Cache_i): 指示函数
+        # Cache affinity: I(adapter ∈ Cache_i)
         cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
+        score = self.config.w1 * cache_indicator
         
-        # 基础评分公式
-        score = self.config.w1 * cache_indicator - self.config.w2 * state.queue_length
+        # Load penalty — 根据 load_metric 分支
+        metric = self.config.load_metric
+        
+        if metric == 'queue_length':
+            # Variant A: 仅队列长度（V2 基线，无 Capacity 归一化）
+            score -= self.config.w2 * state.queue_length
+            logger.debug(f"Worker {worker_id} queue_length mode: queue={state.queue_length}")
+        
+        elif metric == 'token_count':
+            # Variant B: token 级，无 rank 加权
+            if state.pending_raw_tokens > 0 or (state.queue_length == 0):
+                raw = state.pending_raw_tokens + self._decode_cost_alpha * state.active_decode_seqs
+                load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
+                score -= self.config.w2 * load_pressure
+                logger.debug(f"Worker {worker_id} token_count: raw={raw:.1f}, "
+                            f"raw_tokens={state.pending_raw_tokens}, "
+                            f"decode_seqs={state.active_decode_seqs}, "
+                            f"load_pressure={load_pressure:.4f}")
+            else:
+                # 回退：Worker 未上报 pending_raw_tokens
+                score -= self.config.w2 * state.queue_length
+                logger.debug(f"Worker {worker_id} token_count fallback: queue={state.queue_length}")
+        
+        else:  # 'rwpt' (默认)
+            # Variant C: 完整 RWPT（保持现有逻辑）
+            if state.pending_prefill_tokens > 0 or (state.queue_length == 0):
+                rwpt = state.pending_prefill_tokens + self._decode_cost_alpha * state.active_decode_seqs
+                load_pressure = rwpt / self._capacity if self._capacity > 0 else 0.0
+                score -= self.config.w2 * load_pressure
+                logger.debug(f"Worker {worker_id} RWPT: rwpt={rwpt:.1f}, "
+                            f"prefill_tokens={state.pending_prefill_tokens}, "
+                            f"decode_seqs={state.active_decode_seqs}, "
+                            f"alpha={self._decode_cost_alpha}, "
+                            f"load_pressure={load_pressure:.4f}")
+            else:
+                # Fallback: old Worker not reporting new fields
+                score -= self.config.w2 * state.queue_length
+                logger.debug(f"Worker {worker_id} RWPT fallback: queue={state.queue_length}")
         
         # Rank 不匹配惩罚（仅当 w3 > 0 时应用）
         # Requirements: 5.1, 5.2, 5.4, 5.5
@@ -210,7 +269,7 @@ class AdapterAwareRouter:
             
             logger.debug(f"Worker {worker_id} score breakdown: "
                         f"cache={self.config.w1 * cache_indicator:.2f}, "
-                        f"queue={-self.config.w2 * state.queue_length:.2f}, "
+                        f"load={-self.config.w2 * (state.pending_prefill_tokens + self._decode_cost_alpha * state.active_decode_seqs) / max(self._capacity, 1):.2f}, "
                         f"rank_penalty={-rank_penalty:.2f}, "
                         f"total={score:.2f}")
         
@@ -556,6 +615,16 @@ class AdapterAwareRouter:
         stats['rank_aware_enabled'] = self.config.w3 > 0
         stats['loaded_adapter_ranks'] = len(self.adapter_ranks)
         
+        # RWPT 可观测性 (Requirements: 7.1, 7.2)
+        # 检查是否有任何 Worker 在上报 RWPT 字段
+        rwpt_active = any(
+            s.pending_prefill_tokens > 0 or s.active_decode_seqs > 0
+            for s in self.worker_states.values()
+        )
+        stats['rwpt_enabled'] = rwpt_active
+        stats['decode_cost_alpha'] = self._decode_cost_alpha
+        stats['load_metric'] = self.config.load_metric
+        
         return stats
     
     def get_cache_hit_rate(self) -> float:
@@ -647,6 +716,7 @@ class AdapterAwareRouter:
                      w1: float = None,
                      w2: float = None,
                      w3: float = None,
+                     load_metric: str = None,
                      reset_stats: bool = True) -> dict:
         """
         动态更新路由配置
@@ -657,10 +727,11 @@ class AdapterAwareRouter:
             w1: 缓存亲和性权重（None 表示不更新）
             w2: 负载惩罚权重（None 表示不更新）
             w3: Rank 不匹配惩罚权重（None 表示不更新）
+            load_metric: 负载度量类型（None 表示不更新）
             reset_stats: 是否重置统计信息，默认 True
         
         Returns:
-            更新后的配置字典，包含 w1, w2, w3 的当前值
+            更新后的配置字典，包含 w1, w2, w3, load_metric 的当前值
         
         Note:
             - 参数值必须为非负数，否则忽略该更新
@@ -680,6 +751,11 @@ class AdapterAwareRouter:
             self.config.w3 = w3
             updated.append(f"w3={w3}")
         
+        if load_metric is not None and load_metric in RoutingConfig.VALID_LOAD_METRICS:
+            old_metric = self.config.load_metric
+            self.config.load_metric = load_metric
+            updated.append(f"load_metric={old_metric}->{load_metric}")
+        
         if reset_stats:
             self.stats.reset()
             updated.append("stats_reset=True")
@@ -690,7 +766,8 @@ class AdapterAwareRouter:
         return {
             'w1': self.config.w1,
             'w2': self.config.w2,
-            'w3': self.config.w3
+            'w3': self.config.w3,
+            'load_metric': self.config.load_metric,
         }
     
     def reset_stats(self) -> None:

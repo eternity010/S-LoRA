@@ -179,7 +179,11 @@ class WorkerStateReporter:
                     # Rank distribution fields for Rank-Aware Routing
                     avg_rank=state_dict.get('avg_rank', 0.0),
                     min_rank=state_dict.get('min_rank', 0),
-                    max_rank=state_dict.get('max_rank', 0)
+                    max_rank=state_dict.get('max_rank', 0),
+                    # RWPT fields
+                    pending_prefill_tokens=state_dict.get('pending_prefill_tokens', 0),
+                    active_decode_seqs=state_dict.get('active_decode_seqs', 0),
+                    pool_used_ratio=state_dict.get('pool_used_ratio', 0.0),
                 )
             except Exception as e:
                 logger.error(f"Error getting state: {e}")
@@ -194,7 +198,10 @@ class WorkerStateReporter:
             is_healthy=True,
             avg_rank=0.0,
             min_rank=0,
-            max_rank=0
+            max_rank=0,
+            pending_prefill_tokens=0,
+            active_decode_seqs=0,
+            pool_used_ratio=0.0,
         )
     
     def _create_state_message(self, state: WorkerState) -> dict:
@@ -209,7 +216,7 @@ class WorkerStateReporter:
         
         Requirements: 1.1, 1.2, 1.3
         """
-        return {
+        msg = {
             'type': 'worker_state',
             'worker_id': state.worker_id,
             'cached_adapters': list(state.cached_adapters),
@@ -219,8 +226,31 @@ class WorkerStateReporter:
             # Rank distribution fields for Rank-Aware Routing
             'avg_rank': state.avg_rank,
             'min_rank': state.min_rank,
-            'max_rank': state.max_rank
+            'max_rank': state.max_rank,
+            # RWPT fields
+            'pending_prefill_tokens': state.pending_prefill_tokens,
+            'active_decode_seqs': state.active_decode_seqs,
+            'pool_used_ratio': state.pool_used_ratio,
         }
+        # profiled_alpha: 静态值，缓存后每次消息都带上（dp_manager 只取首次）
+        if hasattr(self, '_cached_profiled_alpha'):
+            msg['profiled_alpha'] = self._cached_profiled_alpha
+            if hasattr(self, '_cached_hidden_dim'):
+                msg['hidden_dim'] = self._cached_hidden_dim
+        elif self._state_getter:
+            try:
+                raw = self._state_getter()
+                alpha = raw.get('profiled_alpha')
+                if alpha is not None:
+                    self._cached_profiled_alpha = alpha
+                    msg['profiled_alpha'] = alpha
+                hidden_dim = raw.get('hidden_dim')
+                if hidden_dim is not None:
+                    self._cached_hidden_dim = hidden_dim
+                    msg['hidden_dim'] = hidden_dim
+            except Exception:
+                pass
+        return msg
     
     async def _send_state(self, state: WorkerState) -> bool:
         """

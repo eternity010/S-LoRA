@@ -534,7 +534,7 @@ class TestRoutingConfig:
         
         assert config.strategy == 'adapter-aware'
         assert config.w1 == 1.0
-        assert config.w2 == 0.1
+        assert config.w2 == 1.0
         assert config.w3 == 0.0
         assert config.default_lora_rank == 16
         assert config.max_rank_diff == 64
@@ -646,7 +646,7 @@ class TestRoutingConfig:
         
         assert d['strategy'] == 'adapter-aware'
         assert d['w1'] == 1.0
-        assert d['w2'] == 0.1
+        assert d['w2'] == 1.0
         assert d['w3'] == 0.0
         assert d['default_lora_rank'] == 16
         assert d['max_rank_diff'] == 64

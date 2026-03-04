@@ -180,7 +180,7 @@ class ExperimentRunner:
         try:
             for i, config in enumerate(configs, 1):
                 # Create unique ID for this config (include w1/w2 for routing-weight-comparison)
-                config_id = f"{config.routing_strategy}_alpha{config.alpha}_adapters{config.num_adapters}_w1{config.routing_w1}_w2{config.routing_w2}"
+                config_id = f"{config.routing_strategy}_alpha{config.alpha}_adapters{config.num_adapters}_w1{config.routing_w1}_w2{config.routing_w2}_lm{config.load_metric}"
                 
                 if config_id in completed:
                     print(f"\n[{i}/{total}] Skipping (already completed): {config_id}")
@@ -268,13 +268,14 @@ class ExperimentRunner:
         else:
             print("  1-2. Reusing existing server (no restart needed)")
         
-        # 动态更新路由配置 (w1/w2/w3)，无需重启服务器
+        # 动态更新路由配置 (w1/w2/w3/load_metric)，无需重启服务器
         if config.routing_strategy == 'adapter-aware':
-            print("  2.5. Updating routing config (w1/w2/w3)...")
+            print("  2.5. Updating routing config (w1/w2/w3/load_metric)...")
             self._update_routing_config(
                 w1=config.routing_w1,
                 w2=config.routing_w2,
                 w3=config.routing_w3,
+                load_metric=config.load_metric,
                 reset_stats=True  # 重置统计以获得干净的实验数据
             )
         
@@ -670,19 +671,21 @@ class ExperimentRunner:
         return {}
     
     def _update_routing_config(self, w1: float = None, w2: float = None, 
-                               w3: float = None, reset_stats: bool = True) -> bool:
+                               w3: float = None, load_metric: str = None,
+                               reset_stats: bool = True) -> bool:
         """
         动态更新路由配置参数
-        
+
         通过 POST /update_routing_config API 更新服务器的路由配置，
         无需重启服务器。
-        
+
         Args:
             w1: 缓存亲和性权重 (可选)
             w2: 负载惩罚权重 (可选)
             w3: Rank 不匹配惩罚权重 (可选)
+            load_metric: 负载度量类型 (可选, queue_length/token_count/rwpt)
             reset_stats: 是否重置统计信息 (默认 True)
-        
+
         Returns:
             bool: 更新是否成功
         """
@@ -694,26 +697,28 @@ class ExperimentRunner:
             data['w2'] = w2
         if w3 is not None:
             data['w3'] = w3
+        if load_metric is not None:
+            data['load_metric'] = load_metric
         data['reset_stats'] = reset_stats
-        
+
         if not data or (len(data) == 1 and 'reset_stats' in data):
             self._log("_update_routing_config: no parameters to update")
             return True
-        
+
         self._log(f"_update_routing_config: {data}")
-        
+
         try:
             resp = requests.post(
                 f"{self.server_host}/update_routing_config",
                 json=data,
                 timeout=10
             )
-            
+
             if resp.status_code == 200:
                 result = resp.json()
                 print(f"     Routing config updated: {result.get('config', {})}")
                 self._log(f"config update success: {result}")
-                
+
                 # 等待配置生效 (服务器每 5 秒检查一次配置文件)
                 time.sleep(6)
                 return True
@@ -722,7 +727,7 @@ class ExperimentRunner:
                 print(f"     Warning: Failed to update routing config: {error}")
                 self._log(f"config update failed: {resp.status_code} {error}")
                 return False
-                
+
         except requests.RequestException as e:
             print(f"     Warning: Could not update routing config: {e}")
             self._log(f"config update error: {e}")

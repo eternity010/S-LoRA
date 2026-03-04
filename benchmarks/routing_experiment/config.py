@@ -31,11 +31,14 @@ class ExperimentConfig:
     
     # Router parameters (adapter-aware only)
     routing_w1: float = 1.0  # Cache affinity weight
-    routing_w2: float = 0.1  # Load penalty weight
+    routing_w2: float = 4.0  # Load penalty weight (RWPT/Capacity normalized to ~[0,1])
     routing_w3: float = 0.0  # Rank mismatch penalty
 
     # Memory parameters
     max_lora_ratio: float = 0.4  # Max LoRA memory ratio (0-1)
+    
+    # Load metric ablation
+    load_metric: str = "rwpt"  # 'queue_length' | 'token_count' | 'rwpt'
     
     def validate(self) -> None:
         """Validate configuration parameters"""
@@ -67,6 +70,9 @@ class ExperimentConfig:
 
         if not 0.0 < self.max_lora_ratio < 1.0:
             raise ValueError(f"max_lora_ratio must be in (0, 1), got {self.max_lora_ratio}")
+        
+        if self.load_metric not in ("queue_length", "token_count", "rwpt"):
+            raise ValueError(f"Invalid load_metric: {self.load_metric}")
     
     def to_server_args(self) -> List[str]:
         """Convert to launch_server.py command line arguments"""
@@ -86,6 +92,9 @@ class ExperimentConfig:
                 "--routing-w2", str(self.routing_w2),
                 "--routing-w3", str(self.routing_w3),
             ])
+        
+        if self.load_metric != "rwpt":
+            args.extend(["--load-metric", self.load_metric])
         
         return args
     

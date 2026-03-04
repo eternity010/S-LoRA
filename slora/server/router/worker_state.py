@@ -43,6 +43,11 @@ class WorkerState:
     avg_rank: float = 0.0      # Average rank of current batch
     min_rank: int = 0          # Minimum rank in current batch
     max_rank: int = 0          # Maximum rank in current batch
+    # RWPT (Rank-Calibrated Workload) fields
+    pending_prefill_tokens: int = 0    # 等待队列中 prompt token 总数（rank 加权）
+    pending_raw_tokens: int = 0        # 等待队列中 prompt token 总数（不含 rank 加权）
+    active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
+    pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
     
     def has_adapter(self, adapter_dir: str) -> bool:
         """检查是否缓存了指定的 Adapter"""
@@ -63,12 +68,16 @@ class WorkerState:
             'is_healthy': self.is_healthy,
             'avg_rank': self.avg_rank,
             'min_rank': self.min_rank,
-            'max_rank': self.max_rank
+            'max_rank': self.max_rank,
+            'pending_prefill_tokens': self.pending_prefill_tokens,
+            'pending_raw_tokens': self.pending_raw_tokens,
+            'active_decode_seqs': self.active_decode_seqs,
+            'pool_used_ratio': self.pool_used_ratio,
         }
     
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkerState':
-        """从字典创建 WorkerState 实例（向后兼容，支持无 rank 字段的旧格式）"""
+        """从字典创建 WorkerState 实例（向后兼容，支持无新字段的旧格式）"""
         return cls(
             worker_id=data['worker_id'],
             cached_adapters=set(data.get('cached_adapters', [])),
@@ -78,7 +87,11 @@ class WorkerState:
             is_healthy=data.get('is_healthy', True),
             avg_rank=data.get('avg_rank', 0.0),
             min_rank=data.get('min_rank', 0),
-            max_rank=data.get('max_rank', 0)
+            max_rank=data.get('max_rank', 0),
+            pending_prefill_tokens=data.get('pending_prefill_tokens', 0),
+            pending_raw_tokens=data.get('pending_raw_tokens', 0),
+            active_decode_seqs=data.get('active_decode_seqs', 0),
+            pool_used_ratio=data.get('pool_used_ratio', 0.0),
         )
 
 
@@ -247,7 +260,7 @@ class RoutingConfig:
     """
     strategy: str = 'adapter-aware'
     w1: float = 1.0
-    w2: float = 0.1
+    w2: float = 4.0
     w3: float = 0.0                    # Rank mismatch penalty weight (NEW)
     default_lora_rank: int = 16        # Default rank for unknown adapters (NEW)
     max_rank_diff: int = 64            # Max rank difference for normalization (NEW)
@@ -255,6 +268,16 @@ class RoutingConfig:
     heartbeat_timeout_ms: int = 300
     max_queue_length: int = 100
     hot_adapter_threshold: float = 10.0
+    # RWPT (Rank-Calibrated Workload) parameters
+    hidden_dim: int = 4096             # 模型隐藏层维度，用于计算 γ
+    decode_cost_alpha: float = None     # Decode 序列负载折算系数（None 时由 Worker profiling 自动测量）
+    max_total_token_num: int = 6000    # KV Cache capacity in tokens (from --max_total_token_num)
+    batch_max_tokens: int = 1000       # 单次 prefill 批次最大 token 数，RWPT 归一化分母
+    # Load metric ablation
+    load_metric: str = 'rwpt'          # 负载度量类型: 'queue_length' | 'token_count' | 'rwpt'
+    
+    # 有效的 load_metric 取值
+    VALID_LOAD_METRICS = ('queue_length', 'token_count', 'rwpt')
     
     def __post_init__(self):
         """验证配置参数"""
@@ -278,6 +301,16 @@ class RoutingConfig:
             raise ValueError(f"max_queue_length must be positive, got {self.max_queue_length}")
         if self.hot_adapter_threshold <= 0:
             raise ValueError(f"hot_adapter_threshold must be positive, got {self.hot_adapter_threshold}")
+        if self.hidden_dim <= 0:
+            raise ValueError(f"hidden_dim must be positive, got {self.hidden_dim}")
+        if self.decode_cost_alpha is not None and self.decode_cost_alpha < 0:
+            raise ValueError(f"decode_cost_alpha must be non-negative or None, got {self.decode_cost_alpha}")
+        if self.max_total_token_num <= 0:
+            raise ValueError(f"max_total_token_num must be positive, got {self.max_total_token_num}")
+        if self.batch_max_tokens <= 0:
+            raise ValueError(f"batch_max_tokens must be positive, got {self.batch_max_tokens}")
+        if self.load_metric not in self.VALID_LOAD_METRICS:
+            raise ValueError(f"Invalid load_metric: {self.load_metric}. Must be one of {self.VALID_LOAD_METRICS}")
     
     @property
     def heartbeat_interval_sec(self) -> float:
@@ -301,7 +334,12 @@ class RoutingConfig:
             'heartbeat_interval_ms': self.heartbeat_interval_ms,
             'heartbeat_timeout_ms': self.heartbeat_timeout_ms,
             'max_queue_length': self.max_queue_length,
-            'hot_adapter_threshold': self.hot_adapter_threshold
+            'hot_adapter_threshold': self.hot_adapter_threshold,
+            'hidden_dim': self.hidden_dim,
+            'decode_cost_alpha': self.decode_cost_alpha,
+            'max_total_token_num': self.max_total_token_num,
+            'batch_max_tokens': self.batch_max_tokens,
+            'load_metric': self.load_metric,
         }
     
     @classmethod
@@ -310,12 +348,17 @@ class RoutingConfig:
         return cls(
             strategy=data.get('strategy', 'adapter-aware'),
             w1=data.get('w1', 1.0),
-            w2=data.get('w2', 0.1),
+            w2=data.get('w2', 4.0),
             w3=data.get('w3', 0.0),
             default_lora_rank=data.get('default_lora_rank', 16),
             max_rank_diff=data.get('max_rank_diff', 64),
             heartbeat_interval_ms=data.get('heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=data.get('heartbeat_timeout_ms', 300),
             max_queue_length=data.get('max_queue_length', 100),
-            hot_adapter_threshold=data.get('hot_adapter_threshold', 10.0)
+            hot_adapter_threshold=data.get('hot_adapter_threshold', 10.0),
+            hidden_dim=data.get('hidden_dim', 4096),
+            decode_cost_alpha=data.get('decode_cost_alpha', None),
+            max_total_token_num=data.get('max_total_token_num', 6000),
+            batch_max_tokens=data.get('batch_max_tokens', 1000),
+            load_metric=data.get('load_metric', 'rwpt'),
         )

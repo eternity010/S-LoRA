@@ -487,6 +487,139 @@ class ChartGenerator:
         plt.suptitle('Performance Metrics vs Load Penalty Weight (w2)', fontsize=14, y=1.02)
         plt.tight_layout()
         self._save_figure(fig, "w2_comparison_summary")
+
+    def plot_w2_sweet_spot(self, results: List[ExperimentResult], records: List = None,
+                           p95_ttft_threshold: float = 15.0,
+                           cache_hit_floor: float = 50.0) -> Optional[float]:
+        """
+        Generate dual Y-axis sweet-spot chart for finding optimal w2.
+
+        Left Y-axis:  Cache Hit Rate (%) + Throughput (req/s)
+        Right Y-axis: P95 TTFT (s)  (falls back to P90 if P95 unavailable)
+
+        Decision logic:
+          1. Exclude w2 where P95 TTFT > p95_ttft_threshold
+          2. Exclude w2 where cache_hit_rate < cache_hit_floor (%)
+          3. Among survivors, pick w2 with highest throughput
+
+        Args:
+            results: List of experiment results
+            records: List of ExperimentRecord objects (optional)
+            p95_ttft_threshold: Max acceptable P95 TTFT in seconds (default 15)
+            cache_hit_floor: Min acceptable cache hit rate in % (default 50)
+
+        Returns:
+            The sweet-spot w2 value, or None if no valid w2 found
+        """
+        # ---- collect per-w2 metrics ----
+        w2_data: dict = {}
+
+        if records:
+            for rec in records:
+                if rec.result.routing_strategy != "adapter-aware":
+                    continue
+                w2 = rec.config.get('routing_w2', 1.0)
+                if w2 not in w2_data:
+                    w2_data[w2] = {'throughput': [], 'cache_hit': [], 'p95_ttft': []}
+                w2_data[w2]['throughput'].append(rec.result.throughput)
+                w2_data[w2]['cache_hit'].append(rec.result.cache_hit_rate * 100)
+                # prefer p95; fall back to p90
+                p95 = rec.result.p95_first_token_latency
+                if p95 is None or p95 == 0.0:
+                    p95 = rec.result.p90_first_token_latency
+                w2_data[w2]['p95_ttft'].append(p95)
+        else:
+            for r in results:
+                if r.routing_strategy != "adapter-aware":
+                    continue
+                w2 = getattr(r, 'routing_w2', None)
+                if w2 is None:
+                    continue
+                if w2 not in w2_data:
+                    w2_data[w2] = {'throughput': [], 'cache_hit': [], 'p95_ttft': []}
+                w2_data[w2]['throughput'].append(r.throughput)
+                w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
+                p95 = r.p95_first_token_latency
+                if p95 is None or p95 == 0.0:
+                    p95 = r.p90_first_token_latency
+                w2_data[w2]['p95_ttft'].append(p95)
+
+        if not w2_data:
+            print("No w2 data found, skipping sweet-spot chart")
+            return None
+
+        w2_values = sorted(w2_data.keys())
+        throughputs = [np.mean(w2_data[w]['throughput']) for w in w2_values]
+        cache_hits  = [np.mean(w2_data[w]['cache_hit'])  for w in w2_values]
+        p95_ttfts   = [np.mean(w2_data[w]['p95_ttft'])   for w in w2_values]
+
+        # ---- 3-step decision logic ----
+        candidates = list(range(len(w2_values)))
+        # step 1: exclude high P95 TTFT
+        candidates = [i for i in candidates if p95_ttfts[i] <= p95_ttft_threshold]
+        # step 2: exclude low cache hit rate
+        candidates = [i for i in candidates if cache_hits[i] >= cache_hit_floor]
+        # step 3: pick highest throughput among survivors
+        sweet_idx = max(candidates, key=lambda i: throughputs[i]) if candidates else None
+        sweet_w2 = w2_values[sweet_idx] if sweet_idx is not None else None
+
+        # ---- plot ----
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        ax2 = ax1.twinx()
+
+        # left axis: cache hit rate + throughput
+        ln1 = ax1.plot(w2_values, cache_hits, 'o-', color='#2ca02c',
+                        linewidth=2, markersize=8, label='Cache Hit Rate (%)')
+        ln2 = ax1.plot(w2_values, throughputs, 's-', color='#1f77b4',
+                        linewidth=2, markersize=8, label='Throughput (req/s)')
+        ax1.set_xlabel('w2 (Load Penalty Weight)', fontsize=13)
+        ax1.set_ylabel('Cache Hit Rate (%)  /  Throughput (req/s)', fontsize=12)
+        ax1.set_ylim(bottom=0)
+
+        # right axis: P95 TTFT
+        ln3 = ax2.plot(w2_values, p95_ttfts, '^--', color='#d62728',
+                        linewidth=2, markersize=9, label='P95 TTFT (s)')
+        ax2.set_ylabel('P95 TTFT (s)', fontsize=12, color='#d62728')
+        ax2.tick_params(axis='y', labelcolor='#d62728')
+        ax2.set_ylim(bottom=0)
+
+        # threshold line
+        ax2.axhline(y=p95_ttft_threshold, color='#d62728', linestyle=':',
+                     alpha=0.5, label=f'P95 threshold ({p95_ttft_threshold}s)')
+
+        # annotate sweet spot
+        if sweet_idx is not None:
+            ax1.axvline(x=sweet_w2, color='#9467bd', linestyle='--', alpha=0.7)
+            ax1.annotate(
+                f'Sweet Spot\nw2={sweet_w2}',
+                xy=(sweet_w2, throughputs[sweet_idx]),
+                xytext=(15, 25), textcoords='offset points',
+                fontsize=11, fontweight='bold', color='#9467bd',
+                arrowprops=dict(arrowstyle='->', color='#9467bd', lw=1.5),
+            )
+
+        # merged legend
+        lines = ln1 + ln2 + ln3
+        labels = [l.get_label() for l in lines]
+        ax1.legend(lines, labels, loc='upper center', ncol=3,
+                   bbox_to_anchor=(0.5, -0.12), fontsize=11)
+
+        ax1.set_title('w2 Sweet Spot Analysis (Dual Y-Axis)', fontsize=14, pad=12)
+        ax1.grid(alpha=0.3)
+
+        plt.tight_layout()
+        self._save_figure(fig, "w2_sweet_spot")
+
+        if sweet_w2 is not None:
+            print(f"Sweet-spot w2 = {sweet_w2}  "
+                  f"(throughput={throughputs[sweet_idx]:.2f}, "
+                  f"cache_hit={cache_hits[sweet_idx]:.1f}%, "
+                  f"P95_TTFT={p95_ttfts[sweet_idx]:.2f}s)")
+        else:
+            print("No valid sweet-spot found within thresholds")
+
+        return sweet_w2
+
     
     def plot_all_comparisons(self, results: List[ExperimentResult], records: List = None) -> None:
         """
@@ -515,6 +648,7 @@ class ChartGenerator:
             self.plot_latency_by_w2(results, records)
             self.plot_cache_hit_rate_by_w2(results, records)
             self.plot_w2_comparison_summary(results, records)
+            self.plot_w2_sweet_spot(results, records)
         
         # Generate charts grouped by alpha if multiple alphas exist
         if len(alphas) > 1:

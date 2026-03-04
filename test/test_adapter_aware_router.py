@@ -26,7 +26,7 @@ class TestAdapterAwareRouterInit:
         
         assert router.num_workers == 3
         assert router.config.w1 == 1.0
-        assert router.config.w2 == 0.1
+        assert router.config.w2 == 1.0
         assert router.config.strategy == 'adapter-aware'
         assert len(router.worker_states) == 3
     
@@ -76,7 +76,7 @@ class TestScoringFormula:
         )
         router.update_worker_state(0, state)
         
-        # Score = w1 * 1 - w2 * 0 = 1.0 * 1 - 0.1 * 0 = 1.0
+        # Score = w1 * 1 - w2 * 0 = 1.0 * 1 - 1.0 * 0 = 1.0
         score = router.calculate_score(0, adapter_dir)
         assert score == 1.0
     
@@ -91,8 +91,9 @@ class TestScoringFormula:
         assert score == 0.0
     
     def test_score_cache_hit_with_queue(self):
-        """测试缓存命中且有队列的评分"""
-        router = AdapterAwareRouter(num_workers=2)
+        """测试缓存命中且有队列的评分（QueueLen 回退路径）"""
+        config = RoutingConfig(w1=1.0, w2=0.1)  # 使用旧权重以保持测试语义
+        router = AdapterAwareRouter(num_workers=2, config=config)
         adapter_dir = "/path/to/adapter_a"
         
         # 设置 Worker 0 缓存了 adapter，队列长度为 5
@@ -108,8 +109,9 @@ class TestScoringFormula:
         assert score == pytest.approx(0.5)
     
     def test_score_cache_miss_with_queue(self):
-        """测试缓存未命中且有队列的评分"""
-        router = AdapterAwareRouter(num_workers=2)
+        """测试缓存未命中且有队列的评分（QueueLen 回退路径）"""
+        config = RoutingConfig(w1=1.0, w2=0.1)  # 使用旧权重以保持测试语义
+        router = AdapterAwareRouter(num_workers=2, config=config)
         adapter_dir = "/path/to/adapter_a"
         
         # 设置 Worker 0 队列长度为 10，没有缓存
@@ -172,12 +174,13 @@ class TestWorkerSelection:
         assert selected == 1
     
     def test_select_worker_highest_score(self):
-        """测试选择最高分的 Worker"""
-        router = AdapterAwareRouter(num_workers=3)
+        """测试选择最高分的 Worker（QueueLen 回退路径）"""
+        config = RoutingConfig(w1=1.0, w2=0.1)  # 使用旧权重以保持 QueueLen 回退测试语义
+        router = AdapterAwareRouter(num_workers=3, config=config)
         adapter_dir = "/path/to/adapter_a"
         
-        # Worker 0: 缓存命中，队列长度 5 -> Score = 1.0 - 0.5 = 0.5
-        # Worker 1: 缓存命中，队列长度 2 -> Score = 1.0 - 0.2 = 0.8
+        # Worker 0: 缓存命中，队列长度 5 -> Score = 1.0 - 0.1*5 = 0.5
+        # Worker 1: 缓存命中，队列长度 2 -> Score = 1.0 - 0.1*2 = 0.8
         # Worker 2: 缓存未命中，队列长度 0 -> Score = 0.0 - 0.0 = 0.0
         
         router.update_worker_state(0, WorkerState(
@@ -195,13 +198,14 @@ class TestWorkerSelection:
         assert selected == 1
     
     def test_select_worker_tie_breaking(self):
-        """测试平分时的 tie-breaking 逻辑"""
-        router = AdapterAwareRouter(num_workers=3)
+        """测试平分时的 tie-breaking 逻辑（QueueLen 回退路径）"""
+        config = RoutingConfig(w1=1.0, w2=0.1)
+        router = AdapterAwareRouter(num_workers=3, config=config)
         adapter_dir = "/path/to/adapter_a"
         
-        # Worker 0: 缓存命中，队列长度 5 -> Score = 1.0 - 0.5 = 0.5
-        # Worker 1: 缓存命中，队列长度 5 -> Score = 1.0 - 0.5 = 0.5
-        # Worker 2: 缓存命中，队列长度 3 -> Score = 1.0 - 0.3 = 0.7
+        # Worker 0: 缓存命中，队列长度 5 -> Score = 1.0 - 0.1*5 = 0.5
+        # Worker 1: 缓存命中，队列长度 5 -> Score = 1.0 - 0.1*5 = 0.5
+        # Worker 2: 缓存命中，队列长度 3 -> Score = 1.0 - 0.1*3 = 0.7
         
         router.update_worker_state(0, WorkerState(
             worker_id=0, cached_adapters={adapter_dir}, queue_length=5
@@ -268,7 +272,8 @@ class TestWorkerSelection:
     
     def test_select_worker_unhealthy_excluded(self):
         """测试不健康的 Worker 被排除"""
-        router = AdapterAwareRouter(num_workers=3)
+        config = RoutingConfig(w1=1.0, w2=0.1)  # 使用旧权重以保持 QueueLen 回退测试语义
+        router = AdapterAwareRouter(num_workers=3, config=config)
         adapter_dir = "/path/to/adapter_a"
         
         # Worker 0: 缓存命中，健康
@@ -411,7 +416,7 @@ class TestQueueThreshold:
     
     def test_queue_threshold_filtering(self):
         """测试队列超限的 Worker 被过滤"""
-        config = RoutingConfig(max_queue_length=10)
+        config = RoutingConfig(max_queue_length=10, w1=1.0, w2=0.1)
         router = AdapterAwareRouter(num_workers=3, config=config)
         adapter_dir = "/path/to/adapter_a"
         
@@ -435,7 +440,7 @@ class TestQueueThreshold:
     
     def test_all_workers_exceed_threshold(self):
         """测试所有 Worker 都超限时选择队列最短的"""
-        config = RoutingConfig(max_queue_length=10)
+        config = RoutingConfig(max_queue_length=10, w1=1.0, w2=0.1)
         router = AdapterAwareRouter(num_workers=3, config=config)
         adapter_dir = "/path/to/adapter_a"
         

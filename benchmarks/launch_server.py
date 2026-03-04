@@ -40,16 +40,25 @@ if __name__ == "__main__":
                         help="路由策略: round-robin (轮询，默认) 或 adapter-aware (基于亲和性)")
     parser.add_argument("--routing-w1", type=float, default=1.0,
                         help="缓存亲和性权重 (默认: 1.0)")
-    parser.add_argument("--routing-w2", type=float, default=0.1,
-                        help="负载惩罚权重 (默认: 0.1)")
+    parser.add_argument("--routing-w2", type=float, default=4.0,
+                        help="负载惩罚权重 (默认: 1.0, RWPT/Capacity 归一化到 ~[0,1])")
     parser.add_argument("--routing-w3", type=float, default=0.0,
                         help="Rank 不匹配惩罚权重，用于 rank 感知路由 (默认: 0.0，禁用)")
+    parser.add_argument("--load-metric", type=str, default="rwpt",
+                        choices=["queue_length", "token_count", "rwpt"],
+                        help="负载度量类型 (默认: rwpt)")
     parser.add_argument("--default-lora-rank", type=int, default=16,
                         help="未知 adapter 的默认 LoRA rank (默认: 16)")
     parser.add_argument("--max-queue-length", type=int, default=100,
                         help="最大队列长度阈值 (默认: 100)")
     parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,
                         help="热点 Adapter 请求率阈值，单位 req/s (默认: 10.0)")
+    
+    # RWPT (Rank-Weighted Pending Tokens) 相关参数
+    parser.add_argument("--hidden-dim", type=int, default=None,
+                        help="模型隐藏层维度，用于计算 LoRA rank 加权系数 γ=2/(3·d) (默认: 从模型 config.json 自动检测，检测失败时回退 4096)")
+    parser.add_argument("--decode-cost-alpha", type=float, default=None,
+                        help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
@@ -124,16 +133,24 @@ if __name__ == "__main__":
             cmd += f" --routing-strategy {args.routing_strategy}"
         if args.routing_w1 != 1.0:
             cmd += f" --routing-w1 {args.routing_w1}"
-        if args.routing_w2 != 0.1:
+        if args.routing_w2 != 4.0:
             cmd += f" --routing-w2 {args.routing_w2}"
         if args.routing_w3 != 0.0:
             cmd += f" --routing-w3 {args.routing_w3}"
+        if hasattr(args, 'load_metric') and args.load_metric != "rwpt":
+            cmd += f" --load-metric {args.load_metric}"
         if args.default_lora_rank != 16:
             cmd += f" --default-lora-rank {args.default_lora_rank}"
         if args.max_queue_length != 100:
             cmd += f" --max-queue-length {args.max_queue_length}"
         if args.hot_adapter_threshold != 10.0:
             cmd += f" --hot-adapter-threshold {args.hot_adapter_threshold}"
+        
+        # 添加 RWPT 参数
+        if args.hidden_dim is not None:
+            cmd += f" --hidden-dim {args.hidden_dim}"
+        if args.decode_cost_alpha is not None:
+            cmd += f" --decode-cost-alpha {args.decode_cost_alpha}"
 
         # 添加阈值淘汰参数
         cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"

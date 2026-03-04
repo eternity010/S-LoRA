@@ -53,10 +53,13 @@ def list_suites():
 
 
 def run_experiments(args):
-    """Run experiments"""
+    """Run experiments and return start timestamp for filtering results."""
     print("\n" + "=" * 70)
     print("Routing Strategy Comparison Experiment")
     print("=" * 70)
+    
+    import time
+    start_ts = time.time()
     
     runner = ExperimentRunner(
         output_dir=args.output_dir,
@@ -74,10 +77,12 @@ def run_experiments(args):
     print(f"  Results saved to: {args.output_dir}/results.jsonl")
     if args.debug:
         print(f"  Debug log: routing_experiment/debug.log")
+    
+    return start_ts
 
 
-def analyze_results(args):
-    """Analyze experiment results"""
+def analyze_results(args, since_timestamp: float = None):
+    """Analyze experiment results, optionally filtering to current run only."""
     print("\n" + "=" * 70)
     print("Analyzing Results")
     print("=" * 70)
@@ -91,8 +96,14 @@ def analyze_results(args):
     # Load results
     print(f"\nLoading results from {result_file}...")
     records = ExperimentRecord.load_from_jsonl(str(result_file))
+    
+    # Filter to current run if timestamp provided
+    if since_timestamp is not None:
+        records = [r for r in records if r.timestamp >= since_timestamp]
+        print(f"  Filtered to current run: {len(records)} results (since {since_timestamp:.0f})")
+    
     results = [r.result for r in records]
-    print(f"  Loaded {len(results)} experiment results")
+    print(f"  Using {len(results)} experiment results")
     
     # Analyze
     analyzer = ResultAnalyzer(results)
@@ -158,8 +169,8 @@ def analyze_results(args):
     print("\n" + "=" * 70)
 
 
-def generate_charts(args):
-    """Generate visualization charts"""
+def generate_charts(args, since_timestamp: float = None):
+    """Generate visualization charts, optionally filtering to current run only."""
     print("\n" + "=" * 70)
     print("Generating Charts")
     print("=" * 70)
@@ -172,8 +183,14 @@ def generate_charts(args):
     # Load results
     print(f"\nLoading results from {result_file}...")
     records = ExperimentRecord.load_from_jsonl(str(result_file))
+    
+    # Filter to current run if timestamp provided
+    if since_timestamp is not None:
+        records = [r for r in records if r.timestamp >= since_timestamp]
+        print(f"  Filtered to current run: {len(records)} results (since {since_timestamp:.0f})")
+    
     results = [r.result for r in records]
-    print(f"  Loaded {len(results)} experiment results")
+    print(f"  Using {len(results)} experiment results")
     
     # Generate charts
     chart_dir = Path(args.output_dir) / "charts"
@@ -308,16 +325,16 @@ def main():
     
     # Default: run experiments, then analyze and generate charts
     try:
-        run_experiments(args)
+        start_ts = run_experiments(args)
         
-        # Auto-analyze if experiments completed
+        # Auto-analyze if experiments completed (current run only)
         print("\n" + "=" * 70)
         print("Auto-analyzing results...")
-        analyze_results(args)
+        analyze_results(args, since_timestamp=start_ts)
         
-        # Auto-generate charts
+        # Auto-generate charts (current run only)
         print("\nAuto-generating charts...")
-        generate_charts(args)
+        generate_charts(args, since_timestamp=start_ts)
         
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Progress saved to checkpoint.")
