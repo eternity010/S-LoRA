@@ -189,6 +189,87 @@ async def update_routing_config(request: Request):
             "message": str(e)
         }, status_code=500)
 
+
+@app.post("/reset_adapter_cache")
+async def reset_adapter_cache(request: Request):
+    """
+    重置所有 Worker 的 Adapter 缓存
+    
+    用于实验间的 cache 重置，确保实验公平性。
+    清空所有 GPU 上已加载的 adapters，释放显存。
+    
+    通过文件通信触发 dp_manager 执行重置操作。
+    
+    请求体 JSON 格式 (可选):
+    {
+        "wait_seconds": float  # 等待完成的时间 (可选, 默认 3.0)
+    }
+    
+    返回:
+    - 200: 重置命令已提交
+    - 500: 重置失败
+    """
+    import json
+    import os
+    
+    reset_trigger_file = "/tmp/slora_reset_adapter_cache.trigger"
+    reset_result_file = "/tmp/slora_reset_adapter_cache.result"
+    
+    try:
+        # 解析可选参数
+        try:
+            request_dict = await request.json()
+        except Exception:
+            request_dict = {}
+        
+        wait_seconds = request_dict.get('wait_seconds', 3.0)
+        
+        # 清除旧的结果文件
+        if os.path.exists(reset_result_file):
+            os.remove(reset_result_file)
+        
+        # 写入触发文件
+        with open(reset_trigger_file, 'w') as f:
+            json.dump({'timestamp': time.time()}, f)
+        
+        # 等待 dp_manager 处理并写入结果
+        await asyncio.sleep(wait_seconds)
+        
+        # 读取结果
+        if os.path.exists(reset_result_file):
+            with open(reset_result_file, 'r') as f:
+                result = json.load(f)
+            
+            # 清理文件
+            os.remove(reset_trigger_file)
+            os.remove(reset_result_file)
+            
+            if result.get('success', False):
+                return JSONResponse({
+                    "status": "success",
+                    "message": result.get('message', 'Adapter cache reset completed'),
+                    "num_workers": result.get('num_workers', 0)
+                })
+            else:
+                return JSONResponse({
+                    "status": "error",
+                    "message": result.get('message', 'Reset failed'),
+                    "error": result.get('error')
+                }, status_code=500)
+        else:
+            # 触发文件已写入，但没有结果文件，可能 dp_manager 还没处理
+            return JSONResponse({
+                "status": "submitted",
+                "message": f"Reset command submitted. Check server logs for completion."
+            })
+            
+    except Exception as e:
+        return JSONResponse({
+            "status": "error",
+            "message": f"Failed to reset adapter cache: {str(e)}"
+        }, status_code=500)
+
+
 @app.post("/generate")
 async def generate(request: Request) -> Response:
     global isFirst

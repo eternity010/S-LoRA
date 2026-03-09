@@ -195,70 +195,69 @@ class AdapterAwareRouter:
     def calculate_score(self, worker_id: int, adapter_dir: str) -> float:
         """
         计算 Worker 对请求的评分
-        
-        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · RWPT_i/Capacity_i - w3 · RankMismatch_i
-        
-        RWPT_i = pending_prefill_tokens + α · active_decode_seqs
-        
-        当 Worker 未上报 RWPT 字段时（pending_prefill_tokens == 0 且 queue_length > 0），
-        回退到原有 QueueLen 逻辑，保证向后兼容。
-        
+
+        Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · Load_i/Capacity_i - w3 · RankMismatch_i
+
+        Load_i 根据 load_metric 选择：
+        - queue_length: queue_length（无归一化）
+        - token_count: pending_raw_tokens（等待队列中的原始 prefill token 数）
+        - rwpt: pending_prefill_tokens（rank 加权的 prefill token 数）
+
+        当 Worker 未上报 token 字段时（pending_*_tokens == 0 且 queue_length > 0），
+        回退到 queue_length 逻辑，保证向后兼容。
+
         Args:
             worker_id: Worker ID
             adapter_dir: Adapter 目录
-            
+
         Returns:
             评分值
-        
-        Requirements: 2.2, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.4, 5.5
+
+        Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 3.1, 5.1, 5.2, 5.3, 5.4, 6.1
         """
         state = self.worker_states.get(worker_id)
         if state is None:
             return float('-inf')
-        
+
         # Cache affinity: I(adapter ∈ Cache_i)
         cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
         score = self.config.w1 * cache_indicator
-        
+
         # Load penalty — 根据 load_metric 分支
         metric = self.config.load_metric
-        
+        load_value = 0.0  # 用于评分分解日志
+
         if metric == 'queue_length':
-            # Variant A: 仅队列长度（V2 基线，无 Capacity 归一化）
-            score -= self.config.w2 * state.queue_length
+            # Variant A: 仅队列长度（基线，无 Capacity 归一化）
+            load_value = self.config.w2 * state.queue_length
+            score -= load_value
             logger.debug(f"Worker {worker_id} queue_length mode: queue={state.queue_length}")
-        
+
         elif metric == 'token_count':
-            # Variant B: token 级，无 rank 加权
+            # Variant B: token 级负载，仅 prefill token（无 rank 加权，无 decode 折算）
             if state.pending_raw_tokens > 0 or (state.queue_length == 0):
-                raw = state.pending_raw_tokens + self._decode_cost_alpha * state.active_decode_seqs
+                raw = state.pending_raw_tokens
                 load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
-                score -= self.config.w2 * load_pressure
-                logger.debug(f"Worker {worker_id} token_count: raw={raw:.1f}, "
-                            f"raw_tokens={state.pending_raw_tokens}, "
-                            f"decode_seqs={state.active_decode_seqs}, "
+                load_value = self.config.w2 * load_pressure
+                score -= load_value
+                logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
                             f"load_pressure={load_pressure:.4f}")
             else:
                 # 回退：Worker 未上报 pending_raw_tokens
-                score -= self.config.w2 * state.queue_length
+                load_value = self.config.w2 * state.queue_length
+                score -= load_value
                 logger.debug(f"Worker {worker_id} token_count fallback: queue={state.queue_length}")
-        
+
         else:  # 'rwpt' (默认)
-            # Variant C: 完整 RWPT（保持现有逻辑）
-            if state.pending_prefill_tokens > 0 or (state.queue_length == 0):
-                rwpt = state.pending_prefill_tokens + self._decode_cost_alpha * state.active_decode_seqs
-                load_pressure = rwpt / self._capacity if self._capacity > 0 else 0.0
-                score -= self.config.w2 * load_pressure
-                logger.debug(f"Worker {worker_id} RWPT: rwpt={rwpt:.1f}, "
-                            f"prefill_tokens={state.pending_prefill_tokens}, "
-                            f"decode_seqs={state.active_decode_seqs}, "
-                            f"alpha={self._decode_cost_alpha}, "
-                            f"load_pressure={load_pressure:.4f}")
-            else:
-                # Fallback: old Worker not reporting new fields
-                score -= self.config.w2 * state.queue_length
-                logger.debug(f"Worker {worker_id} RWPT fallback: queue={state.queue_length}")
-        
+            # Variant C: RWPT — rank 加权的 prefill token 数（无 decode 折算）
+            rwpt = state.pending_prefill_tokens
+            load_pressure = rwpt / self._capacity if self._capacity > 0 else 0.0
+            load_value = self.config.w2 * load_pressure
+            score -= load_value
+            logger.debug(f"Worker {worker_id} RWPT: rwpt={rwpt}, "
+                        f"prefill_tokens={state.pending_prefill_tokens}, "
+                        f"load_pressure={load_pressure:.4f}")
+
         # Rank 不匹配惩罚（仅当 w3 > 0 时应用）
         # Requirements: 5.1, 5.2, 5.4, 5.5
         if self.config.w3 > 0:
@@ -266,13 +265,13 @@ class AdapterAwareRouter:
             rank_mismatch = self.calculate_rank_mismatch(request_rank, worker_id)
             rank_penalty = self.config.w3 * rank_mismatch
             score -= rank_penalty
-            
+
             logger.debug(f"Worker {worker_id} score breakdown: "
                         f"cache={self.config.w1 * cache_indicator:.2f}, "
-                        f"load={-self.config.w2 * (state.pending_prefill_tokens + self._decode_cost_alpha * state.active_decode_seqs) / max(self._capacity, 1):.2f}, "
+                        f"load={-load_value:.2f}, "
                         f"rank_penalty={-rank_penalty:.2f}, "
                         f"total={score:.2f}")
-        
+
         return score
     
     def select_worker(self, adapter_dir: str) -> int:

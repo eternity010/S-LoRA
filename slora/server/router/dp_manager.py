@@ -879,6 +879,75 @@ class DataParallelRouterManager:
                 # 等待一段时间后重试
                 await asyncio.sleep(0.1)
     
+    async def reset_all_adapter_caches(self) -> dict:
+        """
+        重置所有 Worker 的 Adapter 缓存
+        
+        向所有 Worker 广播 reset_cache 命令，等待所有 Worker 完成后返回。
+        同时重置路由器的 adapter_to_workers 倒排索引。
+        
+        用于实验间的 cache 重置，确保实验公平性。
+        
+        Returns:
+            dict: 包含重置结果的字典
+                - success: 是否全部成功
+                - total_cleared: 总共清除的 adapter 数量
+                - worker_results: 每个 Worker 的结果
+                - error: 错误信息（如果有）
+        """
+        import uuid
+        
+        print(f"[DataParallelRouterManager] Resetting adapter caches on all {self.num_workers} workers...")
+        
+        # 生成唯一的请求 ID
+        reset_request_id = f"reset_{uuid.uuid4().hex[:8]}"
+        
+        # 向所有 Worker 发送 reset_cache 命令
+        reset_command = {
+            'type': 'reset_cache',
+            'request_id': reset_request_id,
+        }
+        
+        try:
+            # 广播到所有 Worker
+            for worker_id in range(self.num_workers):
+                await self.request_senders[worker_id].send_json(reset_command)
+            
+            print(f"[DataParallelRouterManager] Reset commands sent to all workers, waiting for responses...")
+            
+            # 等待所有 Worker 的响应（通过 response merger 收集）
+            # 由于响应会通过 response_merger 返回，我们需要等待一段时间让 Worker 处理完成
+            # 这里使用简单的等待策略，实际生产环境可以实现更精确的同步机制
+            await asyncio.sleep(2.0)  # 等待 2 秒让所有 Worker 完成 reset
+            
+            # 重置路由器的 adapter 索引
+            if hasattr(self.router, 'adapter_to_workers'):
+                self.router.adapter_to_workers.clear()
+                print(f"[DataParallelRouterManager] Router adapter index cleared")
+            
+            # 重置路由器统计
+            if hasattr(self.router, 'reset_stats'):
+                self.router.reset_stats()
+            
+            print(f"[DataParallelRouterManager] Adapter cache reset completed")
+            
+            return {
+                'success': True,
+                'num_workers': self.num_workers,
+                'message': f'Reset commands sent to {self.num_workers} workers',
+                'error': None
+            }
+            
+        except Exception as e:
+            error_msg = f"Error resetting adapter caches: {str(e)}"
+            print(f"[DataParallelRouterManager] ERROR: {error_msg}")
+            return {
+                'success': False,
+                'num_workers': self.num_workers,
+                'message': error_msg,
+                'error': str(e)
+            }
+    
     async def _check_worker_health(self) -> None:
         """
         定期检查 Worker 进程健康状态
@@ -944,6 +1013,59 @@ class DataParallelRouterManager:
                 import traceback
                 traceback.print_exc()
     
+    def _write_stats_file(self, stats_file: str = "/tmp/slora_routing_stats.json") -> None:
+        """
+        将当前路由统计写入 stats 文件（原子写入）
+        
+        用于定期刷新统计快照，以及在 reset_stats 后立即刷新，
+        确保 runner 读到的是 reset 后的干净数据。
+        """
+        import time
+        import json
+        import os
+        
+        try:
+            # 计算运行时间
+            if self.stats['start_time'] is not None:
+                elapsed_time = time.time() - self.stats['start_time']
+                throughput = self.stats['total_requests'] / elapsed_time if elapsed_time > 0 else 0
+            else:
+                elapsed_time = 0
+                throughput = 0
+            
+            # 计算缓存命中率（仅 adapter-aware 模式）
+            cache_hit_rate = 0.0
+            cache_hits = 0
+            cache_misses = 0
+            if self.routing_strategy == 'adapter-aware' and hasattr(self.router, 'get_stats'):
+                router_stats = self.router.get_stats()
+                cache_hit_rate = router_stats.get('cache_hit_rate', 0.0)
+                cache_hits = router_stats.get('cache_hits', 0)
+                cache_misses = router_stats.get('cache_misses', 0)
+            
+            stats_data = {
+                'routing_strategy': self.routing_strategy,
+                'total_requests': self.stats['total_requests'],
+                'successful_requests': self.stats['successful_requests'],
+                'failed_requests': self.stats['failed_requests'],
+                'throughput': throughput,
+                'elapsed_time': elapsed_time,
+                'cache_hit_rate': cache_hit_rate,
+                'cache_hits': cache_hits,
+                'cache_misses': cache_misses,
+                'worker_request_counts': {str(i): self.stats['worker_request_counts'][i] for i in range(self.num_workers)},
+                'num_workers': self.num_workers,
+                'gpu_ids': self.gpu_ids,
+                'timestamp': time.time()
+            }
+            
+            temp_file = stats_file + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump(stats_data, f)
+            os.rename(temp_file, stats_file)
+        except Exception as e:
+            print(f"[DataParallelRouterManager] Warning: Failed to write stats file: {e}")
+
     def _check_config_update(self, config_update_file: str) -> None:
         """
         检查并应用路由配置更新
@@ -988,6 +1110,11 @@ class DataParallelRouterManager:
             result = self.router.update_config(**update)
             print(f"[DataParallelRouterManager] Routing config updated: {result}")
             
+            # 如果执行了 reset_stats，立即刷新 stats 文件，
+            # 避免 runner 读到 reset 前的旧快照（竞态修复）
+            if update.get('reset_stats', False):
+                self._write_stats_file()
+            
         except json.JSONDecodeError as e:
             print(f"[DataParallelRouterManager] ERROR: Invalid config file format: {e}")
             # 尝试删除损坏的配置文件
@@ -999,6 +1126,61 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager] ERROR in config update: {str(e)}")
             import traceback
             traceback.print_exc()
+    
+    async def _check_cache_reset(self, trigger_file: str, result_file: str) -> None:
+        """
+        检查并执行 adapter cache 重置
+        
+        从触发文件检测重置请求，执行重置操作，然后写入结果文件。
+        
+        Args:
+            trigger_file: 触发文件路径 (如 /tmp/slora_reset_adapter_cache.trigger)
+            result_file: 结果文件路径 (如 /tmp/slora_reset_adapter_cache.result)
+        
+        Note:
+            - 触发文件存在时执行重置
+            - 重置完成后写入结果文件
+            - 触发文件由 API server 创建，结果文件由此方法创建
+        """
+        import os
+        import json
+        
+        try:
+            if not os.path.exists(trigger_file):
+                return
+            
+            print(f"[DataParallelRouterManager] Cache reset triggered")
+            
+            # 执行重置
+            result = await self.reset_all_adapter_caches()
+            
+            # 写入结果文件
+            with open(result_file, 'w') as f:
+                json.dump(result, f)
+            
+            # 删除触发文件
+            try:
+                os.remove(trigger_file)
+            except:
+                pass
+            
+            print(f"[DataParallelRouterManager] Cache reset completed: {result.get('message', '')}")
+            
+        except Exception as e:
+            print(f"[DataParallelRouterManager] ERROR in cache reset: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # 写入错误结果
+            try:
+                with open(result_file, 'w') as f:
+                    json.dump({
+                        'success': False,
+                        'message': f'Error: {str(e)}',
+                        'error': str(e)
+                    }, f)
+            except:
+                pass
     
     async def _print_statistics(self) -> None:
         """
@@ -1033,6 +1215,10 @@ class DataParallelRouterManager:
         # 配置更新文件路径
         config_update_file = "/tmp/slora_routing_config_update.json"
         
+        # Cache 重置触发文件路径
+        cache_reset_trigger_file = "/tmp/slora_reset_adapter_cache.trigger"
+        cache_reset_result_file = "/tmp/slora_reset_adapter_cache.result"
+        
         while True:
             try:
                 # 等待 5 秒（更频繁地更新统计文件）
@@ -1040,6 +1226,10 @@ class DataParallelRouterManager:
                 
                 # 检查并应用配置更新
                 self._check_config_update(config_update_file)
+                
+                # 检查并执行 cache 重置
+                await self._check_cache_reset(cache_reset_trigger_file, cache_reset_result_file)
+                
                 await asyncio.sleep(5)
                 
                 # 计算运行时间
@@ -1052,39 +1242,12 @@ class DataParallelRouterManager:
                 
                 # 计算缓存命中率（仅 adapter-aware 模式）
                 cache_hit_rate = 0.0
-                cache_hits = 0
-                cache_misses = 0
                 if self.routing_strategy == 'adapter-aware' and hasattr(self.router, 'get_stats'):
                     router_stats = self.router.get_stats()
                     cache_hit_rate = router_stats.get('cache_hit_rate', 0.0)
-                    cache_hits = router_stats.get('cache_hits', 0)
-                    cache_misses = router_stats.get('cache_misses', 0)
                 
-                # 构建统计数据
-                stats_data = {
-                    'routing_strategy': self.routing_strategy,
-                    'total_requests': self.stats['total_requests'],
-                    'successful_requests': self.stats['successful_requests'],
-                    'failed_requests': self.stats['failed_requests'],
-                    'throughput': throughput,
-                    'elapsed_time': elapsed_time,
-                    'cache_hit_rate': cache_hit_rate,
-                    'cache_hits': cache_hits,
-                    'cache_misses': cache_misses,
-                    'worker_request_counts': {str(i): self.stats['worker_request_counts'][i] for i in range(self.num_workers)},
-                    'num_workers': self.num_workers,
-                    'gpu_ids': self.gpu_ids,
-                    'timestamp': time.time()
-                }
-                
-                # 写入统计文件（原子写入）
-                try:
-                    temp_file = stats_file + ".tmp"
-                    with open(temp_file, 'w') as f:
-                        json.dump(stats_data, f)
-                    os.rename(temp_file, stats_file)
-                except Exception as e:
-                    print(f"[DataParallelRouterManager] Warning: Failed to write stats file: {e}")
+                # 写入统计文件（复用 _write_stats_file）
+                self._write_stats_file(stats_file)
                 
                 # 每 20 秒输出一次到控制台
                 if int(elapsed_time) % 20 < 5:

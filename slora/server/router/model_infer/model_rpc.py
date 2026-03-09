@@ -544,6 +544,14 @@ class ModelRpcClient:
     async def offload_adapters(self, reserved_reqs=None, prefetch=False):
         self._offload_adapters(reserved_reqs, prefetch=prefetch)
     
+    async def clear_all_adapters(self):
+        """
+        清空所有已加载的 adapters，释放 GPU 内存
+        
+        用于实验间的 cache 重置，确保实验公平性。
+        """
+        self._offload_adapters(reserved_reqs=[])
+    
     async def update_adapter_stats(self, adapter_dirs):
         """更新适配器使用统计信息"""
         self._update_adapter_stats(adapter_dirs)

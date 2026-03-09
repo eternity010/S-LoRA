@@ -31,7 +31,7 @@ class ExperimentConfig:
     
     # Router parameters (adapter-aware only)
     routing_w1: float = 1.0  # Cache affinity weight
-    routing_w2: float = 4.0  # Load penalty weight (RWPT/Capacity normalized to ~[0,1])
+    routing_w2: float = 4.0  # Load penalty weight (Load/Capacity, Load = prefill tokens only)
     routing_w3: float = 0.0  # Rank mismatch penalty
 
     # Memory parameters

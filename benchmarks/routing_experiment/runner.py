@@ -267,6 +267,10 @@ class ExperimentRunner:
             self._wait_for_server()
         else:
             print("  1-2. Reusing existing server (no restart needed)")
+            
+            # 重置 adapter cache，确保实验公平性
+            print("  1.5. Resetting adapter cache for fair comparison...")
+            self._reset_adapter_cache()
         
         # 动态更新路由配置 (w1/w2/w3/load_metric)，无需重启服务器
         if config.routing_strategy == 'adapter-aware':
@@ -720,7 +724,9 @@ class ExperimentRunner:
                 self._log(f"config update success: {result}")
 
                 # 等待配置生效 (服务器每 5 秒检查一次配置文件)
-                time.sleep(6)
+                # 使用 10 秒确保至少经过一个完整轮询周期，
+                # 避免 stats_before 采集时 reset 尚未执行
+                time.sleep(10)
                 return True
             else:
                 error = resp.json() if resp.content else {}
@@ -731,6 +737,43 @@ class ExperimentRunner:
         except requests.RequestException as e:
             print(f"     Warning: Could not update routing config: {e}")
             self._log(f"config update error: {e}")
+            return False
+    
+    def _reset_adapter_cache(self) -> bool:
+        """
+        重置所有 Worker 的 Adapter 缓存
+        
+        用于实验间的 cache 重置，确保实验公平性。
+        
+        Returns:
+            bool: 重置是否成功
+        """
+        self._log("_reset_adapter_cache: starting")
+        
+        try:
+            resp = requests.post(
+                f"{self.server_host}/reset_adapter_cache",
+                json={},
+                timeout=30  # 给足够的时间让所有 Worker 完成
+            )
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                print(f"     Adapter cache reset: {result.get('message', 'success')}")
+                self._log(f"cache reset success: {result}")
+                
+                # 额外等待一小段时间确保状态同步
+                time.sleep(1)
+                return True
+            else:
+                error = resp.json() if resp.content else {}
+                print(f"     Warning: Failed to reset adapter cache: {error}")
+                self._log(f"cache reset failed: {resp.status_code} {error}")
+                return False
+                
+        except requests.RequestException as e:
+            print(f"     Warning: Could not reset adapter cache: {e}")
+            self._log(f"cache reset error: {e}")
             return False
     
     def _calculate_stats_delta(self, before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:

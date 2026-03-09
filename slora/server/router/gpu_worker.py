@@ -424,6 +424,53 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}] Error loading adapters: {e}")
             # 加载失败不应该终止服务，继续运行
     
+    async def reset_adapter_cache(self) -> dict:
+        """
+        重置 Adapter 缓存
+        
+        清空所有已加载的 adapters，释放 GPU 内存。
+        用于实验间的 cache 重置，确保实验公平性。
+        
+        Returns:
+            dict: 包含重置结果的字典
+                - success: 是否成功
+                - cleared_count: 清除的 adapter 数量
+                - error: 错误信息（如果有）
+        """
+        cleared_count = len(self.adapter_cache)
+        
+        try:
+            # 1. 清空 GPU 上的 adapter 内存
+            if self.model_rpc is not None:
+                await self.model_rpc.clear_all_adapters()
+                print(f"[Worker {self.worker_id}] Cleared {cleared_count} adapters from GPU memory")
+            
+            # 2. 清空本地 adapter_cache 字典
+            self.adapter_cache.clear()
+            
+            # 3. 重置 adapter 内存使用统计
+            self.actual_adapter_memory_usage = 0
+            
+            # 4. 触发状态上报（cache 已清空）
+            if self.state_reporter:
+                await self.state_reporter.report_now()
+            
+            return {
+                'success': True,
+                'cleared_count': cleared_count,
+                'worker_id': self.worker_id,
+                'error': None
+            }
+            
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Error resetting adapter cache: {e}")
+            return {
+                'success': False,
+                'cleared_count': 0,
+                'worker_id': self.worker_id,
+                'error': str(e)
+            }
+    
     def _setup_zmq(self, request_port: int, response_port: int) -> None:
         """
         设置 ZMQ 通信
@@ -1415,6 +1462,9 @@ class GPUWorker:
         2. 实现更可控的队列管理（为未来的多级队列、优先级调度做准备）
         3. 提供更好的可观测性（可以随时查看队列状态）
         
+        特殊命令处理：
+        - type="reset_cache": 重置 adapter 缓存，返回结果到 response socket
+        
         Note:
             - 使用阻塞式 recv_json()，不会丢失消息
             - 接收到的请求立即转换为 Req 对象并存入 req_queue
@@ -1434,6 +1484,21 @@ class GPUWorker:
                 # 阻塞式接收请求（不会丢失消息）
                 # ZMQ RCVTIMEO 设置为 30s，超时后会抛出 zmq.Again
                 request = await self.request_receiver.recv_json()
+                
+                # 检查是否为特殊命令
+                request_type = request.get('type', 'inference')
+                
+                if request_type == 'reset_cache':
+                    # 处理 cache 重置命令
+                    print(f"[Worker {self.worker_id}] Received reset_cache command")
+                    result = await self.reset_adapter_cache()
+                    # 发送响应
+                    await self._send_response({
+                        'type': 'reset_cache_response',
+                        'request_id': request.get('request_id', 'reset'),
+                        **result
+                    })
+                    continue
                 
                 # 更新接收计数
                 self._received_count += 1

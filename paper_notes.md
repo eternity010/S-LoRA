@@ -1,6 +1,6 @@
 # 多租户 LoRA 推理系统论文思路整理
 
-> **📅 最后更新**: 2026-03-04
+> **📅 最后更新**: 2026-03-06
 > **📌 状态**: 基于已实现功能整理
 
 ---
@@ -215,19 +215,21 @@ Round-Robin 问题示例：
 
 **4.2 Scoring Function 演进**
 
-**V1: 基础版（初始实现）**
+三个版本对应消融实验中的三个 variant，均已实现（`load_metric` 参数控制）：
+
+**V1: queue_length（✅ 已实现，消融基线）**
 
 $Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot QueueLen_i$
 
-问题：QueueLen 是请求数，无法区分短请求和长请求的真实负载。
+负载项为队列请求数，无归一化，不感知 token 长度差异。
 
-**V2: 归一化版（✅ 已实现）**
+**V2: token_count（✅ 已实现，消融中间档）**
 
-$Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot \frac{QueueLen_i}{MaxQueueLen}$
+$Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot \frac{\sum_j input\_len_j}{Capacity_i}$
 
-改进：消除 w2 对量纲的依赖。
+升级到 token 级，感知请求的 prompt 长度差异，但不感知 LoRA Rank 差异。
 
-**V3: Rank-Calibrated Workload Estimation（🔄 计划实现，核心创新点）**
+**V3: rwpt（✅ 已实现，完整版，默认）**
 
 核心思想：从"请求数"升级为"Rank 校准的 Token 级负载估算"。在多租户 LoRA 场景下，不同 Adapter 的 Rank 差异（如 8 vs 128）导致同样数量的 Token 在不同 Worker 上的实际计算代价截然不同。传统按请求数或 Token 数均衡的策略会产生"隐藏的掉队者"。
 
@@ -237,15 +239,15 @@ $Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot \frac{RWPT_i}{Capacity_i} - 
 
 其中 RWPT（Rank-Weighted Pending Tokens）定义为：
 
-$RWPT_i = \sum_{j \in WaitQueue_i} input\_len_j \cdot (1 + \gamma \cdot r_j) + \alpha \cdot DecodeSeqs_i$
+$RWPT_i = \sum_{j \in WaitQueue_i} input\_len_j \cdot (1 + \gamma \cdot r_j)$
+
+RWPT 仅基于等待队列中的 prefill token，不包含 decode 序列折算。早期版本曾包含 decode 折算项 `α · DecodeSeqs`（α ≈ 90），但实验发现该项导致 RWPT 出现巨大尖峰，引发路由抖动（routing thrashing）和 Worker 负载不均衡，已移除。
 
 | 符号 | 含义 |
 |------|------|
 | $input\_len_j$ | 等待队列中第 j 个请求的 prompt 长度 |
 | $r_j$ | 第 j 个请求对应 Adapter 的 LoRA Rank |
 | $\gamma$ | Rank 开销系数（从模型结构推导，非超参数） |
-| $DecodeSeqs_i$ | 当前 batch 中正在 decode 的序列数 |
-| $\alpha$ | decode/prefill 时间比（Worker 启动时 micro-benchmark 实测，非超参数） |
 | $Capacity_i$ | 单次 prefill 批次最大 token 数（由 `max_total_token_num / 6` 自动推算），RWPT/Capacity ≈ 排队批次数 |
 
 **γ 的理论推导（非超参数）**：
@@ -261,11 +263,9 @@ $$\gamma = \frac{2}{3d}$$
 gamma = 2.0 / (3.0 * hidden_dim)  # 理论推导，从模型配置自动获取
 ```
 
-**α 的运行时实测（非超参数）**：
+**α 的运行时实测（保留用于未来扩展）**：
 
-α = decode_per_step / prefill_per_token，表示生成一个 decode token 相对于处理一个 prefill token 的实际耗时比。
-
-为什么不用 Roofline Model 理论估算：理论值 α_theory ≈ FLOPS_peak / BW_mem ≈ 153（A100），因为 prefill 是 compute-bound 而 decode 是 memory-bound，两者差距极大。但该理论值不可用于调度权重，原因：(1) 真实服务中 decode batch > 1，权重读取成本被均摊；(2) GPU 利用率远低于峰值；(3) KV Cache 读取未计入；(4) α 是调度权重而非物理耗时比。
+α = decode_per_step / prefill_per_token，表示生成一个 decode token 相对于处理一个 prefill token 的实际耗时比。当前版本的 RWPT 公式已移除 decode 折算项，但 α 的实测机制保留在 Worker 中，供未来副本放置决策等场景使用。
 
 实测方案：Worker 启动时执行一次轻量 micro-benchmark，调用引擎真实推理接口（含 PagedAttention + KV Block 分配），测量 prefill 512 tokens 和 decode 1 step 的耗时，计算比值。
 
@@ -282,9 +282,7 @@ alpha = profile_decode_cost_alpha()
 | Worker 1 | GPU-2 | 97.09 |
 | Worker 2 | GPU-3 | 82.90 |
 
-三卡中位数 α ≈ 90.89。物理含义：一个 decode step 的计算量约等于 prefill 91 个 token。
-
-α 的量级分析：prefill 是 compute-bound（≈ 0.1~0.2 ms/token），decode 是 memory-bound（≈ 10~20 ms/step），两者耗时比 ≈ 50~200，与实测值一致。注意 α 远大于 1，因为 decode 虽然 FLOPs 少但受限于显存带宽，单步耗时远高于 prefill 单 token。
+三卡中位数 α ≈ 90.89。物理含义：一个 decode step 的计算量约等于 prefill 91 个 token。当前 RWPT 公式已不使用 α，但该实测值保留供未来副本放置决策使用。
 
 **非超参数汇总**：
 
@@ -293,10 +291,11 @@ alpha = profile_decode_cost_alpha()
 | 参数 | 获取方式 | 说明 |
 |------|---------|------|
 | γ | 从模型 `config.json` 的 `hidden_size` 推导 | 数学推导，非经验值 |
-| α | Worker 启动时 micro-benchmark 实测 | 反映当前硬件真实耗时比 |
 | Capacity | 由 `max_total_token_num / 6` 自动推算（`batch_max_tokens`） | 单次 prefill 批次容量，RWPT/Capacity ≈ 排队批次数 |
 | r_j | 各 adapter 的 `adapter_config.json` | 训练时确定 |
-| input_len_j, DecodeSeqs_i | Worker 实时采集 | 运行时状态量 |
+| input_len_j | Worker 实时采集 | 运行时状态量 |
+
+> **注**：α（decode/prefill 时间比）和 active_decode_seqs 仍由 Worker 实测和上报，但当前 RWPT 公式不使用，保留供未来副本放置决策。
 
 Rank 影响示例：Rank 8 额外 0.13%，Rank 32 额外 0.52%，Rank 128 额外 2.1%。
 绝对比例虽小，但队列中数百请求累积后差异显著。
@@ -315,24 +314,26 @@ Worker B: 等待 1 个请求 (input_len=1024, rank=128)
 
 **消融实验设计**：
 
-| 变体 | 负载度量 | 预期效果 |
-|------|---------|---------|
-| Variant A | QueueLen（请求数） | 基线 |
-| Variant B | Σ(input_len)（Token 数，不看 Rank） | 优于 A |
-| Variant C (Ours) | RWPT（Rank 加权 Token 数） | 最优，尤其在异构 Rank 场景 |
+| 变体 | load_metric | 负载度量 | 对应公式 |
+|------|------------|---------|---------|
+| Variant A | `queue_length` | 请求数（V1 基线） | $w_2 \cdot QueueLen$ |
+| Variant B | `token_count` | Token 数，无 rank 加权 | $w_2 \cdot \Sigma input\_len / Cap$ |
+| Variant C (Ours) | `rwpt` | Rank 加权 Token 数（完整 V3） | $w_2 \cdot RWPT / Cap$ |
+
+A→B 消融"token 粒度 vs 请求粒度"，B→C 消融"rank 感知 vs 无 rank 感知"。每一步只增加一个因素，形成干净的递进式消融。
 
 重点验证指标：P95/P99 尾部延迟、Worker 间负载均衡度（Jain's Fairness Index）。
 
 **w2 甜点搜索**：
 
-alpha 修正前（decode_cost_alpha 回退值 0.1）曾搜索得到 w2≈4.0，但该结果无效——alpha=0.1 时 decode 序列几乎不计入 RWPT，等价于纯 prefill token 负载。alpha 修正为 ~90 后 RWPT 数值尺度显著变化（decode 序列贡献从可忽略变为主导），需要重新搜索 w2 甜点。
+移除 decode 折算项后，token_count 和 rwpt 的负载值仅为 prefill token 数（归一化到 Capacity），数值尺度稳定。之前 α ≈ 90 的 decode 折算导致 RWPT 尖峰和路由抖动，现已消除。
 
-待办：运行 `routing-weight-v2` 套件（w2 ∈ [1.5, 4.0]）确认新甜点。
+已完成 `load-metric-w2-sweep` 套件（3 metrics × 7 w2 值 = 21 组实验），待重新验证移除 decode 项后的表现。
 
 **Worker 新增上报字段**：
-- `pending_prefill_tokens`: 等待队列中 input_len 总和
-- `active_decode_seqs`: 当前 batch 中 decode 序列数
-- `pending_rank_weighted_tokens`: RWPT 值（Worker 端直接计算好）
+- `pending_prefill_tokens`: 等待队列中 rank 加权后的 input_len 总和（RWPT 值）
+- `pending_raw_tokens`: 等待队列中未加权的 input_len 总和
+- `active_decode_seqs`: 当前 batch 中 decode 序列数（保留上报，当前路由公式不使用，供未来副本放置决策）
 - `pool_used_ratio`: 内存池整体使用率（KV + LoRA 共享池）
 
 **Rank 感知扩展（✅ 已实现）**：

@@ -65,7 +65,10 @@ ChartGenerator    →  charts/*.png / *.pdf
 | `routing-alpha-comparison` | alpha × 策略 | 热点程度对路由效果的影响 |
 | `routing-adapter-scaling` | num_adapters × 策略 | adapter 规模扩展性 |
 | `routing-full-comparison` | alpha × adapters × 策略 | 完整对比 |
-| `routing-weight-comparison` | w2 ∈ [0.08, 0.2] | 负载惩罚权重调优 |
+| `routing-weight-comparison` | w2 ∈ [4.5, 5.5] | 负载惩罚权重调优（旧 alpha） |
+| `routing-weight-v2` | w2 ∈ [1.5, 4.0] | w2 甜点重搜 |
+| `load-metric-ablation` | load_metric × 3 | 负载度量消融（queue_length/token_count/rwpt） |
+| `load-metric-w2-sweep` | load_metric × w2 × 7 | 三种度量综合 w2 甜点搜索（21 组） |
 
 ## 快速使用
 

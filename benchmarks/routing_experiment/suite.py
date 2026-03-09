@@ -46,16 +46,15 @@ class ExperimentSuite:
             "routing_w2": [4.5, 4.7, 5.0, 5.2, 5.5],
         },
         "routing-weight-v2": {
-            # alpha 修正后的 w2 甜点重搜（decode_cost_alpha ≈ 90）
+            # [历史] alpha 修正后的 w2 甜点重搜
             # Score = w1·Cache - w2·(RWPT/Capacity)
-            # RWPT = pending_prefill_tokens + α·active_decode_seqs
+            # RWPT = pending_prefill_tokens（仅 prefill token，无 decode 折算）
             # Capacity = batch_max_tokens ≈ 2500
             #
-            # 量纲分析（alpha≈90, avg≈320 tokens/req）：
-            #   3 req + 5 decode → RWPT/Cap ≈ 0.56
-            #   8 req + 10 decode → RWPT/Cap ≈ 1.38
-            # 旧甜点 w2=4.0 在新 alpha 下负载惩罚过重
-            # 预判新甜点 w2 ∈ [1.5, 4.0]
+            # 量纲分析（avg≈320 tokens/req）：
+            #   3 req → RWPT/Cap ≈ 0.38
+            #   8 req → RWPT/Cap ≈ 1.02
+            # 预判甜点 w2 ∈ [1.5, 4.0]
             "routing_strategy": ["adapter-aware"],
             "alpha": [0.3],
             "num_adapters": [100],
@@ -70,15 +69,49 @@ class ExperimentSuite:
             # token_count:  token 级但无 rank 加权（消融 γ·r 项）
             # rwpt:         完整 V3 RWPT（默认）
             #
-            # 注意：w2 需要在 routing-weight-v2 确认新甜点后更新
-            # TODO: 用 routing-weight-v2 的最优 w2 替换此处的 4.0
+            # w2=3.0: alpha 修正后（decode_cost_alpha≈90）的甜点值
             "routing_strategy": ["adapter-aware"],
             "alpha": [0.3],
             "num_adapters": [100],
             "req_rate": [6.0],
-            "duration": [180],
+            "duration": [120],
             "routing_w1": [1.0],
-            "routing_w2": [4.0],
+            "routing_w2": [0.8],
+            "load_metric": ["rwpt", "queue_length", "token_count"],
+        },
+        "rwpt-w2-search": {
+            # RWPT 专用 w2 甜点搜索（移除 decode 项后）
+            # load-metric-w2-sweep 结果显示 rwpt 在 w2=0.8 时最优（5.21/20.5s）
+            # 但仍差于 queue_length/token_count，需要在更小 w2 范围细搜
+            # RWPT/Capacity 值域 ~[0, 0.5]（纯 prefill token，无 decode 折算）
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+            "routing_w1": [1.0],
+            "routing_w2": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0],
+            "load_metric": ["rwpt"],
+        },
+        "load-metric-w2-sweep": {
+            # 三种负载度量的综合 w2 甜点搜索
+            # 目标：每种 metric 在各自最优 w2 下对比
+            #
+            # queue_length: 无 Capacity 归一化，w2 直接乘 QueueLen
+            #   → 甜点区间偏小（QueueLen 通常 0-5）
+            # token_count: pending_raw_tokens / Capacity（无 rank 加权，无 decode 折算）
+            # rwpt: pending_prefill_tokens / Capacity（rank 加权，无 decode 折算）
+            #   → token_count/rwpt 归一化到 ~[0,2]
+            #
+            # 覆盖范围：w2 ∈ [0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0]
+            # 3 metrics × 7 w2 = 21 experiments
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+            "routing_w1": [1.0],
+            "routing_w2": [0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 4.0],
             "load_metric": ["queue_length", "token_count", "rwpt"],
         },
     }
