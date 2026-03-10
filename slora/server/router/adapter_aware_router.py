@@ -235,18 +235,12 @@ class AdapterAwareRouter:
 
         elif metric == 'token_count':
             # Variant B: token 级负载，仅 prefill token（无 rank 加权，无 decode 折算）
-            if state.pending_raw_tokens > 0 or (state.queue_length == 0):
-                raw = state.pending_raw_tokens
-                load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
-                load_value = self.config.w2 * load_pressure
-                score -= load_value
-                logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
-                            f"load_pressure={load_pressure:.4f}")
-            else:
-                # 回退：Worker 未上报 pending_raw_tokens
-                load_value = self.config.w2 * state.queue_length
-                score -= load_value
-                logger.debug(f"Worker {worker_id} token_count fallback: queue={state.queue_length}")
+            raw = state.pending_raw_tokens
+            load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
+            load_value = self.config.w2 * load_pressure
+            score -= load_value
+            logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
+                        f"load_pressure={load_pressure:.4f}")
 
         else:  # 'rwpt' (默认)
             # Variant C: RWPT — rank 加权的 prefill token 数（无 decode 折算）

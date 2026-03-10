@@ -93,6 +93,64 @@ class ExperimentSuite:
             "routing_w2": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0],
             "load_metric": ["rwpt"],
         },
+        "ql-w2-search": {
+            # queue_length 专用 w2 甜点搜索
+            # queue_length 模式无 Capacity 归一化：Score -= w2 * QueueLen
+            # QueueLen 通常 0~5，cache 命中得分 = w1 = 1.0
+            # 要让负载惩罚与缓存亲和性竞争：w2 * QueueLen ≈ 1.0
+            # → QueueLen=3 时 w2≈0.3 为平衡点
+            # 搜索范围 w2 ∈ [0.05, 0.8]，覆盖"几乎纯缓存"到"强负载均衡"
+            # 10 experiments
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+            "routing_w1": [1.0],
+            "routing_w2": [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+            "load_metric": ["queue_length"],
+        },
+        "tc-w2-search": {
+            # token_count 专用 w2 甜点搜索
+            # token_count 模式：pending_raw_tokens / Capacity（无 rank 加权，无 decode 折算）
+            # 与 rwpt 归一化方式相同（除以 batch_max_tokens≈2500），但不乘 (1+γ·r)
+            # 值域与 rwpt 接近，预期甜点区间也接近
+            # rwpt 甜点 w2∈[0.5, 2.5]，token_count 搜索范围覆盖 [0.3, 4.0]
+            # 10 experiments
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+            "routing_w1": [1.0],
+            "routing_w2": [0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+            "load_metric": ["token_count"],
+        },
+        "best-w2-comparison": {
+            # 三种负载度量各取最优 w2 的公平对比
+            # 在同一次服务器启动下连续跑，消除环境噪声
+            # 最优 w2 来源：
+            #   rwpt:         w2=2.0  (tput=5.65, lat=10.86s)  ← rwpt-w2-search 第二轮
+            #   queue_length: w2=0.05 (tput=5.54, lat=11.56s)  ← ql-w2-search
+            #   token_count:  w2=0.8  (tput=5.50, lat=13.03s)  ← tc-w2-search
+            #
+            # 注意：这里用 Cartesian product 会产生 3×3=9 组合，
+            # 但我们只需要 3 个有效组合（每个 metric 对应自己的最优 w2）。
+            # 所以不能用 suite 的笛卡尔积机制，需要手动定义。
+            # 折中方案：分别定义三个单点 suite，或者用 load-metric-ablation 风格
+            # 但 suite 机制不支持 (metric, w2) 配对，所以这里用三个固定 w2 值
+            # 配合三个 metric，产生 9 个实验，其中 3 个是有效对比点。
+            # 多出的 6 个实验也有参考价值（交叉验证）。
+            # 9 experiments
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+            "routing_w1": [1.0],
+            "routing_w2": [0.05, 0.8, 2.0],
+            "load_metric": ["queue_length", "token_count", "rwpt"],
+        },
         "load-metric-w2-sweep": {
             # 三种负载度量的综合 w2 甜点搜索
             # 目标：每种 metric 在各自最优 w2 下对比

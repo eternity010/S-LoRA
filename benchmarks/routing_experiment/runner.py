@@ -56,6 +56,14 @@ class ExperimentRunner:
         self.checkpoint_file = self.output_dir / "checkpoint.json"
         self._current_server_config = None  # Track current server configuration
         
+        # Suite execution state (for checkpoint)
+        self._current_suite_name: Optional[str] = None
+        self._current_config_id: Optional[str] = None
+        self._current_exp_index: int = 0  # 1-based
+        self._suite_total: int = 0
+        self._suite_all_config_ids: list = []
+        self._suite_completed: set = set()
+        
         # Debug log file
         self._debug_log = None
         if self.debug:
@@ -101,9 +109,18 @@ class ExperimentRunner:
             self._debug_log.flush()
     
     def _signal_handler(self, signum, frame):
-        """Handle interrupt signals gracefully"""
+        """Handle interrupt signals gracefully, saving checkpoint with interrupted info"""
         self._log("SIGINT received, cleaning up")
         print("\n\nReceived interrupt signal. Cleaning up...")
+        
+        # Save checkpoint with last_interrupted info before exiting
+        if self._current_suite_name and self._suite_completed is not None:
+            self._save_checkpoint(
+                list(self._suite_completed),
+                last_interrupted=self._current_config_id,
+                interrupted_index=self._current_exp_index,
+            )
+        
         self._stop_server()
         if self._debug_log:
             self._debug_log.close()
@@ -123,6 +140,16 @@ class ExperimentRunner:
             f"gpus{config.gpu_ids}_"
             f"adapters{config.num_adapters}_"
             f"tokens{config.num_token}"
+        )
+    
+    @staticmethod
+    def _make_config_id(config: ExperimentConfig) -> str:
+        """Create unique ID for an experiment config (used in checkpoint)."""
+        return (
+            f"{config.routing_strategy}_alpha{config.alpha}"
+            f"_adapters{config.num_adapters}"
+            f"_w1{config.routing_w1}_w2{config.routing_w2}"
+            f"_lm{config.load_metric}"
         )
     
     def _needs_server_restart(self, config: ExperimentConfig) -> bool:
@@ -165,22 +192,49 @@ class ExperimentRunner:
         configs = list(ExperimentSuite.get_configs(suite_name))
         total = len(configs)
         
+        # Build config_id list for all experiments in this suite
+        all_config_ids = []
+        for config in configs:
+            cid = self._make_config_id(config)
+            all_config_ids.append(cid)
+        
+        # Update suite execution state (used by signal handler)
+        self._current_suite_name = suite_name
+        self._suite_total = total
+        self._suite_all_config_ids = all_config_ids
+        
         # Load checkpoint if resuming
         completed = set()
         if resume and self.checkpoint_file.exists():
             with open(self.checkpoint_file, 'r') as f:
                 checkpoint = json.load(f)
+            
+            # Validate suite_name matches
+            ckpt_suite = checkpoint.get('suite_name')
+            if ckpt_suite and ckpt_suite != suite_name:
+                print(f"⚠ Checkpoint is for suite '{ckpt_suite}', "
+                      f"but running '{suite_name}'. Ignoring checkpoint.")
+                self._log(f"resume: suite mismatch ({ckpt_suite} != {suite_name}), ignored")
+            else:
                 completed = set(checkpoint.get('completed', []))
-            print(f"Resuming from checkpoint: {len(completed)} experiments already completed")
-            self._log(f"resume: {len(completed)} completed")
+                last_int = checkpoint.get('last_interrupted')
+                print(f"Resuming from checkpoint: {len(completed)}/{total} completed")
+                if last_int:
+                    print(f"  Last interrupted: {last_int}")
+                self._log(f"resume: {len(completed)} completed, last_interrupted={last_int}")
+        
+        self._suite_completed = completed
         
         print(f"\nRunning suite '{suite_name}' with {total} experiments")
         print("=" * 70)
         
         try:
             for i, config in enumerate(configs, 1):
-                # Create unique ID for this config (include w1/w2 for routing-weight-comparison)
-                config_id = f"{config.routing_strategy}_alpha{config.alpha}_adapters{config.num_adapters}_w1{config.routing_w1}_w2{config.routing_w2}_lm{config.load_metric}"
+                config_id = all_config_ids[i - 1]
+                
+                # Update current execution state (for signal handler)
+                self._current_config_id = config_id
+                self._current_exp_index = i
                 
                 if config_id in completed:
                     print(f"\n[{i}/{total}] Skipping (already completed): {config_id}")
@@ -219,11 +273,19 @@ class ExperimentRunner:
                     
                     # Update checkpoint
                     completed.add(config_id)
+                    self._suite_completed = completed
                     self._save_checkpoint(list(completed))
                     
                 except Exception as e:
                     self._log(f"failed: {e}")
                     print(f"✗ Failed: {e}")
+                    # Save checkpoint with failure info
+                    self._save_checkpoint(
+                        list(completed),
+                        last_interrupted=config_id,
+                        interrupted_index=i,
+                        reason=str(e),
+                    )
                     # On failure, stop server to ensure clean state for next experiment
                     self._stop_server()
                     continue
@@ -237,6 +299,9 @@ class ExperimentRunner:
             if self._debug_log:
                 self._debug_log.close()
                 self._debug_log = None
+            # Clear suite execution state
+            self._current_suite_name = None
+            self._current_config_id = None
         
         print(f"Suite completed: {len(completed)}/{total} experiments successful")
     
@@ -1090,12 +1155,39 @@ class ExperimentRunner:
         record.save_to_jsonl(str(result_file), append=True)
         print(f"     Result saved to {result_file}")
     
-    def _save_checkpoint(self, completed: list) -> None:
-        """Save checkpoint for resume capability"""
+    def _save_checkpoint(self, completed: list,
+                        last_interrupted: str = None,
+                        interrupted_index: int = None,
+                        reason: str = None) -> None:
+        """Save checkpoint with full suite execution state.
+        
+        Args:
+            completed: List of completed config_ids
+            last_interrupted: config_id of the interrupted/failed experiment (if any)
+            interrupted_index: 1-based index of the interrupted experiment
+            reason: Reason for interruption (e.g. exception message, 'SIGINT')
+        """
+        pending = [
+            cid for cid in self._suite_all_config_ids
+            if cid not in set(completed)
+        ]
+        
         checkpoint = {
+            'suite_name': self._current_suite_name,
+            'total': self._suite_total,
             'completed': completed,
-            'timestamp': time.time()
+            'pending': pending,
+            'timestamp': time.time(),
         }
+        
+        if last_interrupted:
+            checkpoint['last_interrupted'] = {
+                'config_id': last_interrupted,
+                'index': interrupted_index,
+                'reason': reason or 'SIGINT',
+                'timestamp': time.time(),
+            }
+        
         with open(self.checkpoint_file, 'w') as f:
             json.dump(checkpoint, f, indent=2)
     

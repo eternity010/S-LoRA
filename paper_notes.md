@@ -1,6 +1,6 @@
 # 多租户 LoRA 推理系统论文思路整理
 
-> **📅 最后更新**: 2026-03-06
+> **📅 最后更新**: 2026-03-10
 > **📌 状态**: 基于已实现功能整理
 
 ---
@@ -227,7 +227,7 @@ $Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot QueueLen_i$
 
 $Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot \frac{\sum_j input\_len_j}{Capacity_i}$
 
-升级到 token 级，感知请求的 prompt 长度差异，但不感知 LoRA Rank 差异。
+升级到 token 级，感知请求的 prompt 长度差异，但不感知 LoRA Rank 差异。与 rwpt 共享相同的 Capacity 归一化方式，无 fallback 机制。
 
 **V3: rwpt（✅ 已实现，完整版，默认）**
 
@@ -242,6 +242,8 @@ $Score_i(r) = w_1 \cdot \mathbf{I}(hit) - w_2 \cdot \frac{RWPT_i}{Capacity_i} - 
 $RWPT_i = \sum_{j \in WaitQueue_i} input\_len_j \cdot (1 + \gamma \cdot r_j)$
 
 RWPT 仅基于等待队列中的 prefill token，不包含 decode 序列折算。早期版本曾包含 decode 折算项 `α · DecodeSeqs`（α ≈ 90），但实验发现该项导致 RWPT 出现巨大尖峰，引发路由抖动（routing thrashing）和 Worker 负载不均衡，已移除。
+
+token_count 和 rwpt 均无 fallback 机制：当 pending tokens 为 0 时直接使用 0 值，不回退到 queue_length。早期 token_count 存在 fallback（当 `pending_raw_tokens == 0` 且 `queue_length > 0` 时回退到 `w2 * queue_length`），导致评分在两种不同量纲间跳变，路由决策不稳定，已移除（commit 3.24）。三个 variant 现在各自逻辑独立、量纲一致，确保消融实验的公平性。
 
 | 符号 | 含义 |
 |------|------|
@@ -314,21 +316,43 @@ Worker B: 等待 1 个请求 (input_len=1024, rank=128)
 
 **消融实验设计**：
 
-| 变体 | load_metric | 负载度量 | 对应公式 |
-|------|------------|---------|---------|
-| Variant A | `queue_length` | 请求数（V1 基线） | $w_2 \cdot QueueLen$ |
-| Variant B | `token_count` | Token 数，无 rank 加权 | $w_2 \cdot \Sigma input\_len / Cap$ |
-| Variant C (Ours) | `rwpt` | Rank 加权 Token 数（完整 V3） | $w_2 \cdot RWPT / Cap$ |
+| 变体 | load_metric | 负载度量 | 对应公式 | Fallback |
+|------|------------|---------|---------|----------|
+| Variant A | `queue_length` | 请求数（V1 基线） | $w_2 \cdot QueueLen$ | N/A（无归一化） |
+| Variant B | `token_count` | Token 数，无 rank 加权 | $w_2 \cdot \Sigma input\_len / Cap$ | 无（已移除） |
+| Variant C (Ours) | `rwpt` | Rank 加权 Token 数（完整 V3） | $w_2 \cdot RWPT / Cap$ | 无（已移除） |
 
-A→B 消融"token 粒度 vs 请求粒度"，B→C 消融"rank 感知 vs 无 rank 感知"。每一步只增加一个因素，形成干净的递进式消融。
+A→B 消融"token 粒度 vs 请求粒度"，B→C 消融"rank 感知 vs 无 rank 感知"。每一步只增加一个因素，形成干净的递进式消融。三个 variant 均无 fallback，量纲独立，确保对比公平。
 
 重点验证指标：P95/P99 尾部延迟、Worker 间负载均衡度（Jain's Fairness Index）。
 
 **w2 甜点搜索**：
 
-移除 decode 折算项后，token_count 和 rwpt 的负载值仅为 prefill token 数（归一化到 Capacity），数值尺度稳定。之前 α ≈ 90 的 decode 折算导致 RWPT 尖峰和路由抖动，现已消除。
+移除 decode 折算项和 fallback 机制后，三个 variant 的负载值量纲一致，w2 搜索结果稳定可复现。
 
-已完成 `load-metric-w2-sweep` 套件（3 metrics × 7 w2 值 = 21 组实验），待重新验证移除 decode 项后的表现。
+已完成三轮独立 w2 搜索实验（实验条件：3×RTX 3090, LLaMA-7B, 100 adapters, α=0.3, req_rate=6.0, duration=120s）：
+
+| Metric | 搜索范围 | 实验套件 | 实验数 |
+|--------|---------|---------|--------|
+| rwpt | w2 ∈ [0.5, 5.0] | `rwpt-w2-search` | 10 |
+| queue_length | w2 ∈ [0.05, 0.8] | `ql-w2-search` | 10 |
+| token_count | w2 ∈ [0.3, 4.0] | `tc-w2-search` | 10 |
+
+各 metric 综合最优 w2（吞吐-延迟综合评分）：
+
+| Metric | Best w2 | Throughput | Avg Latency | First Token Latency | P90 Latency | Cache Hit Rate |
+|--------|---------|-----------|-------------|--------------------|-----------|----|
+| **rwpt** | **0.5** | **5.615** | **10.32s** | **5.39s** | **13.95s** | 81.0% |
+| queue_length | 0.1 | 5.325 | 11.85s | 6.74s | 15.89s | 88.8% |
+| token_count | 0.8 | 5.498 | 13.03s | 7.70s | 16.93s | 74.4% |
+
+关键发现：
+- RWPT 全面领先：吞吐最高（+5.4% vs queue_length），延迟最低（-12.9% vs queue_length, -20.8% vs token_count）
+- queue_length 的最优 w2 极小（0.05~0.1），说明粗粒度负载信号加大权重反而破坏缓存亲和性
+- token_count 虽然有 token 级粒度，但缺少 rank 加权导致负载估算不准确，表现反而不如 queue_length
+- RWPT 的 rank 加权 + Capacity 归一化使其在更大的 w2 范围内保持稳定（w2=0.5~3.0 均表现良好）
+
+数据文件：`benchmarks/routing_comparison_results/w2_search_data/`
 
 **Worker 新增上报字段**：
 - `pending_prefill_tokens`: 等待队列中 rank 加权后的 input_len 总和（RWPT 值）
