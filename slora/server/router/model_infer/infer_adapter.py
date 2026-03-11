@@ -201,17 +201,23 @@ class InferAdapter:
         
         print(f"{'='*80}\n")
 
-    def get_lora_memory_usage(self) -> dict:
+    def get_lora_memory_usage(self, max_lora_ratio: float = None) -> dict:
         """
         获取 LoRA 专用空间的使用情况
+        
+        参数:
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于计算 LoRA 专用空间使用率
         
         返回:
             {
                 'total_cells': 总内存空间（cells），包括 KV cache 和 LoRA 空间,
                 'lora_cells': LoRA 专用空间大小（cells），0 表示与 KV cache 共享,
-                'used_cells': 已使用空间（cells）,
-                'available_cells': 可用空间（cells）,
-                'usage_ratio': 使用率（0-1）,
+                'used_cells': 已使用空间（cells）（整个池子）,
+                'available_cells': 可用空间（cells）（整个池子）,
+                'usage_ratio': 整个池子使用率（0-1）,
+                'lora_used_cells': LoRA 适配器实际占用的 cells,
+                'lora_max_cells': LoRA 空间上限（cells），由 max_lora_ratio 决定,
+                'lora_usage_ratio': LoRA 使用率（0-1），= lora_used / lora_max,
                 'num_adapters': 当前加载的适配器数量,
                 'adapter_cells': 各适配器占用的 cells 列表
             }
@@ -222,12 +228,24 @@ class InferAdapter:
         available_cells = self.mem_manager.can_use_mem_size
         used_cells = total_cells - available_cells
         
-        # 计算使用率
+        # 整个池子使用率
         usage_ratio = used_cells / total_cells if total_cells > 0 else 0.0
         
         # 获取适配器信息
         num_adapters = len(self.adapter_dirs)
         adapter_cells = self.a_len.cpu().tolist() if num_adapters > 0 else []
+        
+        # 计算 LoRA 实际占用
+        lora_used_cells = sum(adapter_cells)
+        
+        # 计算 LoRA 空间上限和使用率
+        if max_lora_ratio is not None and max_lora_ratio > 0:
+            lora_max_cells = int(total_cells * max_lora_ratio)
+        else:
+            # 没有设置 max_lora_ratio 时，以整个池子为上限
+            lora_max_cells = total_cells
+        
+        lora_usage_ratio = lora_used_cells / lora_max_cells if lora_max_cells > 0 else 0.0
         
         return {
             'total_cells': total_cells,
@@ -235,6 +253,9 @@ class InferAdapter:
             'used_cells': used_cells,
             'available_cells': available_cells,
             'usage_ratio': float(usage_ratio),
+            'lora_used_cells': lora_used_cells,
+            'lora_max_cells': lora_max_cells,
+            'lora_usage_ratio': float(lora_usage_ratio),
             'num_adapters': num_adapters,
             'adapter_cells': adapter_cells
         }
@@ -335,17 +356,20 @@ class InferAdapter:
         
         return eviction_list
 
-    def check_memory_threshold(self, threshold: float = 0.9) -> dict:
+    def check_memory_threshold(self, threshold: float = 0.9, max_lora_ratio: float = None) -> dict:
         """
-        检查内存使用率是否超过阈值
+        检查 LoRA 内存使用率是否超过阈值
+        
+        基于 LoRA 实际占用 / LoRA 空间上限 来判断，而非整个池子的使用率。
         
         参数:
             threshold: 触发淘汰的阈值（0-1），默认 0.9 (90%)
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于计算 LoRA 空间上限
         
         返回:
             {
                 'over_threshold': 是否超过阈值 (bool),
-                'current_ratio': 当前使用率 (float),
+                'current_ratio': 当前 LoRA 使用率 (float),
                 'threshold': 设置的阈值 (float),
                 'usage_info': 内存使用详情 (dict)
             }
@@ -354,11 +378,11 @@ class InferAdapter:
         if threshold < 0 or threshold > 1:
             raise ValueError(f"threshold 必须在 [0, 1] 范围内，当前值: {threshold}")
         
-        # 获取当前内存使用情况
-        usage_info = self.get_lora_memory_usage()
+        # 获取当前内存使用情况（传入 max_lora_ratio 以计算 LoRA 使用率）
+        usage_info = self.get_lora_memory_usage(max_lora_ratio=max_lora_ratio)
         
-        # 提取当前使用率
-        current_ratio = usage_info['usage_ratio']
+        # 使用 LoRA 使用率（lora_used / lora_max）来判断
+        current_ratio = usage_info['lora_usage_ratio']
         
         # 判断是否超过阈值
         over_threshold = current_ratio >= threshold
@@ -373,12 +397,13 @@ class InferAdapter:
         
         return result
 
-    def execute_eviction(self, adapters_to_evict: List[str]) -> dict:
+    def execute_eviction(self, adapters_to_evict: List[str], max_lora_ratio: float = None) -> dict:
         """
         执行适配器淘汰并记录结果
         
         参数:
             adapters_to_evict: 要淘汰的适配器目录列表
+            max_lora_ratio: LoRA 最大占用比例（0-1），用于计算使用率
         
         返回:
             {
@@ -390,7 +415,7 @@ class InferAdapter:
             }
         """
         # 记录淘汰前的内存使用情况
-        before_usage = self.get_lora_memory_usage()
+        before_usage = self.get_lora_memory_usage(max_lora_ratio=max_lora_ratio)
         
         # 初始化返回结果
         result = {
@@ -429,7 +454,7 @@ class InferAdapter:
         self.offload_adapters(reserve_dirs)
         
         # 记录淘汰后的内存使用情况
-        after_usage = self.get_lora_memory_usage()
+        after_usage = self.get_lora_memory_usage(max_lora_ratio=max_lora_ratio)
         
         # 计算释放的空间
         cells_freed = before_usage['used_cells'] - after_usage['used_cells']
@@ -441,7 +466,7 @@ class InferAdapter:
         result['cells_freed'] = cells_freed
         
         # 打印淘汰结果
-        print(f"   淘汰完成: 使用率 {before_usage['usage_ratio']:.1%} → {after_usage['usage_ratio']:.1%}")
+        print(f"   淘汰完成: LoRA 使用率 {before_usage['lora_usage_ratio']:.1%} → {after_usage['lora_usage_ratio']:.1%}")
         print(f"   释放空间: {cells_freed} cells, 剩余 {after_usage['num_adapters']} 个适配器\n")
         
         return result
@@ -474,8 +499,8 @@ class InferAdapter:
                 'cells_freed': 释放的空间大小
             }
         """
-        # 步骤 1：检查是否超过阈值
-        check_result = self.check_memory_threshold(threshold)
+        # 步骤 1：检查是否超过阈值（基于 LoRA 使用率）
+        check_result = self.check_memory_threshold(threshold, max_lora_ratio=max_lora_ratio)
         
         # 初始化返回结果
         result = {
@@ -500,16 +525,14 @@ class InferAdapter:
         # 超过阈值，打印警告信息
         print(f"\n⚠️  LoRA 内存使用率 {check_result['current_ratio']:.1%} 超过阈值 {threshold:.1%}，触发淘汰")
         
-        # 如果设置了 max_lora_ratio，显示 LoRA 占用信息
-        if max_lora_ratio is not None:
-            usage_info = check_result['usage_info']
-            adapter_cells_list = usage_info.get('adapter_cells', [])
-            current_lora_cells = sum(adapter_cells_list)
-            lora_ratio = current_lora_cells / usage_info['total_cells'] if usage_info['total_cells'] > 0 else 0
-            max_lora_cells = int(usage_info['total_cells'] * max_lora_ratio)
-            print(f"   LoRA 当前占用: {current_lora_cells}/{usage_info['total_cells']} cells ({lora_ratio:.1%})")
-            print(f"   LoRA 上限设置: {max_lora_cells} cells ({max_lora_ratio:.1%})")
-            print(f"   需释放空间: {max(0, current_lora_cells - max_lora_cells)} cells")
+        # 显示 LoRA 占用详情
+        usage_info = check_result['usage_info']
+        lora_used = usage_info['lora_used_cells']
+        lora_max = usage_info['lora_max_cells']
+        print(f"   LoRA 当前占用: {lora_used}/{lora_max} cells ({check_result['current_ratio']:.1%})")
+        print(f"   总池使用率: {usage_info['usage_ratio']:.1%} ({usage_info['used_cells']}/{usage_info['total_cells']} cells)")
+        if lora_used > lora_max:
+            print(f"   需释放空间: {lora_used - lora_max} cells")
         
         # 检查是否有适配器可以淘汰
         num_adapters = check_result['usage_info']['num_adapters']
@@ -534,7 +557,7 @@ class InferAdapter:
             return result
         
         # 步骤 4：执行淘汰
-        eviction_result = self.execute_eviction(candidates)
+        eviction_result = self.execute_eviction(candidates, max_lora_ratio=max_lora_ratio)
         
         # 更新返回结果
         result['evicted'] = True
@@ -562,10 +585,11 @@ class InferAdapter:
         
         before = evict_result['before_usage']
         print(f"淘汰前状态:")
-        print(f"  - 内存使用: {before['used_cells']}/{before['total_cells']} cells "
+        print(f"  - LoRA 使用: {before['lora_used_cells']}/{before['lora_max_cells']} cells "
+              f"({before['lora_usage_ratio']:.1%})")
+        print(f"  - 总池使用: {before['used_cells']}/{before['total_cells']} cells "
               f"({before['usage_ratio']:.1%})")
         print(f"  - 适配器数: {before['num_adapters']}")
-        print(f"  - 可用空间: {before['available_cells']} cells")
         
         if evict_result['evicted']:
             after = evict_result['after_usage']
@@ -581,11 +605,10 @@ class InferAdapter:
                     print(f"      · {adapter_name} (分数: {score:.4f})")
             
             print(f"\n淘汰后状态:")
-            print(f"  - 内存使用: {after['used_cells']}/{after['total_cells']} cells "
-                  f"({after['usage_ratio']:.1%})")
+            print(f"  - LoRA 使用: {after['lora_used_cells']}/{after['lora_max_cells']} cells "
+                  f"({after['lora_usage_ratio']:.1%})")
             print(f"  - 适配器数: {after['num_adapters']}")
-            print(f"  - 可用空间: {after['available_cells']} cells")
-            print(f"  - 使用率变化: {before['usage_ratio']:.1%} → {after['usage_ratio']:.1%}")
+            print(f"  - LoRA 使用率变化: {before['lora_usage_ratio']:.1%} → {after['lora_usage_ratio']:.1%}")
         else:
             print(f"\n淘汰结果: 未执行淘汰")
             print(f"  - 原因: {evict_result['reason']}")
