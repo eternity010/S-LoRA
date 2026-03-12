@@ -1,7 +1,7 @@
 # 多租户 LoRA 推理系统论文思路整理
 
-> **📅 最后更新**: 2026-03-10
-> **📌 状态**: 基于已实现功能整理
+> **📅 最后更新**: 2026-03-12
+> **📌 状态**: w2 甜点搜索实验进行中（RWPT ✅ TC ✅ QL 🔄）
 
 ---
 
@@ -330,29 +330,55 @@ A→B 消融"token 粒度 vs 请求粒度"，B→C 消融"rank 感知 vs 无 ran
 
 移除 decode 折算项和 fallback 机制后，三个 variant 的负载值量纲一致，w2 搜索结果稳定可复现。
 
-已完成三轮独立 w2 搜索实验（实验条件：3×RTX 3090, LLaMA-7B, 100 adapters, α=0.3, req_rate=6.0, duration=120s）：
+已完成三轮独立 w2 搜索实验（实验条件：3×RTX 3090, LLaMA-7B, 100 adapters, α=0.3, req_rate=6.0, duration=120s, **max_lora_ratio=0.2**）：
 
-| Metric | 搜索范围 | 实验套件 | 实验数 |
-|--------|---------|---------|--------|
-| rwpt | w2 ∈ [0.5, 5.0] | `rwpt-w2-search` | 10 |
-| queue_length | w2 ∈ [0.05, 0.8] | `ql-w2-search` | 10 |
-| token_count | w2 ∈ [0.3, 4.0] | `tc-w2-search` | 10 |
+| Metric | 搜索范围 | 实验套件 | 状态 |
+|--------|---------|---------|------|
+| rwpt | w2 ∈ [0.5, 5.0] | `rwpt-w2-search` | ✅ |
+| token_count | w2 ∈ [0.3, 4.0] | `tc-w2-search` | ✅ |
+| queue_length | w2 ∈ [0.05, 0.8] | `ql-w2-search` | 🔄 进行中 |
 
-各 metric 综合最优 w2（吞吐-延迟综合评分）：
+RWPT w2 搜索结果（ratio=0.2，淘汰机制已修复）：
 
-| Metric | Best w2 | Throughput | Avg Latency | First Token Latency | P90 Latency | Cache Hit Rate |
-|--------|---------|-----------|-------------|--------------------|-----------|----|
-| **rwpt** | **0.5** | **5.615** | **10.32s** | **5.39s** | **13.95s** | 81.0% |
-| queue_length | 0.1 | 5.325 | 11.85s | 6.74s | 15.89s | 88.8% |
-| token_count | 0.8 | 5.498 | 13.03s | 7.70s | 16.93s | 74.4% |
+| w2 | Throughput | P90 Latency | Cache HR |
+|----|-----------|-------------|----------|
+| 0.5 | 5.444 | 14.28s | 68.3% |
+| 1.0 | 5.553 | 14.14s | 72.1% |
+| 1.5 | 5.579 | 14.23s | 70.0% |
+| 2.0 | 5.575 | 14.11s | 69.6% |
+| **2.5** | **5.521** | **14.07s** | **70.0%** |
+| 3.0 | 5.558 | 14.20s | 67.2% |
+| 3.5 | 5.581 | 14.86s | 66.9% |
+| 4.0 | 5.617 | 14.44s | 67.1% |
+| 4.5 | 5.594 | 14.59s | 66.9% |
+| 5.0 | 5.610 | 14.26s | 65.8% |
 
-关键发现：
-- RWPT 全面领先：吞吐最高（+5.4% vs queue_length），延迟最低（-12.9% vs queue_length, -20.8% vs token_count）
-- queue_length 的最优 w2 极小（0.05~0.1），说明粗粒度负载信号加大权重反而破坏缓存亲和性
-- token_count 虽然有 token 级粒度，但缺少 rank 加权导致负载估算不准确，表现反而不如 queue_length
-- RWPT 的 rank 加权 + Capacity 归一化使其在更大的 w2 范围内保持稳定（w2=0.5~3.0 均表现良好）
+TC w2 搜索结果（ratio=0.2）：
 
-数据文件：`benchmarks/routing_comparison_results/w2_search_data/`
+| w2 | Throughput | P90 Latency | Cache HR |
+|----|-----------|-------------|----------|
+| 0.3 | 5.560 | 14.59s | 67.2% |
+| 0.5 | 5.491 | 15.01s | 72.8% |
+| 0.8 | 5.504 | 14.95s | 73.9% |
+| 1.0 | 5.515 | 14.94s | 73.2% |
+| **1.5** | **5.508** | **14.68s** | **75.4%** |
+| **2.0** | **5.611** | **14.51s** | **73.6%** |
+| 2.5 | 5.499 | 15.08s | 73.2% |
+| 3.0 | 5.589 | 14.61s | 73.8% |
+| 3.5 | 5.550 | 14.87s | 72.5% |
+| 4.0 | 5.546 | 14.76s | 72.8% |
+
+SLA 模型甜点值：RWPT w2=1.0, TC w2=1.5（各自最优 w2 用于 alpha 鲁棒性对比）。
+
+QL 搜索结果待实验完成后补充。
+
+关键变化（相比旧 ratio=0.4 实验）：
+- Cache HR 从 80-94% 降至 65-75%，淘汰机制正常工作
+- 每 Worker 约 18-19 个 adapter（vs 旧 ratio=0.4 约 37 个），缓存压力显著增大
+- 三种 metric 的性能差异在高压力下更明显
+
+数据文件：`benchmarks/routing_comparison_results/<suite_name>/results.jsonl`
+汇总工具：`benchmarks/routing_comparison_results/extract_w2_search_data.py`
 
 **Worker 新增上报字段**：
 - `pending_prefill_tokens`: 等待队列中 rank 加权后的 input_len 总和（RWPT 值）
@@ -436,10 +462,13 @@ $$ratio = \frac{usage - 0.9}{0.1} \times 0.4 + 0.2$$
 ### Section 6: Evaluation
 
 **6.1 Experimental Setup**
-- 硬件: 3 × RTX 3090 (24GB)
-- 模型: Llama-7B
-- Adapters: 50 个 (rank=8/16/32 混合)
-- 负载模式: 均匀分布、长尾分布、突发流量
+- 硬件: 3 × RTX 3090 (24GB), 数据并行模式
+- 模型: LLaMA-7B
+- Adapters: 100 个（alpaca-lora-7b rank=16 + bactrian-x-llama-7b-lora rank=64 交替）
+- max_lora_ratio: 0.2（每 Worker 约 18-19 个 adapter）
+- max_total_token_num: 15000
+- 淘汰阈值: 85%
+- 负载模式: Power Law 分布 (α=0.3), req_rate=6.0
 
 **6.2 Baselines**
 - S-LoRA (张量并行, TP=3)

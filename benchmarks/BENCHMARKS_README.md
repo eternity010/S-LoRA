@@ -4,89 +4,89 @@
 
 ```
 benchmarks/
-├── launch_server.py          # 服务器启动脚本（原始 + 扩展了数据并行/路由参数）
-├── exp_suite.py              # 模型路径配置 & 实验套件定义（BASE_MODEL, LORA_DIR）
-├── trace.py                  # 请求生成（Power Law 分布 + Gamma 到达间隔）
-├── run_exp.py                # 原始单机 benchmark 运行脚本
-├── run_exp_peft.py           # PEFT 基线对比脚本
-├── run_routing_comparison.py # 路由策略对比实验入口（新增）
-├── time_stats.py             # 性能统计工具
+├── launch_server.py              # 服务器启动脚本（数据并行 / 路由参数）
+├── exp_suite.py                  # 模型路径配置 (BASE_MODEL, LORA_DIR)
+├── trace.py                      # 请求生成（Power Law + Gamma 到达间隔）
+├── run_exp.py                    # 原始单机 benchmark
+├── run_routing_comparison.py     # 路由策略对比实验入口
 │
-├── routing_experiment/       # 路由对比实验框架（新增）
-│   ├── config.py             # 单次实验参数定义（ExperimentConfig）
-│   ├── suite.py              # 实验套件，笛卡尔积展开参数组合（ExperimentSuite）
-│   ├── runner.py             # 实验执行引擎（启动服务器、发请求、收指标）
-│   ├── result.py             # 结果数据结构与 JSONL 持久化（ExperimentResult）
-│   ├── analyzer.py           # 结果分析（改进比率、统计量、负载均衡 CV）
-│   └── charts.py             # 可视化（吞吐量/延迟/缓存命中率/w2 调优图）
+├── routing_experiment/           # 实验框架
+│   ├── config.py                 # ExperimentConfig 参数定义
+│   ├── suite.py                  # 实验套件（笛卡尔积展开）
+│   ├── runner.py                 # 执行引擎（服务器管理 / 请求发送 / 指标收集）
+│   ├── result.py                 # ExperimentResult + JSONL 持久化
+│   ├── analyzer.py               # 结果分析（改进比率 / 统计量）
+│   └── charts.py                 # 可视化
 │
-└── routing_comparison_results/  # 实验输出目录
-    ├── results.jsonl            # 所有实验结果（追加写入）
-    ├── checkpoint.json          # 断点续跑记录
-    ├── charts/                  # 生成的图表（PNG + PDF）
-    └── logs/                    # 各次实验的服务器日志
+└── routing_comparison_results/   # 实验输出（per-suite 子目录）
+    ├── checkpoint.json           # 全局断点续跑记录
+    ├── results.jsonl             # 旧数据（legacy，不再追加）
+    ├── extract_w2_search_data.py # 汇总 CSV 提取脚本
+    ├── rwpt-w2-search/           # RWPT w2 搜索结果
+    │   ├── results.jsonl
+    │   ├── logs/
+    │   └── charts/
+    ├── tc-w2-search/             # Token Count w2 搜索结果
+    │   └── ...
+    └── ql-w2-search/             # Queue Length w2 搜索结果
+        └── ...
 ```
-
-## 文件复用关系
-
-`routing_experiment/` 框架复用了以下原始文件，未做修改：
-
-- **`exp_suite.py`** — 提供 `BASE_MODEL`、`LORA_DIR` 路径配置
-- **`trace.py`** — 提供 `generate_requests()`，按 alpha/cv/req_rate 生成合成请求
-
-**`launch_server.py`** 在原始基础上扩展，新增了 `--parallel-mode`、`--routing-strategy`、`--routing-w1/w2/w3`、`--evict-*`、`--max-lora-ratio` 等参数，由 `runner.py` 通过 `subprocess` 调用。
 
 ## 实验框架数据流
 
 ```
 ExperimentSuite.get_configs(suite_name)
-        │  笛卡尔积展开所有参数组合
+        │  笛卡尔积展开参数组合
         ▼
-ExperimentRunner.run_suite()
-        │  对每个 ExperimentConfig：
-        │  1. 判断是否需要重启服务器（alpha/w2 变化不需要重启）
-        │  2. 启动 launch_server.py（subprocess）
-        │  3. 动态更新路由权重（POST /update_routing_config）
-        │  4. 调用 trace.generate_requests() 生成请求
-        │  5. aiohttp 异步发送，按时间戳控制速率
-        │  6. 收集 /routing_stats 前后 delta
+ExperimentRunner.run_suite(suite_name)
+        │  1. 创建 per-suite 输出目录
+        │  2. 按需启动/复用服务器（alpha/w2 变化不重启）
+        │  3. POST /update_routing_config 动态更新权重
+        │  4. trace.generate_requests() → aiohttp 异步发送
+        │  5. 收集 /routing_stats delta
         ▼
-ExperimentResult  →  results.jsonl
-        │
-        ▼
-ResultAnalyzer    →  改进比率、统计量、Markdown 汇总表
-ChartGenerator    →  charts/*.png / *.pdf
+results.jsonl (per-suite)  →  ResultAnalyzer / ChartGenerator
 ```
 
-## 预定义实验套件
+## 当前实验套件
 
-| 套件名 | 变量 | 用途 |
-|--------|------|------|
-| `routing-alpha-comparison` | alpha × 策略 | 热点程度对路由效果的影响 |
-| `routing-adapter-scaling` | num_adapters × 策略 | adapter 规模扩展性 |
-| `routing-full-comparison` | alpha × adapters × 策略 | 完整对比 |
-| `routing-weight-comparison` | w2 ∈ [4.5, 5.5] | 负载惩罚权重调优（旧 alpha） |
-| `routing-weight-v2` | w2 ∈ [1.5, 4.0] | w2 甜点重搜 |
-| `load-metric-ablation` | load_metric × 3 | 负载度量消融（queue_length/token_count/rwpt） |
-| `load-metric-w2-sweep` | load_metric × w2 × 7 | 三种度量综合 w2 甜点搜索（21 组） |
+| 套件名 | 变量 | 实验数 | 用途 |
+|--------|------|--------|------|
+| `rwpt-w2-search` | w2 ∈ [0.5, 5.0] | 10 | RWPT 负载度量 w2 甜点搜索 |
+| `tc-w2-search` | w2 ∈ [0.3, 4.0] | 10 | Token Count w2 甜点搜索 |
+| `ql-w2-search` | w2 ∈ [0.05, 0.8] | 10 | Queue Length w2 甜点搜索 |
+| `routing-alpha-comparison` | alpha × 策略 | 8 | 热点程度对路由效果的影响 |
+| `routing-adapter-scaling` | adapters × 策略 | 8 | adapter 规模扩展性 |
+| `routing-full-comparison` | alpha × adapters × 策略 | 12 | 完整对比 |
+
+## 环境参数
+
+- 3× RTX 3090 (GPU 1,2,3)，数据并行模式
+- `max_lora_ratio = 0.2`（每 Worker 约 18-19 个 adapter）
+- `max_total_token_num = 15000`
+- 100 个 adapter（alpaca-lora-7b rank=16 + bactrian-x-llama-7b-lora rank=64 交替）
+- 淘汰阈值 85%
 
 ## 快速使用
 
 ```bash
 cd benchmarks
 
-# 运行路由对比实验
-python run_routing_comparison.py --suite routing-alpha-comparison
+# 运行实验
+python run_routing_comparison.py --suite ql-w2-search
 
 # 断点续跑
-python run_routing_comparison.py --suite routing-full-comparison --resume
+python run_routing_comparison.py --suite ql-w2-search --resume
 
-# 仅分析已有结果
-python run_routing_comparison.py --analyze-only --output-dir routing_comparison_results
+# 分析指定 suite 的结果
+python run_routing_comparison.py --analyze-only --suite rwpt-w2-search
 
-# 仅生成图表
-python run_routing_comparison.py --generate-charts --output-dir routing_comparison_results
+# 生成图表
+python run_routing_comparison.py --generate-charts --suite tc-w2-search
 
 # 列出所有套件
 python run_routing_comparison.py --list-suites
+
+# 提取 w2 搜索汇总 CSV
+python routing_comparison_results/extract_w2_search_data.py
 ```

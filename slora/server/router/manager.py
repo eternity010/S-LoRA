@@ -524,14 +524,20 @@ class RouterManager:
             
             context_str = f"[{context}] " if context else ""
             print(f"\n📊 {context_str}内存池状态:")
-            print(f"   总使用率: {usage['usage_ratio']:.1%} "
+            print(f"   总池使用率: {usage['usage_ratio']:.1%} "
                   f"({usage['used_cells']}/{usage['total_cells']} cells)")
-            print(f"   ├─ LoRA 占用: {lora_occupied} cells ({lora_occupied/usage['total_cells']:.1%})")
+            
+            # 计算 LoRA 使用率（基于 max_lora_ratio 上限）
+            max_lora_ratio = self.input_params.max_lora_ratio if hasattr(self.input_params, 'max_lora_ratio') else None
+            if max_lora_ratio and max_lora_ratio > 0:
+                lora_max_cells = int(usage['total_cells'] * max_lora_ratio)
+            else:
+                lora_max_cells = usage['total_cells']
+            lora_usage_pct = lora_occupied / lora_max_cells if lora_max_cells > 0 else 0.0
+            
+            print(f"   ├─ LoRA 占用: {lora_occupied}/{lora_max_cells} cells ({lora_usage_pct:.1%})")
             print(f"   └─ KV Cache 占用: {kv_occupied} cells ({kv_occupied/usage['total_cells']:.1%})")
             print(f"   已加载适配器: {usage['num_adapters']} 个")
-            print(f"   可用空间: {usage['available_cells']} cells")
-            if usage['lora_cells'] > 0:
-                print(f"   LoRA 上限空间: {usage['lora_cells']} cells")
         except Exception as e:
             # 静默失败，不影响主流程
             pass
@@ -556,7 +562,7 @@ class RouterManager:
             print(f"   淘汰数量: {evict_result.get('evicted_count', 0)} 个适配器")
             print(f"   释放空间: {evict_result.get('cells_freed', 0)} cells")
             if before and after:
-                print(f"   使用率变化: {before.get('usage_ratio', 0):.1%} → {after.get('usage_ratio', 0):.1%}")
+                print(f"   LoRA 使用率变化: {before.get('lora_usage_ratio', 0):.1%} → {after.get('lora_usage_ratio', 0):.1%}")
         else:
             reason = evict_result.get('reason', 'unknown')
             reason_map = {

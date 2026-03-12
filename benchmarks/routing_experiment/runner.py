@@ -56,6 +56,9 @@ class ExperimentRunner:
         self.checkpoint_file = self.output_dir / "checkpoint.json"
         self._current_server_config = None  # Track current server configuration
         
+        # Per-suite output directory (set in run_suite)
+        self._suite_output_dir: Optional[Path] = None
+        
         # Suite execution state (for checkpoint)
         self._current_suite_name: Optional[str] = None
         self._current_config_id: Optional[str] = None
@@ -80,26 +83,33 @@ class ExperimentRunner:
     
     def _cleanup_old_logs(self) -> None:
         """Clean up old log files at framework startup"""
-        log_dir = self.output_dir / "logs"
-        if log_dir.exists():
-            import shutil
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # Backup and remove all existing log files
-            for log_file in log_dir.glob("server_*.log"):
-                # Skip backup files (those with timestamp in name)
-                if log_file.stem.count('_') > 2:  # e.g., server_round-robin_adapters100_20240101_120000
-                    continue
-                backup_file = log_dir / f"{log_file.stem}_{timestamp}.log"
-                shutil.copy(log_file, backup_file)
-                log_file.unlink()
-                self._log(f"backed up old log: {log_file.name} -> {backup_file.name}")
+        import shutil
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Clean up latest log symlink
-        latest_log = self.output_dir / "server_log.txt"
-        if latest_log.exists():
-            latest_log.unlink()
+        # Clean up logs in all suite subdirectories and root
+        dirs_to_clean = [self.output_dir]
+        if self.output_dir.exists():
+            for child in self.output_dir.iterdir():
+                if child.is_dir() and (child / "logs").exists():
+                    dirs_to_clean.append(child)
+        
+        for base_dir in dirs_to_clean:
+            log_dir = base_dir / "logs"
+            if log_dir.exists():
+                for log_file in log_dir.glob("server_*.log"):
+                    # Skip backup files (those with timestamp in name)
+                    if log_file.stem.count('_') > 2:
+                        continue
+                    backup_file = log_dir / f"{log_file.stem}_{timestamp}.log"
+                    shutil.copy(log_file, backup_file)
+                    log_file.unlink()
+                    self._log(f"backed up old log: {log_file.name} -> {backup_file.name}")
+            
+            # Clean up latest log symlink
+            latest_log = base_dir / "server_log.txt"
+            if latest_log.exists():
+                latest_log.unlink()
     
     def _log(self, msg: str) -> None:
         """Write debug message to log file"""
@@ -132,7 +142,7 @@ class ExperimentRunner:
         
         Only parameters that affect server startup are included.
         Alpha is NOT included because it only affects client request distribution.
-        w1/w2/w3 are NOT included because they can be updated dynamically via API.
+        w1/w2/w3/load_metric are NOT included because they can be updated dynamically via API.
         """
         return (
             f"{config.routing_strategy}_"
@@ -202,6 +212,10 @@ class ExperimentRunner:
         self._current_suite_name = suite_name
         self._suite_total = total
         self._suite_all_config_ids = all_config_ids
+        
+        # Set per-suite output directory
+        self._suite_output_dir = self.output_dir / suite_name
+        self._suite_output_dir.mkdir(parents=True, exist_ok=True)
         
         # Load checkpoint if resuming
         completed = set()
@@ -302,6 +316,7 @@ class ExperimentRunner:
             # Clear suite execution state
             self._current_suite_name = None
             self._current_config_id = None
+            self._suite_output_dir = None
         
         print(f"Suite completed: {len(completed)}/{total} experiments successful")
     
@@ -397,8 +412,9 @@ class ExperimentRunner:
         
         print(f"     Command: {' '.join(cmd)}")
         
-        # Create log directory
-        log_dir = self.output_dir / "logs"
+        # Create log directory (per-suite if available)
+        target_dir = self._suite_output_dir or self.output_dir
+        log_dir = target_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log file based on SERVER configuration (not experiment config)
@@ -408,7 +424,7 @@ class ExperimentRunner:
         log_file = log_dir / log_filename
         
         # Also maintain a latest log symlink/copy for easy monitoring
-        latest_log = self.output_dir / "server_log.txt"
+        latest_log = target_dir / "server_log.txt"
         
         # Note: Old logs are cleaned up at framework startup in _cleanup_old_logs()
         # Here we just append to existing log if server restarts during same run
@@ -1143,8 +1159,10 @@ class ExperimentRunner:
         )
     
     def _save_result(self, config: ExperimentConfig, result: ExperimentResult) -> None:
-        """Save experiment result"""
-        result_file = self.output_dir / "results.jsonl"
+        """Save experiment result to per-suite directory"""
+        # Use suite output dir if available, otherwise fall back to root
+        target_dir = self._suite_output_dir or self.output_dir
+        result_file = target_dir / "results.jsonl"
         
         record = ExperimentRecord(
             config=config.__dict__,
@@ -1191,9 +1209,18 @@ class ExperimentRunner:
         with open(self.checkpoint_file, 'w') as f:
             json.dump(checkpoint, f, indent=2)
     
-    def load_results(self) -> list:
-        """Load all results from output directory"""
-        result_file = self.output_dir / "results.jsonl"
+    def load_results(self, suite_name: str = None) -> list:
+        """Load results from output directory.
+        
+        Args:
+            suite_name: If provided, load from per-suite subdirectory.
+                       If None, load from root (legacy) or all suites.
+        """
+        if suite_name:
+            result_file = self.output_dir / suite_name / "results.jsonl"
+        else:
+            result_file = self.output_dir / "results.jsonl"
+        
         if not result_file.exists():
             return []
         

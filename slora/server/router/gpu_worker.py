@@ -1380,16 +1380,26 @@ class GPUWorker:
                     threshold = getattr(self.args, 'evict_interval_threshold', 0.9)
                     memory_info = await self.model_rpc.check_lora_memory()
                     if memory_info:
-                        usage_ratio = memory_info.get('usage_ratio', 0.0)
-                        if usage_ratio >= threshold:
-                            dynamic_ratio = self._calculate_dynamic_evict_ratio(usage_ratio, threshold)
+                        # 计算 LoRA 使用率（LoRA 占用 / LoRA 上限）
+                        max_lora_ratio = getattr(self.args, 'max_lora_ratio', None)
+                        adapter_cells_list = memory_info.get('adapter_cells', [])
+                        lora_used_cells = sum(adapter_cells_list)
+                        total_cells = memory_info.get('total_cells', 1)
+                        if max_lora_ratio and max_lora_ratio > 0:
+                            lora_max_cells = int(total_cells * max_lora_ratio)
+                        else:
+                            lora_max_cells = total_cells
+                        lora_usage_ratio = lora_used_cells / lora_max_cells if lora_max_cells > 0 else 0.0
+                        
+                        if lora_usage_ratio >= threshold:
+                            dynamic_ratio = self._calculate_dynamic_evict_ratio(lora_usage_ratio, threshold)
                             # 统计队列中等待各 adapter 的请求数
                             pending_counts = self._get_pending_adapter_counts()
                             evict_result = await self.model_rpc.trigger_threshold_eviction(
                                 preserve_dirs=original_adapter_dirs,
                                 threshold=threshold,
                                 evict_ratio=dynamic_ratio,
-                                max_lora_ratio=getattr(self.args, 'max_lora_ratio', None),
+                                max_lora_ratio=max_lora_ratio,
                                 pending_adapter_counts=pending_counts
                             )
                             if evict_result and evict_result.get('evicted'):

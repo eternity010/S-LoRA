@@ -165,11 +165,15 @@ class ResponseMerger:
         """
         batch_out = BatchTokenIdOut()
         
-        request_id = response['request_id']
-        output_ids = response['output_ids']
+        request_id = response.get('request_id')
+        output_ids = response.get('output_ids')
         metadata = response.get('metadata', {})
-        success = response['success']
+        success = response.get('success', False)
         finished = response.get('finished', False)
+        
+        # 如果缺少关键字段，跳过（可能是错误响应或心跳消息）
+        if request_id is None or output_ids is None:
+            return batch_out
         
         # 提取真正的 gen_metadata（包含 id, logprob 等）
         # 这是 detokenization 进程期望的格式

@@ -20,5 +20,5 @@ dist
 # Pytest cache
 .pytest_cache/
 
-# Experiment server logs
-benchmarks/routing_comparison_results/logs/
+# Experiment server logs (root and per-suite subdirectories)
+benchmarks/routing_comparison_results/**/logs/

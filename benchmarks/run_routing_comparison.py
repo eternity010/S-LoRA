@@ -74,7 +74,7 @@ def run_experiments(args):
     runner.run_suite(args.suite, resume=args.resume)
     
     print("\n✓ Experiments completed!")
-    print(f"  Results saved to: {args.output_dir}/results.jsonl")
+    print(f"  Results saved to: {args.output_dir}/{args.suite}/results.jsonl")
     if args.debug:
         print(f"  Debug log: routing_experiment/debug.log")
     
@@ -87,11 +87,25 @@ def analyze_results(args, since_timestamp: float = None):
     print("Analyzing Results")
     print("=" * 70)
     
-    result_file = Path(args.output_dir) / "results.jsonl"
+    # Use per-suite directory if suite is specified
+    suite_name = getattr(args, 'suite', None)
+    base_dir = Path(args.output_dir)
+    if suite_name:
+        suite_dir = base_dir / suite_name
+        result_file = suite_dir / "results.jsonl"
+    else:
+        result_file = base_dir / "results.jsonl"
+    
     if not result_file.exists():
-        print(f"\n✗ Error: No results found at {result_file}")
-        print("  Run experiments first or specify correct --output-dir")
-        return
+        # Fallback: try legacy root-level results.jsonl
+        legacy_file = base_dir / "results.jsonl"
+        if legacy_file.exists() and result_file != legacy_file:
+            print(f"  (Using legacy results file: {legacy_file})")
+            result_file = legacy_file
+        else:
+            print(f"\n✗ Error: No results found at {result_file}")
+            print("  Run experiments first or specify correct --output-dir and --suite")
+            return
     
     # Load results
     print(f"\nLoading results from {result_file}...")
@@ -175,10 +189,24 @@ def generate_charts(args, since_timestamp: float = None):
     print("Generating Charts")
     print("=" * 70)
     
-    result_file = Path(args.output_dir) / "results.jsonl"
+    # Use per-suite directory if suite is specified
+    suite_name = getattr(args, 'suite', None)
+    base_dir = Path(args.output_dir)
+    if suite_name:
+        suite_dir = base_dir / suite_name
+        result_file = suite_dir / "results.jsonl"
+    else:
+        result_file = base_dir / "results.jsonl"
+    
     if not result_file.exists():
-        print(f"\n✗ Error: No results found at {result_file}")
-        return
+        # Fallback: try legacy root-level results.jsonl
+        legacy_file = base_dir / "results.jsonl"
+        if legacy_file.exists() and result_file != legacy_file:
+            print(f"  (Using legacy results file: {legacy_file})")
+            result_file = legacy_file
+        else:
+            print(f"\n✗ Error: No results found at {result_file}")
+            return
     
     # Load results
     print(f"\nLoading results from {result_file}...")
@@ -192,8 +220,9 @@ def generate_charts(args, since_timestamp: float = None):
     results = [r.result for r in records]
     print(f"  Using {len(results)} experiment results")
     
-    # Generate charts
-    chart_dir = Path(args.output_dir) / "charts"
+    # Generate charts (in suite subdirectory if applicable)
+    chart_base = suite_dir if suite_name and suite_dir.exists() else base_dir
+    chart_dir = chart_base / "charts"
     generator = ChartGenerator(output_dir=str(chart_dir))
     
     print(f"\nGenerating charts in {chart_dir}...")

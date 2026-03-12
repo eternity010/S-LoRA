@@ -1,48 +1,55 @@
 """
-从 results.jsonl 中提取三个 load_metric 的 w2 搜索数据，
-分离到 w2_search_data/ 目录下的独立文件。
+从各 suite 子目录的 results.jsonl 中提取 w2 搜索数据，
+生成汇总 CSV 方便画图。
 
-RWPT 取第二轮数据（row 11-20），queue_length 和 token_count 取全部。
-同时生成一个汇总 CSV 方便画图。
+目录结构：
+  routing_comparison_results/
+    rwpt-w2-search/results.jsonl
+    tc-w2-search/results.jsonl
+    ql-w2-search/results.jsonl   (如果已跑)
+    w2_search_data/
+      w2_search_summary.csv
 """
 
 import json
 import csv
 import os
 
-RESULTS_FILE = "results.jsonl"
-OUTPUT_DIR = "w2_search_data"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "w2_search_data")
+
+# suite 名称 -> load_metric 标签
+SUITE_MAP = {
+    "rwpt-w2-search": "rwpt",
+    "tc-w2-search": "token_count",
+    "ql-w2-search": "queue_length",
+}
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# 读取全部数据
-rows = []
-with open(RESULTS_FILE) as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
+# 从各 suite 子目录读取数据
+groups = {}
+for suite_name, metric_label in SUITE_MAP.items():
+    result_file = os.path.join(BASE_DIR, suite_name, "results.jsonl")
+    if not os.path.exists(result_file):
+        print(f"  {suite_name}: not found, skipping")
+        continue
 
-print(f"Total rows: {len(rows)}")
+    data = []
+    with open(result_file) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                data.append(json.loads(line))
 
-# 按 load_metric 分组
-groups = {"rwpt": [], "queue_length": [], "token_count": []}
-for r in rows:
-    lm = r["config"]["load_metric"]
-    groups[lm].append(r)
+    groups[metric_label] = data
+    print(f"  {suite_name} ({metric_label}): {len(data)} experiments")
 
-# RWPT: 有两轮各 10 个，取第二轮（index 10-19）
-rwpt_all = groups["rwpt"]
-print(f"RWPT total: {len(rwpt_all)} (taking round 2: rows 11-20)")
-groups["rwpt"] = rwpt_all[10:20]  # 第二轮
+if not groups:
+    print("No data found in any suite subdirectory.")
+    exit(1)
 
-# 输出各 metric 的 jsonl 文件
-for metric, data in groups.items():
-    out_file = os.path.join(OUTPUT_DIR, f"{metric}_w2_search.jsonl")
-    with open(out_file, "w") as f:
-        for r in data:
-            f.write(json.dumps(r) + "\n")
-    print(f"  {metric}: {len(data)} experiments -> {out_file}")
+print(f"\nTotal metrics loaded: {len(groups)}")
 
 # 生成汇总 CSV
 csv_file = os.path.join(OUTPUT_DIR, "w2_search_summary.csv")
@@ -57,8 +64,10 @@ fields = [
 with open(csv_file, "w", newline="") as f:
     writer = csv.DictWriter(f, fieldnames=fields)
     writer.writeheader()
-    for metric in ["rwpt", "queue_length", "token_count"]:
-        for r in groups[metric]:
+    for metric in ["rwpt", "token_count", "queue_length"]:
+        if metric not in groups:
+            continue
+        for r in sorted(groups[metric], key=lambda x: x["config"]["routing_w2"]):
             row = {
                 "load_metric": metric,
                 "w2": r["config"]["routing_w2"],
@@ -80,12 +89,24 @@ with open(csv_file, "w", newline="") as f:
 print(f"\nSummary CSV -> {csv_file}")
 
 # 打印各 metric 最优点
-print("\n=== Best w2 per metric ===")
-for metric in ["rwpt", "queue_length", "token_count"]:
+print("\n=== Best w2 per metric (by P90 latency, lower is better) ===")
+for metric in ["rwpt", "token_count", "queue_length"]:
+    if metric not in groups:
+        continue
+    best = min(groups[metric], key=lambda r: r["result"]["p90_latency"])
+    c = best["config"]
+    res = best["result"]
+    print(f"  {metric:14s} | w2={c['routing_w2']:4.2f} | "
+          f"tput={res['throughput']:.3f} | p90={res['p90_latency']:.2f}s | "
+          f"cache={res['cache_hit_rate']:.1%}")
+
+print("\n=== Best w2 per metric (by throughput, higher is better) ===")
+for metric in ["rwpt", "token_count", "queue_length"]:
+    if metric not in groups:
+        continue
     best = max(groups[metric], key=lambda r: r["result"]["throughput"])
     c = best["config"]
     res = best["result"]
     print(f"  {metric:14s} | w2={c['routing_w2']:4.2f} | "
-          f"tput={res['throughput']:.3f} | lat={res['avg_latency']:.2f}s | "
-          f"ftl={res['avg_first_token_latency']:.2f}s | "
-          f"p90={res['p90_latency']:.2f}s | cache={res['cache_hit_rate']:.1%}")
+          f"tput={res['throughput']:.3f} | p90={res['p90_latency']:.2f}s | "
+          f"cache={res['cache_hit_rate']:.1%}")

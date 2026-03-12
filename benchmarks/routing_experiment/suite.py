@@ -169,7 +169,7 @@ class ExperimentSuite:
                 "parameters": {
                     "alpha": [0.1, 0.3, 0.8],
                     "metric_w2_pairs": [
-                        ("rwpt", 1.0), ("token_count", 1.0), ("queue_length", 0.15),
+                        ("rwpt", 1.0), ("token_count", 1.5), ("queue_length", 0.10),
                     ],
                 },
                 "config_count": 9,
@@ -257,19 +257,19 @@ class ExperimentSuite:
         Alpha 鲁棒性实验（SLA 约束模型 w2）：固定每个 metric 的最优 w2，变化 alpha。
         3 metrics × 3 alphas = 9 experiments.
 
-        w2 来源：SLA 约束最大化模型（ε=5% P90, δ=2% Tput）
+        w2 来源：SLA 约束最大化模型（ε=5% P90, δ=2% Tput），基于 max_lora_ratio=0.2 实验数据
           max Cache_Hit_Rate
           s.t. P90 ≤ P90_min*(1+0.05), Tput ≥ Tput_max*(1-0.02)
 
-        选取结果（TC 与 RWPT 量纲相同，统一 w2=1.0）：
-          rwpt:         w2=1.0   (cache=93.9%, P90=14.25s, tput=5.539)
-          token_count:  w2=1.0   (与 RWPT 共享归一化方式，量纲一致)
-          queue_length: w2=0.15  (cache=81.9%, P90=16.15s, tput=5.467)
+        选取结果：
+          rwpt:         w2=1.0   (P90=14.14s, tput=5.553, cache=72.1%)
+          token_count:  w2=1.5   (P90=14.68s, tput=5.508, cache=75.4%)
+          queue_length: w2=0.10  (P90=15.83s, tput=5.504, cache=66.7%)
         """
         metric_w2_pairs = [
             ("rwpt", 1.0),
-            ("token_count", 1.0),
-            ("queue_length", 0.15),
+            ("token_count", 1.5),
+            ("queue_length", 0.10),
         ]
         alphas = [0.1, 0.3, 0.8]
 
@@ -280,7 +280,7 @@ class ExperimentSuite:
                     alpha=alpha,
                     num_adapters=100,
                     req_rate=6.0,
-                    duration=120,
+                    duration=240,
                     routing_w1=1.0,
                     routing_w2=w2,
                     routing_w3=0.0,

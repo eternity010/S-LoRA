@@ -69,7 +69,7 @@ if __name__ == "__main__":
                         help="批次空闲时触发淘汰的内存使用率阈值 (0-1)")
     parser.add_argument("--evict-idle-ratio", type=float, default=0.5,
                         help="批次空闲时的淘汰比例 (0-1)")
-    parser.add_argument("--max-lora-ratio", type=float, default=0.4,
+    parser.add_argument("--max-lora-ratio", type=float, default=0.2,
                         help="LoRA 占用总内存的最大比例 (0-1)")
     
     args = parser.parse_args()

@@ -609,8 +609,8 @@ def main():
                         help="批次空闲时触发淘汰的内存使用率阈值 (0-1)，默认 0.95 (95%%)")
     parser.add_argument("--evict-idle-ratio", type=float, default=0.5,
                         help="批次空闲时的淘汰比例 (0-1)，默认 0.5 (50%%)")
-    parser.add_argument("--max-lora-ratio", type=float, default=0.7,
-                        help="LoRA 占用总内存的最大比例 (0-1)，剩余空间保留给 KV cache，默认 0.7 (70%%)")
+    parser.add_argument("--max-lora-ratio", type=float, default=0.2,
+                        help="LoRA 占用总内存的最大比例 (0-1)，剩余空间保留给 KV cache，默认 0.2 (20%%)")
 
     # debug parameters
     # do not use no-lora-swap, does not rule out the swap over MemAllocator

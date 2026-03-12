@@ -35,7 +35,7 @@ class ExperimentConfig:
     routing_w3: float = 0.0  # Rank mismatch penalty
 
     # Memory parameters
-    max_lora_ratio: float = 0.4  # Max LoRA memory ratio (0-1)
+    max_lora_ratio: float = 0.2  # Max LoRA memory ratio (0-1)
     
     # Load metric ablation
     load_metric: str = "rwpt"  # 'queue_length' | 'token_count' | 'rwpt'
