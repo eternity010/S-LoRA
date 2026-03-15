@@ -1156,6 +1156,8 @@ class ExperimentRunner:
             cache_hits=cache_hits,
             cache_misses=cache_misses,
             worker_request_counts=worker_counts,
+            load_metric=config.load_metric,
+            routing_w2=config.routing_w2,
         )
     
     def _save_result(self, config: ExperimentConfig, result: ExperimentResult) -> None:

@@ -42,6 +42,10 @@ class ExperimentResult:
     p95_first_token_latency: float = 0.0
     avg_rank_mismatch: Optional[float] = None
     
+    # Experiment context (added to avoid round-tripping through config dict)
+    load_metric: str = "rwpt"
+    routing_w2: float = 1.0
+    
     def to_dict(self) -> dict:
         """Convert to dictionary"""
         return asdict(self)

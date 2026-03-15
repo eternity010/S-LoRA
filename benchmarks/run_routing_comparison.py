@@ -271,6 +271,11 @@ def main():
         help='Resume from checkpoint if interrupted'
     )
     parser.add_argument(
+        '--auto-charts',
+        action='store_true',
+        help='Auto-generate charts after experiments complete (disabled by default)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable debug logging to routing_experiment/debug.log'
@@ -361,9 +366,10 @@ def main():
         print("Auto-analyzing results...")
         analyze_results(args, since_timestamp=start_ts)
         
-        # Auto-generate charts (current run only)
-        print("\nAuto-generating charts...")
-        generate_charts(args, since_timestamp=start_ts)
+        # Auto-generate charts only if explicitly requested
+        if args.auto_charts:
+            print("\nAuto-generating charts...")
+            generate_charts(args, since_timestamp=start_ts)
         
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Progress saved to checkpoint.")

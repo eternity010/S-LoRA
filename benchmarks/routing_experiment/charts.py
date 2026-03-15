@@ -249,32 +249,20 @@ class ChartGenerator:
         
         Args:
             results: List of experiment results with varying w2 values
-            records: List of ExperimentRecord objects (optional, for getting w2 from config)
+            records: Deprecated, kept for backward compatibility (w2 now on ExperimentResult)
         """
         fig, ax = plt.subplots()
         
         # Filter adapter-aware results
         aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
         
-        # Group by w2 value
+        # Group by w2 value (now available directly on ExperimentResult)
         w2_throughput = {}
-        
-        if records:
-            # Get w2 from config in records
-            for record in records:
-                if record.result.routing_strategy == "adapter-aware":
-                    w2 = record.config.get('routing_w2', 0.1)
-                    if w2 not in w2_throughput:
-                        w2_throughput[w2] = []
-                    w2_throughput[w2].append(record.result.throughput)
-        else:
-            # Fallback: try to get from result attribute
-            for r in aa_results:
-                w2 = getattr(r, 'routing_w2', None)
-                if w2 is not None:
-                    if w2 not in w2_throughput:
-                        w2_throughput[w2] = []
-                    w2_throughput[w2].append(r.throughput)
+        for r in aa_results:
+            w2 = r.routing_w2
+            if w2 not in w2_throughput:
+                w2_throughput[w2] = []
+            w2_throughput[w2].append(r.throughput)
         
         if not w2_throughput:
             print("No w2 data found in results, skipping w2 charts")
@@ -299,7 +287,7 @@ class ChartGenerator:
         
         Args:
             results: List of experiment results with varying w2 values
-            records: List of ExperimentRecord objects (optional)
+            records: Deprecated, kept for backward compatibility
         """
         fig, axes = plt.subplots(1, 2, figsize=(12, 5))
         
@@ -307,25 +295,14 @@ class ChartGenerator:
         w2_avg_latency = {}
         w2_first_token = {}
         
-        if records:
-            for record in records:
-                if record.result.routing_strategy == "adapter-aware":
-                    w2 = record.config.get('routing_w2', 0.1)
-                    if w2 not in w2_avg_latency:
-                        w2_avg_latency[w2] = []
-                        w2_first_token[w2] = []
-                    w2_avg_latency[w2].append(record.result.avg_latency)
-                    w2_first_token[w2].append(record.result.avg_first_token_latency)
-        else:
-            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
-            for r in aa_results:
-                w2 = getattr(r, 'routing_w2', None)
-                if w2 is not None:
-                    if w2 not in w2_avg_latency:
-                        w2_avg_latency[w2] = []
-                        w2_first_token[w2] = []
-                    w2_avg_latency[w2].append(r.avg_latency)
-                    w2_first_token[w2].append(r.avg_first_token_latency)
+        aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+        for r in aa_results:
+            w2 = r.routing_w2
+            if w2 not in w2_avg_latency:
+                w2_avg_latency[w2] = []
+                w2_first_token[w2] = []
+            w2_avg_latency[w2].append(r.avg_latency)
+            w2_first_token[w2].append(r.avg_first_token_latency)
         
         if not w2_avg_latency:
             return
@@ -359,28 +336,19 @@ class ChartGenerator:
         
         Args:
             results: List of experiment results with varying w2 values
-            records: List of ExperimentRecord objects (optional)
+            records: Deprecated, kept for backward compatibility
         """
         fig, ax = plt.subplots()
         
         # Group by w2
         w2_cache_hit = {}
         
-        if records:
-            for record in records:
-                if record.result.routing_strategy == "adapter-aware":
-                    w2 = record.config.get('routing_w2', 0.1)
-                    if w2 not in w2_cache_hit:
-                        w2_cache_hit[w2] = []
-                    w2_cache_hit[w2].append(record.result.cache_hit_rate * 100)
-        else:
-            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
-            for r in aa_results:
-                w2 = getattr(r, 'routing_w2', None)
-                if w2 is not None:
-                    if w2 not in w2_cache_hit:
-                        w2_cache_hit[w2] = []
-                    w2_cache_hit[w2].append(r.cache_hit_rate * 100)
+        aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+        for r in aa_results:
+            w2 = r.routing_w2
+            if w2 not in w2_cache_hit:
+                w2_cache_hit[w2] = []
+            w2_cache_hit[w2].append(r.cache_hit_rate * 100)
         
         if not w2_cache_hit:
             return
@@ -405,34 +373,22 @@ class ChartGenerator:
         
         Args:
             results: List of experiment results with varying w2 values
-            records: List of ExperimentRecord objects (optional)
+            records: Deprecated, kept for backward compatibility
         """
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         
         # Group by w2
         w2_data = {}
         
-        if records:
-            for record in records:
-                if record.result.routing_strategy == "adapter-aware":
-                    w2 = record.config.get('routing_w2', 0.1)
-                    if w2 not in w2_data:
-                        w2_data[w2] = {'throughput': [], 'latency': [], 'cache_hit': [], 'first_token': []}
-                    w2_data[w2]['throughput'].append(record.result.throughput)
-                    w2_data[w2]['latency'].append(record.result.avg_latency)
-                    w2_data[w2]['cache_hit'].append(record.result.cache_hit_rate * 100)
-                    w2_data[w2]['first_token'].append(record.result.avg_first_token_latency)
-        else:
-            aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
-            for r in aa_results:
-                w2 = getattr(r, 'routing_w2', None)
-                if w2 is not None:
-                    if w2 not in w2_data:
-                        w2_data[w2] = {'throughput': [], 'latency': [], 'cache_hit': [], 'first_token': []}
-                    w2_data[w2]['throughput'].append(r.throughput)
-                    w2_data[w2]['latency'].append(r.avg_latency)
-                    w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
-                    w2_data[w2]['first_token'].append(r.avg_first_token_latency)
+        aa_results = [r for r in results if r.routing_strategy == "adapter-aware"]
+        for r in aa_results:
+            w2 = r.routing_w2
+            if w2 not in w2_data:
+                w2_data[w2] = {'throughput': [], 'latency': [], 'cache_hit': [], 'first_token': []}
+            w2_data[w2]['throughput'].append(r.throughput)
+            w2_data[w2]['latency'].append(r.avg_latency)
+            w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
+            w2_data[w2]['first_token'].append(r.avg_first_token_latency)
         
         if not w2_data:
             return
@@ -504,7 +460,7 @@ class ChartGenerator:
 
         Args:
             results: List of experiment results
-            records: List of ExperimentRecord objects (optional)
+            records: Deprecated, kept for backward compatibility
             p95_ttft_threshold: Max acceptable P95 TTFT in seconds (default 15)
             cache_hit_floor: Min acceptable cache hit rate in % (default 50)
 
@@ -514,35 +470,19 @@ class ChartGenerator:
         # ---- collect per-w2 metrics ----
         w2_data: dict = {}
 
-        if records:
-            for rec in records:
-                if rec.result.routing_strategy != "adapter-aware":
-                    continue
-                w2 = rec.config.get('routing_w2', 1.0)
-                if w2 not in w2_data:
-                    w2_data[w2] = {'throughput': [], 'cache_hit': [], 'p95_ttft': []}
-                w2_data[w2]['throughput'].append(rec.result.throughput)
-                w2_data[w2]['cache_hit'].append(rec.result.cache_hit_rate * 100)
-                # prefer p95; fall back to p90
-                p95 = rec.result.p95_first_token_latency
-                if p95 is None or p95 == 0.0:
-                    p95 = rec.result.p90_first_token_latency
-                w2_data[w2]['p95_ttft'].append(p95)
-        else:
-            for r in results:
-                if r.routing_strategy != "adapter-aware":
-                    continue
-                w2 = getattr(r, 'routing_w2', None)
-                if w2 is None:
-                    continue
-                if w2 not in w2_data:
-                    w2_data[w2] = {'throughput': [], 'cache_hit': [], 'p95_ttft': []}
-                w2_data[w2]['throughput'].append(r.throughput)
-                w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
-                p95 = r.p95_first_token_latency
-                if p95 is None or p95 == 0.0:
-                    p95 = r.p90_first_token_latency
-                w2_data[w2]['p95_ttft'].append(p95)
+        for r in results:
+            if r.routing_strategy != "adapter-aware":
+                continue
+            w2 = r.routing_w2
+            if w2 not in w2_data:
+                w2_data[w2] = {'throughput': [], 'cache_hit': [], 'p95_ttft': []}
+            w2_data[w2]['throughput'].append(r.throughput)
+            w2_data[w2]['cache_hit'].append(r.cache_hit_rate * 100)
+            # prefer p95; fall back to p90
+            p95 = r.p95_first_token_latency
+            if p95 is None or p95 == 0.0:
+                p95 = r.p90_first_token_latency
+            w2_data[w2]['p95_ttft'].append(p95)
 
         if not w2_data:
             print("No w2 data found, skipping sweet-spot chart")
@@ -627,28 +567,23 @@ class ChartGenerator:
         
         Args:
             results: List of experiment results
-            records: List of ExperimentRecord objects (optional, for w2 charts)
+            records: Deprecated, kept for backward compatibility
         """
         # Determine grouping based on available data
         alphas = set(r.alpha for r in results)
         adapters = set(r.num_adapters for r in results)
         
-        # Check for w2 variation (routing-weight-comparison suite)
-        w2_values = set()
-        if records:
-            for record in records:
-                w2 = record.config.get('routing_w2')
-                if w2 is not None:
-                    w2_values.add(w2)
+        # Check for w2 variation directly from results
+        w2_values = set(r.routing_w2 for r in results)
         
         # Generate w2-specific charts if multiple w2 values exist
         if len(w2_values) > 1:
             print(f"Detected {len(w2_values)} different w2 values, generating w2 comparison charts...")
-            self.plot_throughput_by_w2(results, records)
-            self.plot_latency_by_w2(results, records)
-            self.plot_cache_hit_rate_by_w2(results, records)
-            self.plot_w2_comparison_summary(results, records)
-            self.plot_w2_sweet_spot(results, records)
+            self.plot_throughput_by_w2(results)
+            self.plot_latency_by_w2(results)
+            self.plot_cache_hit_rate_by_w2(results)
+            self.plot_w2_comparison_summary(results)
+            self.plot_w2_sweet_spot(results)
         
         # Generate charts grouped by alpha if multiple alphas exist
         if len(alphas) > 1:
