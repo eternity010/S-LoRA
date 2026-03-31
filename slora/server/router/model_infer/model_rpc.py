@@ -473,6 +473,44 @@ class ModelRpcServer(rpyc.Service):
         engine = LoraPEFTBatchInfer(self.model, infer_adapter=self.infer_adapter)
         engine.merge_adapter()
 
+    def exposed_preload_adapter(self, adapter_dir, preserve_sec=30.0):
+        """
+        预加载 adapter 到显存（热门 adapter 多副本机制）
+
+        1. 调用 load_adapters 加载权重（内部自动触发淘汰腾出空间）
+        2. 调用 add_protection 加入淘汰保护列表
+        3. 返回 {success: bool, error: str|None}
+
+        Requirements: 2.1, 2.2, 2.3
+        """
+        try:
+            if adapter_dir not in self.adapter_id:
+                return {"success": False, "error": f"Unknown adapter: {adapter_dir}"}
+
+            adapter = self.adapters[self.adapter_id[adapter_dir]]
+            if adapter is None:
+                return {"success": False, "error": f"Adapter is None: {adapter_dir}"}
+
+            # 收集活跃批次使用的 adapters 作为保护列表
+            active_adapters = set()
+            for batch in self.cache.values():
+                if hasattr(batch, 'adapter_dirs'):
+                    active_adapters.update(batch.adapter_dirs)
+
+            self.infer_adapter.load_adapters(
+                [adapter],
+                prefetch=False,
+                active_batch_adapters=active_adapters,
+            )
+
+            # 加入淘汰保护列表
+            if hasattr(self.infer_adapter, 'add_protection'):
+                self.infer_adapter.add_protection(adapter_dir, preserve_sec)
+
+            return {"success": True, "error": None}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
 
 class ModelRpcClient:
     def __init__(self, model_rpc, world_size, rpc_server_process=None):
@@ -505,6 +543,7 @@ class ModelRpcClient:
             self._merge_batch = async_wrap(self.model.merge_batch)
             self._remove_batch = async_wrap(self.model.remove_batch)
             self._profile_prefill = async_wrap(self.model.profile_prefill)
+            self._preload_adapter = async_wrap(self.model.preload_adapter)
         else:
             self._init_model = self.model.exposed_init_model
             self._load_adapters = self.model.exposed_load_adapters
@@ -522,6 +561,7 @@ class ModelRpcClient:
             self._merge_batch = self.model.exposed_merge_batch
             self._remove_batch = self.model.exposed_remove_batch
             self._profile_prefill = self.model.exposed_profile_prefill
+            self._preload_adapter = self.model.exposed_preload_adapter
         return
 
     async def init_model(self, rank_id, world_size, weight_dir, adapter_dirs,
@@ -633,6 +673,25 @@ class ModelRpcClient:
     
     async def profile_prefill(self):
         ans = self._profile_prefill()
+        if self.use_rpc:
+            return await ans
+        else:
+            return ans
+
+    async def preload_adapter(self, adapter_dir, preserve_sec=30.0):
+        """
+        预加载 adapter 到显存（热门 adapter 多副本机制）
+
+        Args:
+            adapter_dir: adapter 目录路径
+            preserve_sec: 淘汰保护时长（秒），默认 30
+
+        Returns:
+            {success: bool, error: str|None}
+
+        Requirements: 2.1, 2.2, 2.3
+        """
+        ans = self._preload_adapter(adapter_dir, preserve_sec)
         if self.use_rpc:
             return await ans
         else:

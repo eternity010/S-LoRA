@@ -11,7 +11,8 @@ import argparse
 import zmq
 import zmq.asyncio
 import asyncio
-from typing import Optional, List
+import heapq
+from typing import Optional, List, Tuple, Dict
 
 from slora.models.llama.model import LlamaTpPartModel
 from slora.models.llama2.model import Llama2TpPartModel
@@ -281,8 +282,41 @@ class GPUWorker:
             'pool_used_ratio': pool_used_ratio,
             'profiled_alpha': self._profiled_alpha,
             'hidden_dim': self._hidden_dim,
+            'top_k_rwpt_adapters': self._compute_top_k_rwpt_adapters(),
         }
-    
+
+    def _compute_top_k_rwpt_adapters(self, k: int = 5) -> List[Tuple[str, float]]:
+        """
+        计算等待队列中 RWPT 贡献 top-K 的 adapter
+
+        遍历 waiting_req_list，按 adapter 聚合 RWPT 贡献：
+            contribution(adapter) = Σ input_len_j × (1 + γ × rank_j)
+        其中 γ = 2/(3×hidden_dim)。使用 heapq.nlargest 取 top-K，O(n + k·log(n))。
+
+        Args:
+            k: 返回的 top-K 数量，默认 5
+
+        Returns:
+            按贡献降序排列的 [(adapter_dir, contribution), ...]，长度 ≤ k
+
+        Requirements: 1.2, 1.5
+        """
+        if not self.req_queue or not self.req_queue.waiting_req_list:
+            return []
+
+        gamma = 2.0 / (3.0 * self._hidden_dim)
+
+        # 按 adapter 聚合 RWPT 贡献
+        adapter_contrib: Dict[str, float] = {}
+        for req in self.req_queue.waiting_req_list:
+            input_len = len(req.prompt_ids)
+            rank = self.lora_ranks.get(req.adapter_dir, 0)
+            contrib = input_len * (1.0 + gamma * rank)
+            adapter_contrib[req.adapter_dir] = adapter_contrib.get(req.adapter_dir, 0.0) + contrib
+
+        # heapq.nlargest: O(n + k·log(n))，比全排序更优
+        return heapq.nlargest(k, adapter_contrib.items(), key=lambda x: x[1])
+
     def _setup_state_reporter(self, state_report_port: Optional[int] = None) -> None:
         """
         设置状态上报器
@@ -470,7 +504,41 @@ class GPUWorker:
                 'worker_id': self.worker_id,
                 'error': str(e)
             }
-    
+
+    async def handle_preload_adapter(self, adapter_dir: str, protection_sec: float = 30.0) -> dict:
+        """
+        处理预加载 adapter 指令（热门 adapter 多副本机制）
+
+        调用 model_rpc.preload_adapter() 加载权重并加入保护列表。
+
+        Args:
+            adapter_dir: adapter 目录路径
+            protection_sec: 淘汰保护时长（秒），默认 30
+
+        Returns:
+            {success: bool, error: str|None, worker_id: int}
+
+        Requirements: 2.1, 2.2, 2.3, 2.7
+        """
+        try:
+            if self.model_rpc is None:
+                return {"success": False, "error": "model_rpc not initialized", "worker_id": self.worker_id}
+
+            result = await self.model_rpc.preload_adapter(adapter_dir, protection_sec)
+            success = result.get("success", False) if isinstance(result, dict) else False
+            error = result.get("error") if isinstance(result, dict) else str(result)
+
+            if success:
+                print(f"[Worker {self.worker_id}] Preloaded adapter {adapter_dir} (protection={protection_sec}s)")
+            else:
+                print(f"[Worker {self.worker_id}] Failed to preload adapter {adapter_dir}: {error}")
+
+            return {"success": success, "error": error, "worker_id": self.worker_id}
+
+        except Exception as e:
+            print(f"[Worker {self.worker_id}] Exception preloading adapter {adapter_dir}: {e}")
+            return {"success": False, "error": str(e), "worker_id": self.worker_id}
+
     def _setup_zmq(self, request_port: int, response_port: int) -> None:
         """
         设置 ZMQ 通信
@@ -1508,6 +1576,14 @@ class GPUWorker:
                         'request_id': request.get('request_id', 'reset'),
                         **result
                     })
+                    continue
+
+                if request_type == 'preload_adapter':
+                    # 处理预加载 adapter 命令（热门 adapter 多副本机制）
+                    adapter_dir = request.get('adapter_dir')
+                    protection_sec = request.get('protection_sec', 30.0)
+                    print(f"[Worker {self.worker_id}] Received preload_adapter: {adapter_dir}")
+                    result = await self.handle_preload_adapter(adapter_dir, protection_sec)
                     continue
                 
                 # 更新接收计数

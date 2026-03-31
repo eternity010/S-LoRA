@@ -184,6 +184,7 @@ class WorkerStateReporter:
                     pending_prefill_tokens=state_dict.get('pending_prefill_tokens', 0),
                     active_decode_seqs=state_dict.get('active_decode_seqs', 0),
                     pool_used_ratio=state_dict.get('pool_used_ratio', 0.0),
+                    top_k_rwpt_adapters=state_dict.get('top_k_rwpt_adapters', []),
                 )
             except Exception as e:
                 logger.error(f"Error getting state: {e}")
@@ -231,6 +232,8 @@ class WorkerStateReporter:
             'pending_prefill_tokens': state.pending_prefill_tokens,
             'active_decode_seqs': state.active_decode_seqs,
             'pool_used_ratio': state.pool_used_ratio,
+            # Hot adapter replication: top-K RWPT contributors
+            'top_k_rwpt_adapters': [list(t) for t in state.top_k_rwpt_adapters],
         }
         # profiled_alpha: 静态值，缓存后每次消息都带上（dp_manager 只取首次）
         if hasattr(self, '_cached_profiled_alpha'):

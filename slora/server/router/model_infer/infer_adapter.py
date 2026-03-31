@@ -25,11 +25,15 @@ class InferAdapter:
 
     # LoRA 适配器分数相关数据结构
     adapter_scores: Dict[str, float]  # {adapter_dir: total_score} - 适配器综合分数
-    score_update_counter: Dict[str, int]  # {adapter_dir: use_count} - 使用次数统计
+    score_update_counter: Dict[str, int]  # {adapter_dir: use_count} - 使用次数统计（兼容旧接口，实际由 usage_timestamps 驱动）
+    usage_timestamps: Dict[str, list]  # {adapter_dir: [timestamp, ...]} - 滑动窗口使用时间戳
+    usage_window: float  # 滑动窗口大小（秒），默认 300s
     last_access_time: Dict[str, float]  # {adapter_dir: timestamp} - 最后访问时间
     current_request_count: Dict[str, int]  # {adapter_dir: count} - 当前使用该适配器的请求数
     load_time: Dict[str, float]  # {adapter_dir: timestamp} - 适配器加载时间
     pending_adapter_counts: Dict[str, int]  # {adapter_dir: count} - 队列中等待该适配器的请求数
+    # 副本保护列表：{adapter_dir: expiry_timestamp} - 保护期内不被淘汰
+    protected_replicas: Dict[str, float]
 
     @classmethod
     def init(cls, mem_manager, prefetch_stream):
@@ -47,10 +51,13 @@ class InferAdapter:
             # 初始化分数相关数据结构
             adapter_scores={},
             score_update_counter={},
+            usage_timestamps={},
+            usage_window=300.0,
             last_access_time={},
             current_request_count={},
             load_time={},
             pending_adapter_counts={},
+            protected_replicas={},
         )
 
     def update_adapter_stats_batch(self, batch_adapter_dirs: List[str]):
@@ -78,8 +85,15 @@ class InferAdapter:
         
         # 批量更新统计信息
         for adapter_dir, count in adapter_count.items():
-            # 更新使用次数
-            self.score_update_counter[adapter_dir] = self.score_update_counter.get(adapter_dir, 0) + count
+            # 更新滑动窗口使用时间戳
+            if adapter_dir not in self.usage_timestamps:
+                self.usage_timestamps[adapter_dir] = []
+            self.usage_timestamps[adapter_dir].extend([current_time] * count)
+            
+            # 同步更新兼容字段（窗口内计数）
+            cutoff = current_time - self.usage_window
+            self.usage_timestamps[adapter_dir] = [t for t in self.usage_timestamps[adapter_dir] if t > cutoff]
+            self.score_update_counter[adapter_dir] = len(self.usage_timestamps[adapter_dir])
             
             # 更新最后访问时间
             self.last_access_time[adapter_dir] = current_time
@@ -98,7 +112,32 @@ class InferAdapter:
         if adapter_dir is not None and adapter_dir in self.idx_map:
             current_count = self.current_request_count.get(adapter_dir, 0)
             self.current_request_count[adapter_dir] = max(0, current_count - count)
-    
+
+    def add_protection(self, adapter_dir: str, duration_sec: float = 30.0) -> None:
+        """
+        添加副本保护，duration_sec 后自动过期
+
+        Args:
+            adapter_dir: adapter 目录路径
+            duration_sec: 保护时长（秒），默认 30
+
+        Requirements: 2.4, 8.1
+        """
+        self.protected_replicas[adapter_dir] = time.time() + duration_sec
+
+    def remove_protection(self, adapter_dir: str) -> None:
+        """手动移除副本保护"""
+        self.protected_replicas.pop(adapter_dir, None)
+
+    def get_protected_count(self) -> int:
+        """获取当前有效保护的副本数（自动清理过期条目）"""
+        now = time.time()
+        # 清理过期条目
+        expired = [k for k, v in self.protected_replicas.items() if now >= v]
+        for k in expired:
+            del self.protected_replicas[k]
+        return len(self.protected_replicas)
+
     def calculate_adapter_score(self, adapter_dir: str, 
                                 weight_usage: float = 0.35,
                                 weight_recency: float = 0.35, 
@@ -118,11 +157,20 @@ class InferAdapter:
         if adapter_dir not in self.idx_map:
             return 0.0
         
+        # 1. 使用次数分数（滑动窗口 + 对数归一化，避免长期运行后 max_count 膨胀压缩区分度）
         current_time = time.time()
+        cutoff = current_time - self.usage_window
         
-        # 1. 使用次数分数（对数归一化，避免极端值压缩区分度）
-        usage_count = self.score_update_counter.get(adapter_dir, 0)
-        max_usage = max(self.score_update_counter.values()) if self.score_update_counter else 1
+        # 获取窗口内的使用次数
+        timestamps = self.usage_timestamps.get(adapter_dir, [])
+        usage_count = sum(1 for t in timestamps if t > cutoff)
+        
+        # 窗口内全局最大使用次数
+        max_usage = 1
+        for ad, ts_list in self.usage_timestamps.items():
+            cnt = sum(1 for t in ts_list if t > cutoff)
+            if cnt > max_usage:
+                max_usage = cnt
         log_max = np.log1p(max_usage)
         usage_score = np.log1p(usage_count) / log_max if log_max > 0 else 0
         
@@ -289,6 +337,13 @@ class InferAdapter:
         # 初始化保护集合
         if preserve_adapters is None:
             preserve_adapters = set()
+
+        # 合并副本保护列表中未过期的 adapter
+        now = time.time()
+        expired = [k for k, v in self.protected_replicas.items() if now >= v]
+        for k in expired:
+            del self.protected_replicas[k]
+        preserve_adapters = preserve_adapters | set(self.protected_replicas.keys())
         
         # 获取所有适配器的分数（升序排列，分数低的在前）
         scored_adapters = self.get_adapters_by_score(ascending=True)
@@ -777,6 +832,7 @@ class InferAdapter:
                 # 初始化其他统计数据
                 self.adapter_scores[new_adapter.lora_dir] = 0.0
                 self.score_update_counter[new_adapter.lora_dir] = 0
+                self.usage_timestamps[new_adapter.lora_dir] = []
                 self.last_access_time[new_adapter.lora_dir] = current_time
                 self.current_request_count[new_adapter.lora_dir] = 0
         self.a_scaling = torch.cat((self.a_scaling, torch.tensor([adapter.scaling for adapter in new_adapters], dtype=torch.float16, device="cuda")))
@@ -885,6 +941,7 @@ class InferAdapter:
         for adapter_dir in removed_adapter_dirs:
             self.adapter_scores.pop(adapter_dir, None)
             self.score_update_counter.pop(adapter_dir, None)
+            self.usage_timestamps.pop(adapter_dir, None)
             self.last_access_time.pop(adapter_dir, None)
             self.current_request_count.pop(adapter_dir, None)
             self.load_time.pop(adapter_dir, None)

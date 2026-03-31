@@ -947,7 +947,40 @@ class DataParallelRouterManager:
                 'message': error_msg,
                 'error': str(e)
             }
-    
+
+    async def send_preload_to_worker(self, worker_id: int, adapter_dir: str, protection_sec: float = 30.0) -> dict:
+        """
+        向指定 Worker 发送预加载 adapter 指令
+
+        通过 ZMQ PUSH socket 发送 preload_adapter 消息，Worker 端在消息循环中处理。
+
+        Args:
+            worker_id: 目标 Worker ID
+            adapter_dir: adapter 目录路径
+            protection_sec: 淘汰保护时长（秒），默认 30
+
+        Returns:
+            {success: bool, error: str|None}
+
+        Requirements: 2.6
+        """
+        try:
+            if worker_id < 0 or worker_id >= self.num_workers:
+                return {"success": False, "error": f"Invalid worker_id: {worker_id}"}
+
+            message = {
+                "type": "preload_adapter",
+                "adapter_dir": adapter_dir,
+                "protection_sec": protection_sec,
+            }
+            await self.request_senders[worker_id].send_json(message)
+            logger.info(f"Sent preload_adapter to Worker {worker_id}: {adapter_dir}")
+            return {"success": True, "error": None}
+
+        except Exception as e:
+            logger.error(f"Failed to send preload_adapter to Worker {worker_id}: {e}")
+            return {"success": False, "error": str(e)}
+
     async def _check_worker_health(self) -> None:
         """
         定期检查 Worker 进程健康状态

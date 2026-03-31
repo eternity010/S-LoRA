@@ -8,7 +8,7 @@ Requirements: 1.1, 1.2, 6.1-6.5
 """
 
 from dataclasses import dataclass, field
-from typing import Set, Dict, Optional
+from typing import Set, Dict, Optional, List, Tuple
 import time
 
 
@@ -48,6 +48,8 @@ class WorkerState:
     pending_raw_tokens: int = 0        # 等待队列中 prompt token 总数（不含 rank 加权）
     active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
     pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
+    # Hot adapter replication: top-K RWPT contributors
+    top_k_rwpt_adapters: List[Tuple[str, float]] = field(default_factory=list)  # [(adapter_dir, rwpt_contribution), ...]
     
     def has_adapter(self, adapter_dir: str) -> bool:
         """检查是否缓存了指定的 Adapter"""
@@ -73,6 +75,7 @@ class WorkerState:
             'pending_raw_tokens': self.pending_raw_tokens,
             'active_decode_seqs': self.active_decode_seqs,
             'pool_used_ratio': self.pool_used_ratio,
+            'top_k_rwpt_adapters': [list(t) for t in self.top_k_rwpt_adapters],
         }
     
     @classmethod
@@ -92,6 +95,7 @@ class WorkerState:
             pending_raw_tokens=data.get('pending_raw_tokens', 0),
             active_decode_seqs=data.get('active_decode_seqs', 0),
             pool_used_ratio=data.get('pool_used_ratio', 0.0),
+            top_k_rwpt_adapters=[tuple(t) for t in data.get('top_k_rwpt_adapters', [])],
         )
 
 
@@ -260,7 +264,7 @@ class RoutingConfig:
     """
     strategy: str = 'adapter-aware'
     w1: float = 1.0
-    w2: float = 4.0
+    w2: float = 1.0
     w3: float = 0.0                    # Rank mismatch penalty weight (NEW)
     default_lora_rank: int = 16        # Default rank for unknown adapters (NEW)
     max_rank_diff: int = 64            # Max rank difference for normalization (NEW)

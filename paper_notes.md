@@ -38,22 +38,22 @@
 - `worker_state_reporter.py`: Worker 状态上报器 (100ms 心跳)
 - `worker_state_cache.py`: Router 端状态缓存
 - 倒排索引: Adapter → Worker 映射
-- ✅ **Rank 感知路由**：已支持 LoRA Rank 感知（详见 2.2）
+- ✅ **Rank 感知路由**：已支持 LoRA Rank 感知（详见 2.1）
 
-### 2.1 热门 Adapter 多副本 (🔄 设计完成，待实现)
-- ✅ 热点检测（请求率追踪）
-- ✅ 被动分散（热点请求 Round-Robin 分配）
-- ✅ 主动复制设计完成（RWPT 驱动的算力告警式复制，详见 `hot_adapter_replication_design.md`）
-- ⏳ 主动复制代码实现 — 待开发
-
-### 2.2 Rank 感知路由 (✅ 已完成)
+### 2.1 Rank 感知路由 (✅ 已完成)
 - ✅ Worker 上报当前批次的 Rank 分布（avg/min/max rank 追踪）
 - ✅ 路由时考虑 Rank 相似性，避免大小 Rank 混合批处理
 - ✅ 评分公式扩展：`Score = w1·Cache - w2·QueueLen - w3·RankMismatch`
 - ✅ 命令行参数支持（`--routing-w3`, `--default-lora-rank`）
 - 参考：Toppings (ATC 2025) 的 Rank-Aware 调度
 
-### 3. Adapter 评分与淘汰机制 (✅ 已完成)
+### 3. 热门 Adapter 多副本 (🔄 设计完成，待实现)
+- ✅ 热点检测（请求率追踪）
+- ✅ 被动分散（热点请求 Round-Robin 分配）
+- ✅ 主动复制设计完成（RWPT 驱动的算力告警式复制，详见 `hot_adapter_replication_design.md`）
+- ⏳ 主动复制代码实现 — 待开发
+
+### 4. Adapter 评分与淘汰机制 (✅ 已完成)
 - `infer_adapter.py`: 三维评分模型
   - 使用频率 (对数归一化)
   - 时间衰减 (τ=300s)
@@ -468,9 +468,22 @@ Token Count 和 Queue Length 的数据点被"缓存绑架"——它们要么追�
 - 热点检测阈值（默认 10 req/s）
 - 热点 Adapter 分散到多个 Worker（避免单点瓶颈）
 
-**4.5 Hot Adapter Replication（热门 Adapter 多副本 — RWPT 驱动）**
+**4.5 Cold Start Handling**
+- 新 Adapter 首次请求时，所有 Worker 都无缓存
+- 策略：选择队列最短的 Worker
+- 记录冷启动事件用于分析
 
-传统缓存复制基于访问频率或未命中率，在异构大模型推理中是滞后的。本系统利用 RWPT 进行主动防御式复制，核心决策流程：
+---
+
+### Section 5: Hot Adapter Replication（热门 Adapter 多副本 — RWPT 驱动）
+
+**5.1 Motivation**
+
+传统缓存复制基于访问频率或未命中率，在异构大模型推理中是滞后的。本系统利用 RWPT 进行主动防御式复制。
+
+**5.2 RWPT-Driven Replication Decision Flow**
+
+核心决策流程：
 
 ```
 Step 1: 算力拥塞检测 — 后台巡检线程检查 EMA(RWPT_i/Capacity)
@@ -484,6 +497,8 @@ Step 3: 全局防爆护栏 — 检查 culprit 的全局副本数
         否则 → 复制到 RWPT 最低的无缓存 Worker
 ```
 
+**5.3 Design Details**
+
 **关键设计**：
 - T_congestion = (w1/w2) × Capacity（零新增超参数，从路由评分函数决策边界推导）
 - N_max = num_workers - 1（强制为长尾 adapter 预留显存）
@@ -494,76 +509,104 @@ Step 3: 全局防爆护栏 — 检查 culprit 的全局副本数
 
 详细设计文档：`hot_adapter_replication_design.md`
 
-**4.6 Cold Start Handling**
-- 新 Adapter 首次请求时，所有 Worker 都无缓存
-- 策略：选择队列最短的 Worker
-- 记录冷启动事件用于分析
-
 ---
 
-### 📖 论文叙事主线：从 RWPT 到多副本的递进逻辑
+### 📖 论文叙事主线：大脑 → 肌肉 → 免疫系统
 
-> 以下是 Section 4（Routing）→ Section 5（Replication）的论文叙事设计，用于指导论文写作。
+> 以下是 Section 4（Routing）→ Section 5（Replication）→ Section 6（Eviction）的论文叙事设计，用于指导论文写作。
+> 导师定调：顶会系统论文讲究"草蛇灰线，伏脉千里"——前一个机制的缺陷，必须是后一个机制的登场契机。
+
+**核心隐喻**：RWPT 是大脑（传感器），多副本是肌肉（执行器），三维淘汰是免疫系统（护盾）。三者形成"发现瓶颈 → 打破瓶颈 → 解决副作用"的因果链，缺一不可。
+
+---
 
 **第一幕：发现问题——缓存亲和性 vs 负载均衡的零和博弈**
 
 多 Worker 数据并行架构下，路由器面临一个根本矛盾：把请求发给有缓存的 worker（高命中率但可能过载），还是发给空闲的 worker（低延迟但冷启动）。传统的 queue_length 路由只看请求数，完全忽略了 LoRA 场景下请求之间的计算代价差异（rank 8 vs rank 128）。
 
-**第二幕：诊断——RWPT 让路由器"看见"真实负载**
+**第二幕：🧠 诊断——RWPT 让路由器"看见"真实负载（大脑与传感器）**
 
 我们提出 RWPT（Rank-Weighted Pending Tokens），将 LoRA Rank 异构性纳入负载估算。消融实验（queue_length → token_count → RWPT）证明：
 - token 粒度比请求粒度更准确（A→B）
 - rank 加权比纯 token 更准确（B→C）
 - RWPT 在所有流量分布下取得 Pareto 最优的延迟-命中率 trade-off
 
-但 RWPT 的优化本质是"更聪明地在缓存命中和负载均衡之间做取舍"。alpha-robustness 实验揭示了一个关键现象：RWPT 以微小的缓存代价（比 token_count 低 2-8%）换取显著的延迟收益（P90 TTFT 降低 13-18%）。这说明 RWPT 在主动"断臂求生"——它识别出"缓存命中但计算代价高"的情况，宁可放弃缓存也要均衡负载。
+RWPT 是单副本拓扑下的绝对最优解——它能在拥塞边缘做出最完美的"断臂求生（放弃缓存以保延迟）"。alpha-robustness 实验揭示：RWPT 以微小的缓存代价（比 token_count 低 2-8%）换取显著的延迟收益（P90 TTFT 降低 13-18%）。
 
-**这就引出了核心问题：RWPT 被迫做的这个 trade-off，能不能被消除？**
+**🔗 衔接点 1：RWPT → 多副本（Section 4→5 过渡段，建议用于论文正文）**
 
-**第三幕：治疗——多副本打破零和博弈**
+> "然而，单副本路由的本质是'在既定物理拓扑下做最优妥协'。当单一 Worker 的绝对物理算力被爆款 Adapter 彻底击穿时，无论 RWPT 怎么妥协，P90 延迟都会不可避免地崩塌。RWPT 作为极其敏锐的'算力预言机（Compute Oracle）'，已经向我们发出了系统局部物理极限的明确告警。要彻底打破这一零和博弈，系统必须从'被动路由'走向'主动的拓扑重构'。"
 
-答案是：如果热门 adapter 同时缓存在多个 worker 上，路由器就不需要在"缓存命中"和"负载均衡"之间二选一了——两个 worker 都有缓存，选负载低的那个就行。零和博弈变成了正和博弈。
+**第三幕：💪 治疗——RWPT 驱动的动态多副本（肌肉与执行器）**
 
-而且 RWPT 天然提供了复制决策所需的全部信号：
+如果热门 adapter 同时缓存在多个 worker 上，路由器就不需要在"缓存命中"和"负载均衡"之间二选一了——两个 worker 都有缓存，选负载低的那个就行。零和博弈变成了正和博弈。
+
+RWPT 天然提供了复制决策所需的全部信号：
 - **什么时候复制**：当 worker 的 RWPT 超过路由评分函数的决策边界（T_congestion = w1/w2 × Capacity），说明路由器已经被迫放弃缓存命中，这就是复制的最佳时机
 - **复制谁**：RWPT 贡献最大的 adapter（揪出元凶）
-- **复制到哪**：RWPT 最低的 worker（最有余量的）
+- **复制到哪**：RWPT 最低的无缓存 worker（负载熔断：EMA < T_congestion × 0.9，不检查显存——复制时淘汰机制自动腾空间）
 - **什么时候回收**：RWPT 信号下降 + 现有淘汰机制自然回收
 
-零新增超参数——T_congestion 从路由评分函数推导，N_max 从集群规模推导，T_cooldown 从物理加载时间推导。
+零新增超参数——T_congestion 从路由评分函数推导，N_max 从集群规模推导，T_cooldown 从物理加载时间推导。多副本是 RWPT 的数学边界自然推导出来的正向反馈环。
 
-**第四幕：协同——诊断指导治疗**
+**🔗 衔接点 2：多副本 → 三维淘汰（Section 5→6 过渡段，建议用于论文正文）**
 
-RWPT 路由和多副本不是独立的两个机制，而是一个协同系统：
-- RWPT 是传感器（告诉系统哪里有问题）
-- 多副本是执行器（解决问题）
-- 路由评分函数既是调度策略，又是复制触发条件的来源
+> "动态多副本机制虽然在理论上打破了算力孤岛，但在极度受限的显存环境（例如 ratio=0.2，每 Worker 仅 18-19 个 adapter 槽位）中，暴力的动态复制会引发分布式系统中臭名昭著的'缓存冷启动颠簸（Cold-Start Thrashing）'。新分配的副本在建立初期，由于缺乏历史热度积累（S_usage=0, S_pending=0），极易被底层的缓存淘汰器误杀，导致系统陷入'无尽搬家'的 PCIe 带宽灾难。因此，多副本拓扑重构的成功，必须仰赖于一个具备'前瞻预测能力'的底层缓存驱逐引擎作为坚实护盾。"
 
-这形成了一个自洽的反馈环：副本越多 → 热点压力越小 → w2 最优值越小 → T_congestion 越高 → 复制触发越保守 → 不会过度复制。
+**第四幕：🛡️ 护盾——前瞻性三维缓存驱逐（免疫系统）**
+
+传统 LFU/LRU 是"向后看"的——只统计历史访问频率和最近访问时间。在大模型异步推理中，这存在致命盲区：一个 adapter 可能历史访问次数为 0（刚被复制过来），但等待队列中有 50 个请求即将使用它。LRU 会毫不犹豫地淘汰它。
+
+我们的三维评分引入了"向前看"的维度——S_pending（队列需求感知）：
+- S_usage（滑动窗口频率）：近期活跃度，防止历史累计膨胀退化为纯 LRU
+- S_recency（时间衰减）：最近访问时间
+- S_pending（队列感知）：**前瞻性维度**，有等待请求的 adapter 不应被淘汰
+
+三维评分与多副本的协同闭环：
+- RWPT 负责把副本"生"出来（触发复制）
+- 保护期（30s grace period）负责让它"活"过通信延迟（防止冷启动误杀）
+- S_pending 评分负责让它在系统中真正"立"住脚跟（有请求排队 → 评分高 → 不被淘汰）
+
+**第五幕：协同反馈环——诊断指导治疗，护盾保障治疗**
+
+RWPT 路由、多副本、三维淘汰不是三个独立机制，而是一个协同系统：
+- RWPT 是传感器（告诉系统哪里有问题）→ 触发多副本
+- 多副本是执行器（解决问题）→ 依赖淘汰机制腾空间 + 保护新副本
+- 三维淘汰是护盾（保障执行器不自爆）→ 淘汰冷 adapter 为新副本让路
+
+自洽反馈环：副本越多 → 热点压力越小 → w2 最优值越小 → T_congestion 越高 → 复制触发越保守 → 不会过度复制。
+
+**第六幕：弹性降级——系统的物理边界与生存能力**
+
+多副本机制不能凭空创造算力。当所有 worker 都处于饱和状态时（如 6 req/s），全局不存在"算力洼地"可供复制，此时系统的行为是：
+
+- 巡检线程检测到所有 worker 的 EMA(RWPT) 超过 T_congestion
+- Step 2 能揪出元凶，但 Step 3 的目标选择找不到满足条件的候选 worker（所有 worker 的 RWPT 都过高）
+- 复制机制静默退出，系统平滑退化为纯 RWPT 单副本路由
+
+这不是缺陷，而是设计意图：系统在有余量时表现为敏锐的多副本拓扑重构引擎（P90 TTFT 大幅下降），在极限高压下自动休眠执行器，退化为经过验证的 RWPT 路由基线（已在 alpha-robustness 实验中证明其鲁棒性）。论文中应主动向审稿人展示这一点，而非回避极限场景。
 
 **适用场景说明**：多副本机制在"局部热点 + 全局有余量"的场景下收益最大（如 4 req/s + α=0.1）。当所有 worker 都处于饱和状态时（如 6 req/s），瓶颈是总算力不足而非负载不均衡，复制无法创造新的算力。实验设计中，中等负载（3-4 req/s）用于展示显著收益，高负载（6 req/s）用于验证机制不退化。
 
-**Section 4→5 过渡段（建议用于论文正文）**：
-
-> "RWPT 路由通过更精确的负载估算显著降低了尾延迟，但其本质仍是在固定的缓存布局下做最优分配。当热点 adapter 只存在于单个 worker 时，路由器面临不可调和的矛盾：缓存命中必然伴随负载集中。下一节我们展示如何通过动态副本管理打破这一约束，让 RWPT 的信号不仅指导路由决策，还驱动资源重新布局。"
-
-**叙事总结**：发现问题 → 诊断（RWPT）→ 诊断揭示更深层的结构性瓶颈 → 治疗（多副本）→ 诊断和治疗协同工作。每一步自然引出下一步，不是拼凑的独立贡献，而是一个递进的解决方案。
+**叙事总结**：发现零和博弈 → 🧠 RWPT 诊断（单副本最优解，但触及物理极限）→ 💪 多副本打破极限（RWPT 驱动的拓扑重构）→ 🛡️ 三维淘汰护航（防止副本冷启动颠簸）→ 三者协同形成闭环 → 极限压力下平滑降级。每一步的缺陷自然引出下一步，不是拼凑的独立贡献，而是一条"发现瓶颈 → 打破瓶颈 → 解决副作用"的因果链。
 
 ---
 
-### Section 5: Multi-Dimensional Adapter Eviction
+### Section 6: Multi-Dimensional Adapter Eviction（前瞻性三维缓存驱逐 — 多副本的护盾）
 
-**5.1 Scoring Model**
+> 传统 LFU/LRU 是"向后看"的——只统计历史访问频率和最近访问时间。在大模型异步推理 + 动态多副本的场景中，这存在致命盲区：一个刚被复制过来的热门 adapter，历史访问次数为 0（S_usage=0），但等待队列中可能有数十个请求即将使用它。纯 LRU 会毫不犹豫地淘汰它，导致"无尽搬家"的 PCIe 带宽灾难。本节介绍的三维评分模型引入了"向前看"的队列感知维度（S_pending），与保护期机制协同，为多副本拓扑重构提供坚实的底层护盾。
+
+**6.1 Scoring Model**
 
 $$Score(a) = 0.35 \cdot S_{usage}(a) + 0.35 \cdot S_{recency}(a) + 0.3 \cdot S_{pending}(a)$$
 
 | 维度 | 公式 | 说明 |
 |------|------|------|
-| 使用频率 | $\frac{\log(1+count_a)}{\log(1+\max_i count_i)}$ | 对数归一化，避免极端值压缩 |
+| 使用频率 | $\frac{\log(1+count_a^{window})}{\log(1+\max_i count_i^{window})}$ | 滑动窗口（300s）内对数归一化，防止长期运行后 max_count 膨胀导致退化为纯 LRU |
 | 时间衰减 | $e^{-\Delta t / \tau}$, $\tau=300s$ | 5 分钟未使用降至 0.37 |
 | 队列需求 | $\frac{\log(1+pending_a)}{\log(1+\max_i pending_i)}$ | 等待队列中的请求数 |
 
-**5.2 Dual-Mode Eviction**
+**6.2 Dual-Mode Eviction**
 
 | 模式 | 触发时机 | 阈值 | 淘汰比例 |
 |------|---------|------|---------|
@@ -574,16 +617,16 @@ $$Score(a) = 0.35 \cdot S_{usage}(a) + 0.35 \cdot S_{recency}(a) + 0.3 \cdot S_{
 **动态淘汰比例公式：**
 $$ratio = \frac{usage - 0.9}{0.1} \times 0.4 + 0.2$$
 
-**5.3 Protection Mechanisms**
+**6.3 Protection Mechanisms**
 - `preserve_dirs`: 当前批次使用的 Adapter 硬保护
 - 队列感知: 通过 $S_{pending}$ 间接保护即将使用的 Adapter
 - 连续批处理兼容: 淘汰只在请求完成间隙执行
 
 ---
 
-### Section 6: Evaluation
+### Section 7: Evaluation
 
-**6.1 Experimental Setup**
+**7.1 Experimental Setup**
 - 硬件: 3 × RTX 3090 (24GB), 数据并行模式
 - 模型: LLaMA-7B
 - Adapters: 100 个（alpaca-lora-7b rank=16 + bactrian-x-llama-7b-lora rank=64 交替）
@@ -592,19 +635,19 @@ $$ratio = \frac{usage - 0.9}{0.1} \times 0.4 + 0.2$$
 - 淘汰阈值: 85%
 - 负载模式: Power Law 分布 (α=0.3), req_rate=6.0
 
-**6.2 Baselines**
+**7.2 Baselines**
 - S-LoRA (张量并行, TP=3)
 - S-LoRA-DP (数据并行, Round-Robin)
 - S-LoRA-DP + Adapter-Aware Routing (本文)
 
-**6.3 Metrics**
+**7.3 Metrics**
 - Throughput (req/s)
 - Latency (P50, P95, P99)
 - Cache Hit Rate (%)
 - Adapter Load/Eviction Count
 - GPU Utilization (%)
 
-**6.4 Experiments**
+**7.4 Experiments**
 
 | 实验 | 目的 | 预期结果 |
 |------|------|---------|
@@ -618,23 +661,23 @@ $$ratio = \frac{usage - 0.9}{0.1} \times 0.4 + 0.2$$
 
 ---
 
-### Section 7: Related Work
+### Section 8: Related Work
 
-**7.1 LLM Serving Systems**
+**8.1 LLM Serving Systems**
 - vLLM, Orca, FlexGen
 
-**7.2 LoRA Serving**
+**8.2 LoRA Serving**
 - S-LoRA, Chameleon, Toppings, LoRAServe
 
-**7.3 Parallel Strategies**
+**8.3 Parallel Strategies**
 - Tensor Parallelism, Data Parallelism, Pipeline Parallelism
 
-**7.4 Cache and Memory Management**
+**8.4 Cache and Memory Management**
 - LRU, LFU, ARC, 机器学习驱动的缓存策略
 
 ---
 
-### Section 8: Conclusion
+### Section 9: Conclusion
 
 本文提出了面向高并发多租户场景的数据并行 LoRA 推理系统。通过数据并行架构实现线性可扩展性，通过 Adapter 感知路由提升缓存命中率，通过热门 Adapter 多副本机制解决热点瓶颈，通过多维评分淘汰机制优化显存管理。实验表明，本系统在吞吐量、延迟和资源效率方面均显著优于基线系统。
 
