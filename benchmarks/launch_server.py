@@ -60,6 +60,16 @@ if __name__ == "__main__":
     parser.add_argument("--decode-cost-alpha", type=float, default=None,
                         help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     
+    # 热门 Adapter 主动复制相关参数
+    parser.add_argument("--enable-replication", action="store_true",
+                        help="启用热门 Adapter 主动复制机制 (默认: 禁用)")
+    parser.add_argument("--cooldown-sec", type=float, default=5.0,
+                        help="同一 adapter 两次复制的最小间隔秒数 (默认: 5.0)")
+    parser.add_argument("--patrol-interval-sec", type=float, default=1.0,
+                        help="ReplicaManager 巡检周期秒数 (默认: 1.0)")
+    parser.add_argument("--protection-sec", type=float, default=30.0,
+                        help="新副本的淘汰保护时长秒数 (默认: 30.0)")
+    
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
                         help="请求完成时触发淘汰的内存使用率阈值 (0-1)")
@@ -151,6 +161,13 @@ if __name__ == "__main__":
             cmd += f" --hidden-dim {args.hidden_dim}"
         if args.decode_cost_alpha is not None:
             cmd += f" --decode-cost-alpha {args.decode_cost_alpha}"
+
+        # 添加热门 Adapter 主动复制参数
+        if args.enable_replication:
+            cmd += " --enable-replication"
+            cmd += f" --cooldown-sec {args.cooldown_sec}"
+            cmd += f" --patrol-interval-sec {args.patrol_interval_sec}"
+            cmd += f" --protection-sec {args.protection_sec}"
 
         # 添加阈值淘汰参数
         cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"

@@ -82,6 +82,22 @@ class ExperimentSuite:
             "routing_w2": [0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
             "load_metric": ["token_count"],
         },
+
+        # 热门 Adapter 主动复制对比实验
+        # 对照组 (enable_replication=False) vs 实验组 (enable_replication=True)
+        # 在三种 Zipf 分布下对比 P90 TTFT、缓存命中率、吞吐量
+        # 2 strategies × 3 alphas = 6 experiments
+        "replication-comparison": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1, 0.3, 0.8],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [240],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0],
+            "load_metric": ["rwpt"],
+            "enable_replication": [False, True],
+        },
     }
     
     @classmethod

@@ -40,6 +40,12 @@ class ExperimentConfig:
     # Load metric ablation
     load_metric: str = "rwpt"  # 'queue_length' | 'token_count' | 'rwpt'
     
+    # Hot adapter replication
+    enable_replication: bool = False  # 是否启用主动复制
+    cooldown_sec: float = 5.0        # 同一 adapter 两次复制最小间隔
+    patrol_interval_sec: float = 1.0  # 巡检周期
+    protection_sec: float = 30.0      # 新副本淘汰保护时长
+    
     def validate(self) -> None:
         """Validate configuration parameters"""
         if self.routing_strategy not in ["round-robin", "adapter-aware"]:
@@ -95,6 +101,12 @@ class ExperimentConfig:
         
         if self.load_metric != "rwpt":
             args.extend(["--load-metric", self.load_metric])
+        
+        if self.enable_replication:
+            args.append("--enable-replication")
+            args.extend(["--cooldown-sec", str(self.cooldown_sec)])
+            args.extend(["--patrol-interval-sec", str(self.patrol_interval_sec)])
+            args.extend(["--protection-sec", str(self.protection_sec)])
         
         return args
     

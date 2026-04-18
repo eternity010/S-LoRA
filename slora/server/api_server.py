@@ -600,6 +600,16 @@ def main():
                         help="负载度量类型: queue_length (仅队列长度), "
                              "token_count (token 级无 rank 加权), rwpt (完整 RWPT, 默认)")
 
+    # 热门 Adapter 主动复制相关参数
+    parser.add_argument("--enable-replication", action="store_true",
+                        help="启用热门 Adapter 主动复制机制 (默认: 禁用)")
+    parser.add_argument("--cooldown-sec", type=float, default=5.0,
+                        help="同一 adapter 两次复制的最小间隔秒数 (默认: 5.0)")
+    parser.add_argument("--patrol-interval-sec", type=float, default=1.0,
+                        help="ReplicaManager 巡检周期秒数 (默认: 1.0)")
+    parser.add_argument("--protection-sec", type=float, default=30.0,
+                        help="新副本的淘汰保护时长秒数 (默认: 30.0)")
+
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
                         help="请求完成时触发淘汰的内存使用率阈值 (0-1)，默认 0.85 (85%%)")

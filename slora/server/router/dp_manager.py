@@ -30,6 +30,7 @@ from slora.server.router.round_robin_router import RoundRobinRouter
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.worker_state import WorkerState, RoutingConfig
 from slora.server.router.worker_state_cache import WorkerStateCache
+from slora.server.router.replica_manager import ReplicaManager
 from slora.server.io_struct import AbortReq, Req, ReqDetokenizationState
 from slora.server.sampling_params import SamplingParams
 
@@ -163,6 +164,12 @@ class DataParallelRouterManager:
         self.workers_ready = False
         self.ready_port = None  # 用于接收 Worker 就绪信号的端口
         
+        # ReplicaManager（热门 Adapter 主动复制，仅 adapter-aware 模式 + --enable-replication）
+        self.replica_manager: Optional[ReplicaManager] = None
+        self._enable_replication = getattr(args, 'enable_replication', False)
+        if self._enable_replication and self.routing_strategy == 'adapter-aware':
+            self._init_replica_manager()
+        
         print(f"[DataParallelRouterManager] Configuration:")
         print(f"[DataParallelRouterManager]   Number of workers: {self.num_workers}")
         print(f"[DataParallelRouterManager]   GPU IDs: {self.gpu_ids}")
@@ -186,6 +193,11 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager]   Max queue length: {routing_config.max_queue_length}")
             print(f"[DataParallelRouterManager]   Hot adapter threshold: {routing_config.hot_adapter_threshold} req/s")
             print(f"[DataParallelRouterManager]   Load metric: {routing_config.load_metric}")
+        if self.replica_manager:
+            print(f"[DataParallelRouterManager]   Replication: ENABLED")
+            print(f"[DataParallelRouterManager]   Patrol interval: {self.replica_manager.patrol_interval_sec}s")
+            print(f"[DataParallelRouterManager]   Cooldown: {self.replica_manager.cooldown_sec}s")
+            print(f"[DataParallelRouterManager]   Protection: {self.replica_manager.protection_sec}s")
         print(f"[DataParallelRouterManager] ==========================================")
     
     def _detect_gpus(self) -> int:
@@ -312,6 +324,27 @@ class DataParallelRouterManager:
             load_metric=getattr(self.args, 'load_metric', 'rwpt'),
         )
     
+    def _init_replica_manager(self) -> None:
+        """
+        初始化 ReplicaManager，注册 send_preload_to_worker 作为预加载回调。
+
+        Requirements: 7.3, 7.4, 9.4
+        """
+        routing_config = self._get_routing_config()
+        self.replica_manager = ReplicaManager(
+            num_workers=self.num_workers,
+            capacity=float(routing_config.batch_max_tokens),
+            w1=routing_config.w1,
+            w2=routing_config.w2,
+            patrol_interval_sec=getattr(self.args, 'patrol_interval_sec', 1.0),
+            cooldown_sec=getattr(self.args, 'cooldown_sec', 5.0),
+            protection_sec=getattr(self.args, 'protection_sec', 30.0),
+            ema_alpha=getattr(self.args, 'ema_alpha', 0.3),
+            max_protected_per_worker=getattr(self.args, 'max_protected_per_worker', 2),
+            preload_callback=self.send_preload_to_worker,
+        )
+        print(f"[DataParallelRouterManager] ReplicaManager initialized")
+
     def _load_adapter_ranks(self) -> dict:
         """
         加载 adapter rank 信息
@@ -1143,6 +1176,12 @@ class DataParallelRouterManager:
             result = self.router.update_config(**update)
             print(f"[DataParallelRouterManager] Routing config updated: {result}")
             
+            # 同步更新 ReplicaManager 的 w1/w2（如果有变更）
+            if self.replica_manager and ('w1' in update or 'w2' in update):
+                new_w1 = result.get('w1', self.replica_manager.w1)
+                new_w2 = result.get('w2', self.replica_manager.w2)
+                self.replica_manager.update_config(new_w1, new_w2)
+            
             # 如果执行了 reset_stats，立即刷新 stats 文件，
             # 避免 runner 读到 reset 前的旧快照（竞态修复）
             if update.get('reset_stats', False):
@@ -1348,6 +1387,13 @@ class DataParallelRouterManager:
             state_receiver_task = asyncio.create_task(self._process_worker_states())
             print(f"[DataParallelRouterManager] Worker state receiver task started")
         
+        # 启动 ReplicaManager 巡检线程（仅启用副本机制时）
+        patrol_task = None
+        if self.replica_manager:
+            patrol_task = asyncio.create_task(self.replica_manager._start_patrol_loop())
+            print(f"[DataParallelRouterManager] ReplicaManager patrol loop started "
+                  f"(interval={self.replica_manager.patrol_interval_sec}s)")
+        
         while True:
             try:
                 # 从 API Server 接收请求
@@ -1462,6 +1508,10 @@ class DataParallelRouterManager:
                     pending_raw_tokens=message.get('pending_raw_tokens', 0),
                     active_decode_seqs=message.get('active_decode_seqs', 0),
                     pool_used_ratio=message.get('pool_used_ratio', 0.0),
+                    # Hot adapter replication: top-K RWPT contributors
+                    top_k_rwpt_adapters=[
+                        tuple(t) for t in message.get('top_k_rwpt_adapters', [])
+                    ],
                 )
                 
                 # 缓存 profiled_alpha（一次性，首次收到后不再更新）
@@ -1502,6 +1552,10 @@ class DataParallelRouterManager:
                 # 更新状态缓存
                 if self.worker_state_cache:
                     self.worker_state_cache.update(worker_id, state)
+                
+                # 同步更新 ReplicaManager（热门 Adapter 主动复制）
+                if self.replica_manager:
+                    self.replica_manager.update_worker_state(worker_id, state)
                 
                 state_report_count += 1
                 
