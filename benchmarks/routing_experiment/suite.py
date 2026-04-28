@@ -83,6 +83,17 @@ class ExperimentSuite:
             "load_metric": ["token_count"],
         },
 
+        # R-LoRA round-robin 基线（与 S-LoRA 基线参数对齐）
+        # DP=3 round-robin，用于对比 DP 架构本身的收益（无智能路由）
+        # 3 alphas = 3 experiments
+        "dp-roundrobin-baseline": {
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1, 0.3, 0.8],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [120],
+        },
+
         # 热门 Adapter 主动复制对比实验
         # 对照组 (enable_replication=False) vs 实验组 (enable_replication=True)
         # 在三种 Zipf 分布下对比 P90 TTFT、缓存命中率、吞吐量

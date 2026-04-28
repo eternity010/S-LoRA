@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "/home/hzheng/S-LoRA/benchmarks/launch_server.py", line 87, in <module>
-    base_model = BASE_MODEL[args.model_setting]
-                 ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
-KeyError: 'Dummy'
