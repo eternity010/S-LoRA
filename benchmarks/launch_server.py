@@ -12,6 +12,8 @@ if __name__ == "__main__":
     parser.add_argument("--backend", type=str, default="slora",
                         choices=["slora", "vllm", "lightllm", "vllm-packed"])
     parser.add_argument("--model-setting", type=str, default="S1")
+    parser.add_argument("--host", type=str, default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=38000)
 
     parser.add_argument("--num-adapter", type=int)
     parser.add_argument("--num-token", type=int)
@@ -104,6 +106,7 @@ if __name__ == "__main__":
         cmd = f"python -m slora.server.api_server --max_total_token_num {args.num_token}"
         cmd += f" --model {base_model}"
         cmd += f" --tokenizer_mode auto"
+        cmd += f" --host {args.host} --port {args.port}"
 
         num_iter = args.num_adapter // len(adapter_dirs) + 1
         for i in range(num_iter):

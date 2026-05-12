@@ -10,6 +10,7 @@ import signal
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
+from urllib.parse import urlparse
 import requests
 
 from .config import ExperimentConfig
@@ -23,7 +24,7 @@ class ExperimentRunner:
     def __init__(self,
                  output_dir: str = "routing_comparison_results",
                  model_setting: str = "Real",
-                 server_host: str = "http://localhost:8000",
+                 server_host: str = "http://localhost:38000",
                  benchmarks_dir: str = ".",
                  model_dir: str = None,
                  adapter_dir: str = None,
@@ -403,7 +404,12 @@ class ExperimentRunner:
             "--model-setting", self.model_setting
         ]
         cmd.extend(config.to_server_args())
-        
+
+        parsed_server = urlparse(self.server_host)
+        server_host = parsed_server.hostname or "localhost"
+        server_port = parsed_server.port or 38000
+        cmd.extend(["--host", server_host, "--port", str(server_port)])
+
         # Add model and adapter paths if provided
         if self.model_dir:
             cmd.extend(["--model-dir", self.model_dir])

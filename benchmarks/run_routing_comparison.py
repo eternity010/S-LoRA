@@ -306,8 +306,8 @@ def main():
     parser.add_argument(
         '--port',
         type=int,
-        default=8000,
-        help='Server port (default: 8000)'
+        default=38000,
+        help='Server port (default: 38000)'
     )
     
     # Environment configuration
