@@ -103,7 +103,7 @@ if __name__ == "__main__":
     
 
     if args.backend == "slora":
-        cmd = f"python -m slora.server.api_server --max_total_token_num {args.num_token}"
+        cmd = f"python -u -m slora.server.api_server --max_total_token_num {args.num_token}"
         cmd += f" --model {base_model}"
         cmd += f" --tokenizer_mode auto"
         cmd += f" --host {args.host} --port {args.port}"

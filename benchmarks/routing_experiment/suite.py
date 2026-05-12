@@ -91,7 +91,21 @@ class ExperimentSuite:
             "alpha": [0.1, 0.3, 0.8],
             "num_adapters": [100],
             "req_rate": [6.0],
-            "duration": [120],
+            "duration": [240],
+        },
+
+        # 图 6 / 系统基线对比用的 RWPT 对照组
+        # 与 dp-roundrobin-baseline 保持相同 alpha、req_rate、duration，仅切换为 adapter-aware + rwpt
+        # 3 alphas = 3 experiments
+        "dp-rwpt-baseline": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1, 0.3, 0.8],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [240],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0],
+            "load_metric": ["rwpt"],
         },
 
         # 热门 Adapter 主动复制对比实验

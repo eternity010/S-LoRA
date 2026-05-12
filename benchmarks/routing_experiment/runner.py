@@ -400,6 +400,7 @@ class ExperimentRunner:
         
         cmd = [
             sys.executable,  # Use current Python interpreter
+            "-u",
             "launch_server.py",
             "--model-setting", self.model_setting
         ]

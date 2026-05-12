@@ -25,7 +25,7 @@ class ExperimentConfig:
     output_range: Tuple[int, int] = (64, 256)
     
     # Environment configuration
-    gpu_ids: str = "0,1,3"
+    gpu_ids: str = "1,2,3"
     num_workers: int = 3
     num_token: int = 15000
     
