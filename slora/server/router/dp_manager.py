@@ -1611,12 +1611,22 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
     """
     import sys
     import traceback
+    import os
     from slora.server.router.gpu_worker import GPUWorker
     
     # 强制 stdout 无缓冲，确保日志及时输出
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, line_buffering=True)
+
+    worker_cpu_threads = 8
+    os.environ["OMP_NUM_THREADS"] = str(worker_cpu_threads)
+    os.environ["MKL_NUM_THREADS"] = str(worker_cpu_threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(worker_cpu_threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(worker_cpu_threads)
+
+    torch.set_num_threads(worker_cpu_threads)
+    torch.set_num_interop_threads(1)
     
     def send_ready_signal(ready_port: int, worker_id: int):
         """发送就绪信号到 Router Manager"""
@@ -1631,6 +1641,7 @@ def run_gpu_worker_process(worker_id: int, gpu_id: int, args: argparse.Namespace
     
     try:
         print(f"[Worker {worker_id}] Starting worker process on GPU {gpu_id}...")
+        print(f"[Worker {worker_id}] CPU thread limit: {worker_cpu_threads}")
         sys.stdout.flush()
         
         # 创建 Worker 实例
