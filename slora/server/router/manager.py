@@ -803,7 +803,7 @@ def _start_data_parallel_router(args, router_port, detokenization_port, pipe_wri
             routing_w3 = getattr(args, 'routing_w3', 0.0)
             default_lora_rank = getattr(args, 'default_lora_rank', 16)
             max_queue_length = getattr(args, 'max_queue_length', 100)
-            hot_adapter_threshold = getattr(args, 'hot_adapter_threshold', 10.0)
+            hot_adapter_threshold = getattr(args, 'hot_adapter_threshold', 1e9)
             print(f"[DataParallelRouter]   w1 (cache affinity): {routing_w1}")
             print(f"[DataParallelRouter]   w2 (load penalty): {routing_w2}")
             print(f"[DataParallelRouter]   w3 (rank mismatch penalty): {routing_w3}")

@@ -217,7 +217,7 @@ python -m slora.server.api_server \
     --routing-w3 5.0 \
     --default-lora-rank 16 \
     --max-queue-length 100 \
-    --hot-adapter-threshold 10.0
+    --hot-adapter-threshold 1000000000
 ```
 
 ---
@@ -269,7 +269,7 @@ python -m slora.server.api_server \
 - `--routing-w3`: Rank 不匹配惩罚权重（默认 0.0）⭐ Phase 2.5
 - `--default-lora-rank`: 未知 Adapter 的默认 rank（默认 16）⭐ Phase 2.5
 - `--max-queue-length`: 最大队列长度阈值（默认 100）
-- `--hot-adapter-threshold`: 热点 Adapter 阈值（默认 10.0 req/s）
+- `--hot-adapter-threshold`: 热点 Adapter 阈值（默认 1e9 req/s，等效关闭热点 Round-Robin 分散）
 
 ---
 
@@ -495,4 +495,3 @@ python -m slora.server.api_server \
 ---
 
 *此文档由 AI 自动生成并更新，基于项目结构分析和 Phase 2.5 开发进度。*
-

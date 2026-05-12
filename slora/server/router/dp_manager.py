@@ -316,7 +316,7 @@ class DataParallelRouterManager:
             heartbeat_interval_ms=getattr(self.args, 'heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=getattr(self.args, 'heartbeat_timeout_ms', 300),
             max_queue_length=getattr(self.args, 'max_queue_length', 100),
-            hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 10.0),
+            hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 1e9),
             max_total_token_num=getattr(self.args, 'max_total_token_num', 6000),
             batch_max_tokens=getattr(self.args, 'batch_max_tokens', 1000),
             hidden_dim=getattr(self.args, 'hidden_dim', None) or 4096,  # Worker 会通过心跳自动更新

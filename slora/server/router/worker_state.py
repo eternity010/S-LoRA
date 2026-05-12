@@ -271,7 +271,7 @@ class RoutingConfig:
     heartbeat_interval_ms: int = 100
     heartbeat_timeout_ms: int = 300
     max_queue_length: int = 100
-    hot_adapter_threshold: float = 10.0
+    hot_adapter_threshold: float = 1e9
     # RWPT (Rank-Calibrated Workload) parameters
     hidden_dim: int = 4096             # 模型隐藏层维度，用于计算 γ
     decode_cost_alpha: float = None     # Decode 序列负载折算系数（None 时由 Worker profiling 自动测量）
@@ -359,7 +359,7 @@ class RoutingConfig:
             heartbeat_interval_ms=data.get('heartbeat_interval_ms', 100),
             heartbeat_timeout_ms=data.get('heartbeat_timeout_ms', 300),
             max_queue_length=data.get('max_queue_length', 100),
-            hot_adapter_threshold=data.get('hot_adapter_threshold', 10.0),
+            hot_adapter_threshold=data.get('hot_adapter_threshold', 1e9),
             hidden_dim=data.get('hidden_dim', 4096),
             decode_cost_alpha=data.get('decode_cost_alpha', None),
             max_total_token_num=data.get('max_total_token_num', 6000),

@@ -587,8 +587,8 @@ def main():
                         help="Default LoRA rank for unknown adapters in rank-aware routing (default: 16)")
     parser.add_argument("--max-queue-length", type=int, default=100,
                         help="Maximum queue length threshold for routing (default: 100)")
-    parser.add_argument("--hot-adapter-threshold", type=float, default=10.0,
-                        help="Hot adapter request rate threshold in req/s (default: 10.0)")
+    parser.add_argument("--hot-adapter-threshold", type=float, default=1e9,
+                        help="Hot adapter request rate threshold in req/s (default: 1e9, effectively disabled)")
     
     # RWPT (Rank-Weighted Pending Tokens) 相关参数
     parser.add_argument("--hidden-dim", type=int, default=None,
