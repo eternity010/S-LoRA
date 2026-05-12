@@ -512,68 +512,66 @@ class DataParallelRouterManager:
         print(f"[DataParallelRouterManager] Starting Response Merger...")
         self._start_response_merger()
         
-        # 启动所有 Worker
-        print(f"[DataParallelRouterManager] Starting {self.num_workers} worker(s)...")
+        # 顺序启动 Worker，减少并发 preload 对磁盘和 CPU 的争抢
+        print(f"[DataParallelRouterManager] Starting {self.num_workers} worker(s) in serial preload mode...")
+        print(f"[DataParallelRouterManager] Waiting for each worker to be ready before starting the next one...")
+
+        ready_workers = set()
+        max_wait_time = 7200  # 最多等待 120 分钟（真实 adapter 冷启动可能超过 60 分钟）
+        start_wait = asyncio.get_event_loop().time()
+
         for i in range(self.num_workers):
             print(f"[DataParallelRouterManager] Starting Worker {i}...")
             print(f"[DataParallelRouterManager]   GPU ID: {self.gpu_ids[i]}")
             print(f"[DataParallelRouterManager]   Request port: {self.worker_ports[i]}")
             print(f"[DataParallelRouterManager]   Response port: {self.response_port}")
-            
+
             worker = self._start_worker(i, self.gpu_ids[i])
             self.workers.append(worker)
-            
+
             print(f"[DataParallelRouterManager] Worker {i} process started (PID: {worker.pid})")
-        
-        # 等待所有 Worker 发送就绪信号
-        print(f"[DataParallelRouterManager] Waiting for all workers to be ready...")
-        print(f"[DataParallelRouterManager] (This may take a few minutes while models are loading)")
-        
-        ready_workers = set()
-        max_wait_time = 7200  # 最多等待 120 分钟（真实 adapter 冷启动可能超过 60 分钟）
-        start_wait = asyncio.get_event_loop().time()
-        
-        while len(ready_workers) < self.num_workers:
-            # 检查是否超时
-            elapsed = asyncio.get_event_loop().time() - start_wait
-            if elapsed > max_wait_time:
-                print(f"[DataParallelRouterManager] ERROR: Timeout waiting for workers to be ready")
+            print(f"[DataParallelRouterManager] Waiting for Worker {i} to be ready...")
+            print(f"[DataParallelRouterManager] (This may take a while while models and adapters are loading)")
+
+            while i not in ready_workers:
+                elapsed = asyncio.get_event_loop().time() - start_wait
+                if elapsed > max_wait_time:
+                    print(f"[DataParallelRouterManager] ERROR: Timeout waiting for workers to be ready")
+                    break
+
+                failed_workers = []
+                for worker_id, worker_proc in enumerate(self.workers):
+                    if not worker_proc.is_alive() and worker_id not in ready_workers:
+                        exitcode = worker_proc.exitcode
+                        failed_workers.append((worker_id, exitcode))
+
+                if failed_workers:
+                    print(f"[DataParallelRouterManager] ========== Worker Startup Failed ==========")
+                    for worker_id, exitcode in failed_workers:
+                        print(f"[DataParallelRouterManager] Worker {worker_id} (GPU {self.gpu_ids[worker_id]}) "
+                              f"failed with exit code {exitcode}")
+
+                    for worker_proc in self.workers:
+                        if worker_proc.is_alive():
+                            worker_proc.terminate()
+                            worker_proc.join(timeout=5)
+
+                    ready_receiver.close()
+                    ready_context.term()
+                    raise RuntimeError(f"Worker startup failed: {failed_workers}")
+
+                try:
+                    msg = ready_receiver.recv_json()
+                    worker_id = msg.get('worker_id')
+                    if worker_id is not None and worker_id not in ready_workers:
+                        ready_workers.add(worker_id)
+                        print(f"[DataParallelRouterManager] Worker {worker_id} is READY ({len(ready_workers)}/{self.num_workers})")
+                except zmq.Again:
+                    await asyncio.sleep(0.1)
+                    continue
+
+            if i not in ready_workers:
                 break
-            
-            # 检查 Worker 进程状态
-            failed_workers = []
-            for i, worker in enumerate(self.workers):
-                if not worker.is_alive() and i not in ready_workers:
-                    exitcode = worker.exitcode
-                    failed_workers.append((i, exitcode))
-            
-            if failed_workers:
-                print(f"[DataParallelRouterManager] ========== Worker Startup Failed ==========")
-                for worker_id, exitcode in failed_workers:
-                    print(f"[DataParallelRouterManager] Worker {worker_id} (GPU {self.gpu_ids[worker_id]}) "
-                          f"failed with exit code {exitcode}")
-                
-                # 终止所有 Worker 进程
-                for i, worker in enumerate(self.workers):
-                    if worker.is_alive():
-                        worker.terminate()
-                        worker.join(timeout=5)
-                
-                ready_receiver.close()
-                ready_context.term()
-                raise RuntimeError(f"Worker startup failed: {failed_workers}")
-            
-            # 尝试接收就绪信号
-            try:
-                msg = ready_receiver.recv_json()
-                worker_id = msg.get('worker_id')
-                if worker_id is not None and worker_id not in ready_workers:
-                    ready_workers.add(worker_id)
-                    print(f"[DataParallelRouterManager] Worker {worker_id} is READY ({len(ready_workers)}/{self.num_workers})")
-            except zmq.Again:
-                # 超时，继续等待
-                await asyncio.sleep(0.1)
-                continue
         
         ready_receiver.close()
         ready_context.term()
