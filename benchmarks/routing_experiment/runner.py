@@ -8,6 +8,7 @@ import time
 import json
 import signal
 import sys
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
@@ -159,8 +160,11 @@ class ExperimentRunner:
         return (
             f"{config.routing_strategy}_alpha{config.alpha}"
             f"_adapters{config.num_adapters}"
+            f"_rate{config.req_rate}"
+            f"_dur{config.duration}"
             f"_w1{config.routing_w1}_w2{config.routing_w2}"
             f"_lm{config.load_metric}"
+            f"_repl{int(config.enable_replication)}"
         )
     
     def _needs_server_restart(self, config: ExperimentConfig) -> bool:
@@ -397,6 +401,10 @@ class ExperimentRunner:
         # Clean up any existing S-LoRA processes (safe, won't kill other programs)
         print("     Cleaning up any existing S-LoRA processes...")
         self._cleanup_slora_processes(max_wait=30)
+
+        # Remove stale stats/config files so the first experiment in a fresh server
+        # does not read snapshots left behind by a previous run.
+        self._cleanup_runtime_state_files()
         
         cmd = [
             sys.executable,  # Use current Python interpreter
@@ -455,6 +463,25 @@ class ExperimentRunner:
         
         # Track current server configuration
         self._current_server_config = self._get_server_config_key(config)
+
+    def _cleanup_runtime_state_files(self) -> None:
+        """Remove stale runtime files shared through /tmp between experiment runs."""
+        runtime_files = [
+            "/tmp/slora_routing_stats.json",
+            "/tmp/slora_routing_stats.json.tmp",
+            "/tmp/slora_routing_config_update.json",
+            "/tmp/slora_reset_adapter_cache.trigger",
+            "/tmp/slora_reset_adapter_cache.result",
+        ]
+
+        for path in runtime_files:
+            try:
+                os.remove(path)
+                self._log(f"removed stale runtime file: {path}")
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                self._log(f"failed to remove runtime file {path}: {exc}")
     
     def _wait_for_server(self, timeout: int = 4200) -> None:
         """

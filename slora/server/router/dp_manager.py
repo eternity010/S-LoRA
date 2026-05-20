@@ -956,9 +956,9 @@ class DataParallelRouterManager:
                 self.router.adapter_to_workers.clear()
                 print(f"[DataParallelRouterManager] Router adapter index cleared")
             
-            # 重置路由器统计
-            if hasattr(self.router, 'reset_stats'):
-                self.router.reset_stats()
+            # 重置本轮实验统计并立即刷新 stats 文件
+            self._reset_experiment_stats()
+            self._write_stats_file()
             
             print(f"[DataParallelRouterManager] Adapter cache reset completed")
             
@@ -978,6 +978,19 @@ class DataParallelRouterManager:
                 'message': error_msg,
                 'error': str(e)
             }
+
+    def _reset_experiment_stats(self) -> None:
+        """Reset per-experiment statistics kept by the router manager and router."""
+        self.stats['total_requests'] = 0
+        self.stats['successful_requests'] = 0
+        self.stats['failed_requests'] = 0
+        self.stats['worker_request_counts'] = [0] * self.num_workers
+        self.stats['start_time'] = time.time()
+
+        if hasattr(self.router, 'reset_stats'):
+            self.router.reset_stats()
+
+        print("[DataParallelRouterManager] Per-experiment statistics reset")
 
     async def send_preload_to_worker(self, worker_id: int, adapter_dir: str, protection_sec: float = 30.0) -> dict:
         """
