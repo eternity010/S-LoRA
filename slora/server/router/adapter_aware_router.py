@@ -219,18 +219,14 @@ class AdapterAwareRouter:
         if state is None:
             return float('-inf')
 
-        # Cache affinity: I(adapter ∈ Cache_i)
-        cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
-        score = self.config.w1 * cache_indicator
-
         # Load penalty — 根据 load_metric 分支
         metric = self.config.load_metric
         load_value = 0.0  # 用于评分分解日志
+        load_pressure = 0.0
 
         if metric == 'queue_length':
             # Variant A: 仅队列长度（基线，无 Capacity 归一化）
             load_value = self.config.w2 * state.queue_length
-            score -= load_value
             logger.debug(f"Worker {worker_id} queue_length mode: queue={state.queue_length}")
 
         elif metric == 'token_count':
@@ -238,7 +234,6 @@ class AdapterAwareRouter:
             raw = state.pending_raw_tokens
             load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
             load_value = self.config.w2 * load_pressure
-            score -= load_value
             logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
                         f"load_pressure={load_pressure:.4f}")
 
@@ -247,10 +242,14 @@ class AdapterAwareRouter:
             rwpt = state.pending_prefill_tokens
             load_pressure = rwpt / self._capacity if self._capacity > 0 else 0.0
             load_value = self.config.w2 * load_pressure
-            score -= load_value
             logger.debug(f"Worker {worker_id} RWPT: rwpt={rwpt}, "
                         f"prefill_tokens={state.pending_prefill_tokens}, "
                         f"load_pressure={load_pressure:.4f}")
+
+        # Cache affinity: I(adapter ∈ Cache_i). 在高 RWPT 压力下逐步削弱缓存亲和性奖励。
+        cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
+        effective_w1 = self._effective_cache_affinity_weight(load_pressure)
+        score = effective_w1 * cache_indicator - load_value
 
         # Rank 不匹配惩罚（仅当 w3 > 0 时应用）
         # Requirements: 5.1, 5.2, 5.4, 5.5
@@ -261,12 +260,25 @@ class AdapterAwareRouter:
             score -= rank_penalty
 
             logger.debug(f"Worker {worker_id} score breakdown: "
-                        f"cache={self.config.w1 * cache_indicator:.2f}, "
+                        f"cache={effective_w1 * cache_indicator:.2f}, "
                         f"load={-load_value:.2f}, "
                         f"rank_penalty={-rank_penalty:.2f}, "
                         f"total={score:.2f}")
 
         return score
+
+    def _effective_cache_affinity_weight(self, load_pressure: float) -> float:
+        """Return cache affinity weight after high-load decay."""
+        if self.config.load_metric != 'rwpt':
+            return self.config.w1
+
+        threshold = self.config.cache_affinity_decay_threshold
+        if load_pressure <= threshold:
+            return self.config.w1
+
+        decay_ratio = threshold / load_pressure
+        bounded_ratio = max(self.config.min_cache_affinity_ratio, decay_ratio)
+        return self.config.w1 * bounded_ratio
     
     def select_worker(self, adapter_dir: str) -> int:
         """

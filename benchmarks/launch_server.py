@@ -42,7 +42,7 @@ if __name__ == "__main__":
                         help="路由策略: round-robin (轮询，默认) 或 adapter-aware (基于亲和性)")
     parser.add_argument("--routing-w1", type=float, default=1.0,
                         help="缓存亲和性权重 (默认: 1.0)")
-    parser.add_argument("--routing-w2", type=float, default=4.0,
+    parser.add_argument("--routing-w2", type=float, default=1.0,
                         help="负载惩罚权重 (默认: 1.0, RWPT/Capacity 归一化到 ~[0,1])")
     parser.add_argument("--routing-w3", type=float, default=0.0,
                         help="Rank 不匹配惩罚权重，用于 rank 感知路由 (默认: 0.0，禁用)")
@@ -146,7 +146,7 @@ if __name__ == "__main__":
             cmd += f" --routing-strategy {args.routing_strategy}"
         if args.routing_w1 != 1.0:
             cmd += f" --routing-w1 {args.routing_w1}"
-        if args.routing_w2 != 4.0:
+        if args.routing_w2 != 1.0:
             cmd += f" --routing-w2 {args.routing_w2}"
         if args.routing_w3 != 0.0:
             cmd += f" --routing-w3 {args.routing_w3}"

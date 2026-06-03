@@ -578,7 +578,7 @@ def main():
                         help="Routing strategy for data parallel mode: 'round-robin' (default) or 'adapter-aware'")
     parser.add_argument("--routing-w1", type=float, default=1.0,
                         help="Cache affinity weight for adapter-aware routing (default: 1.0)")
-    parser.add_argument("--routing-w2", type=float, default=4.0,
+    parser.add_argument("--routing-w2", type=float, default=1.0,
                         help="Load penalty weight for adapter-aware routing (default: 1.0). "
                              "RWPT/Capacity is normalized to ~[0,1], so w2 should be comparable to w1.")
     parser.add_argument("--routing-w3", type=float, default=0.0,

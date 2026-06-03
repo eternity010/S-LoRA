@@ -309,7 +309,7 @@ class DataParallelRouterManager:
         return RoutingConfig(
             strategy=getattr(self.args, 'routing_strategy', 'round-robin'),
             w1=getattr(self.args, 'routing_w1', 1.0),
-            w2=getattr(self.args, 'routing_w2', 4.0),
+            w2=getattr(self.args, 'routing_w2', 1.0),
             w3=getattr(self.args, 'routing_w3', 0.0),  # Rank mismatch penalty weight
             default_lora_rank=getattr(self.args, 'default_lora_rank', 16),  # Default rank for unknown adapters
             max_rank_diff=getattr(self.args, 'max_rank_diff', 64),  # Max rank difference for normalization

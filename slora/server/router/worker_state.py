@@ -277,6 +277,8 @@ class RoutingConfig:
     decode_cost_alpha: float = None     # Decode 序列负载折算系数（None 时由 Worker profiling 自动测量）
     max_total_token_num: int = 6000    # KV Cache capacity in tokens (from --max_total_token_num)
     batch_max_tokens: int = 1000       # 单次 prefill 批次最大 token 数，RWPT 归一化分母
+    cache_affinity_decay_threshold: float = 0.8  # 高压下开始削弱 cache affinity 的 load pressure
+    min_cache_affinity_ratio: float = 0.2        # cache affinity 衰减下限比例
     # Load metric ablation
     load_metric: str = 'rwpt'          # 负载度量类型: 'queue_length' | 'token_count' | 'rwpt'
     
@@ -313,6 +315,16 @@ class RoutingConfig:
             raise ValueError(f"max_total_token_num must be positive, got {self.max_total_token_num}")
         if self.batch_max_tokens <= 0:
             raise ValueError(f"batch_max_tokens must be positive, got {self.batch_max_tokens}")
+        if self.cache_affinity_decay_threshold <= 0:
+            raise ValueError(
+                "cache_affinity_decay_threshold must be positive, "
+                f"got {self.cache_affinity_decay_threshold}"
+            )
+        if not 0.0 <= self.min_cache_affinity_ratio <= 1.0:
+            raise ValueError(
+                "min_cache_affinity_ratio must be in [0, 1], "
+                f"got {self.min_cache_affinity_ratio}"
+            )
         if self.load_metric not in self.VALID_LOAD_METRICS:
             raise ValueError(f"Invalid load_metric: {self.load_metric}. Must be one of {self.VALID_LOAD_METRICS}")
     
@@ -343,6 +355,8 @@ class RoutingConfig:
             'decode_cost_alpha': self.decode_cost_alpha,
             'max_total_token_num': self.max_total_token_num,
             'batch_max_tokens': self.batch_max_tokens,
+            'cache_affinity_decay_threshold': self.cache_affinity_decay_threshold,
+            'min_cache_affinity_ratio': self.min_cache_affinity_ratio,
             'load_metric': self.load_metric,
         }
     
@@ -352,7 +366,7 @@ class RoutingConfig:
         return cls(
             strategy=data.get('strategy', 'adapter-aware'),
             w1=data.get('w1', 1.0),
-            w2=data.get('w2', 4.0),
+            w2=data.get('w2', 1.0),
             w3=data.get('w3', 0.0),
             default_lora_rank=data.get('default_lora_rank', 16),
             max_rank_diff=data.get('max_rank_diff', 64),
@@ -364,5 +378,7 @@ class RoutingConfig:
             decode_cost_alpha=data.get('decode_cost_alpha', None),
             max_total_token_num=data.get('max_total_token_num', 6000),
             batch_max_tokens=data.get('batch_max_tokens', 1000),
+            cache_affinity_decay_threshold=data.get('cache_affinity_decay_threshold', 0.8),
+            min_cache_affinity_ratio=data.get('min_cache_affinity_ratio', 0.2),
             load_metric=data.get('load_metric', 'rwpt'),
         )
