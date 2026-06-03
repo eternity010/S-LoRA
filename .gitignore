@@ -1,15 +1,12 @@
 __pycache__/
 .pyc
-build
-dist
+build/
+dist/
 *.egg-info
 .idea
 *.swp
 *.so
 .DS_Store
-*.json
-*.jsonl
-*.pdf
 
 # Kiro IDE configuration
 .kiro/
@@ -20,5 +17,17 @@ dist
 # Pytest cache
 .pytest_cache/
 
-# Experiment server logs (root and per-suite subdirectories)
-benchmarks/routing_comparison_results/**/logs/
+# Benchmark runtime outputs
+benchmarks/routing_comparison_results/
+benchmarks/repeat_results/
+
+# Benchmark logs
+benchmarks/**/logs/
+benchmarks/**/server_log.txt
+
+# Exported benchmark artifacts (keep scripts in this directory trackable)
+benchmarks/exported_results/*.png
+benchmarks/exported_results/*.pdf
+benchmarks/exported_results/*.csv
+benchmarks/exported_results/*.json
+benchmarks/exported_results/*.jsonl
