@@ -7,10 +7,10 @@ in the S-LoRA system. It can run experiments, analyze results, and generate char
 
 Examples:
     # Run a predefined suite
-    python run_routing_comparison.py --suite routing-alpha-comparison
+    python run_routing_comparison.py --suite dp-roundrobin-baseline
     
     # Resume interrupted experiment
-    python run_routing_comparison.py --suite routing-full-comparison --resume
+    python run_routing_comparison.py --suite dp-rwpt-rate-scaling --resume
     
     # Analyze existing results
     python run_routing_comparison.py --analyze-only --output-dir results/
@@ -262,8 +262,8 @@ def main():
     parser.add_argument(
         '--suite',
         type=str,
-        default='routing-alpha-comparison',
-        help='Experiment suite to run (default: routing-alpha-comparison)'
+        default='dp-roundrobin-baseline',
+        help='Experiment suite to run (default: dp-roundrobin-baseline)'
     )
     parser.add_argument(
         '--resume',

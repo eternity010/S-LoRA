@@ -26,16 +26,16 @@ class TestExperimentSuite:
         
         assert isinstance(suites, list)
         assert len(suites) >= 3
-        assert "routing-alpha-comparison" in suites
-        assert "routing-adapter-scaling" in suites
-        assert "routing-full-comparison" in suites
+        assert "dp-roundrobin-baseline" in suites
+        assert "dp-rwpt-baseline" in suites
+        assert "dp-roundrobin-rate-scaling" in suites
     
-    def test_routing_alpha_comparison_suite(self):
-        """Test routing-alpha-comparison suite generates correct configs"""
-        configs = list(ExperimentSuite.get_configs("routing-alpha-comparison"))
+    def test_dp_roundrobin_baseline_suite(self):
+        """Test dp-roundrobin-baseline suite generates correct configs"""
+        configs = list(ExperimentSuite.get_configs("dp-roundrobin-baseline"))
         
-        # Should have 2 strategies × 4 alphas × 1 adapter × 1 rate × 1 duration = 8 configs
-        assert len(configs) == 8
+        # Should have 1 strategy × 3 alphas × 1 adapter × 1 rate × 1 duration = 3 configs
+        assert len(configs) == 3
         
         # Check all configs are valid
         for config in configs:
@@ -46,16 +46,16 @@ class TestExperimentSuite:
         strategies = {c.routing_strategy for c in configs}
         alphas = {c.alpha for c in configs}
         
-        assert strategies == {"round-robin", "adapter-aware"}
-        assert alphas == {0.3, 0.6, 0.8, 1.0}
+        assert strategies == {"round-robin"}
+        assert alphas == {0.1, 0.3, 0.8}
         assert all(c.num_adapters == 100 for c in configs)
     
-    def test_routing_adapter_scaling_suite(self):
-        """Test routing-adapter-scaling suite generates correct configs"""
-        configs = list(ExperimentSuite.get_configs("routing-adapter-scaling"))
+    def test_dp_roundrobin_rate_scaling_suite(self):
+        """Test dp-roundrobin-rate-scaling suite generates correct configs"""
+        configs = list(ExperimentSuite.get_configs("dp-roundrobin-rate-scaling"))
         
-        # Should have 2 strategies × 1 alpha × 4 adapters × 1 rate × 1 duration = 8 configs
-        assert len(configs) == 8
+        # Should have 1 strategy × 1 alpha × 1 adapter × 4 rates × 1 duration = 4 configs
+        assert len(configs) == 4
         
         # Check all configs are valid
         for config in configs:
@@ -64,18 +64,18 @@ class TestExperimentSuite:
         
         # Check parameter coverage
         strategies = {c.routing_strategy for c in configs}
-        adapters = {c.num_adapters for c in configs}
+        rates = {c.req_rate for c in configs}
         
-        assert strategies == {"round-robin", "adapter-aware"}
-        assert adapters == {20, 50, 100, 150}
-        assert all(c.alpha == 0.6 for c in configs)
+        assert strategies == {"round-robin"}
+        assert rates == {2.0, 4.0, 6.0, 8.0}
+        assert all(c.alpha == 0.3 for c in configs)
     
-    def test_routing_full_comparison_suite(self):
-        """Test routing-full-comparison suite generates correct configs"""
-        configs = list(ExperimentSuite.get_configs("routing-full-comparison"))
+    def test_dp_rwpt_baseline_suite(self):
+        """Test dp-rwpt-baseline suite generates correct configs"""
+        configs = list(ExperimentSuite.get_configs("dp-rwpt-baseline"))
         
-        # Should have 2 strategies × 3 alphas × 2 adapters × 1 rate × 1 duration = 12 configs
-        assert len(configs) == 12
+        # Should have 1 strategy × 3 alphas × 1 adapter × 1 rate × 1 duration = 3 configs
+        assert len(configs) == 3
         
         # Check all configs are valid
         for config in configs:
@@ -85,11 +85,11 @@ class TestExperimentSuite:
         # Check parameter coverage
         strategies = {c.routing_strategy for c in configs}
         alphas = {c.alpha for c in configs}
-        adapters = {c.num_adapters for c in configs}
+        load_metrics = {c.load_metric for c in configs}
         
-        assert strategies == {"round-robin", "adapter-aware"}
-        assert alphas == {0.3, 0.6, 1.0}
-        assert adapters == {50, 100}
+        assert strategies == {"adapter-aware"}
+        assert alphas == {0.1, 0.3, 0.8}
+        assert load_metrics == {"rwpt"}
     
     def test_unknown_suite_raises_error(self):
         """Test requesting unknown suite raises ValueError"""
@@ -102,12 +102,12 @@ class TestExperimentSuite:
     
     def test_get_suite_info(self):
         """Test getting suite information"""
-        info = ExperimentSuite.get_suite_info("routing-alpha-comparison")
+        info = ExperimentSuite.get_suite_info("dp-roundrobin-baseline")
         
-        assert info["name"] == "routing-alpha-comparison"
+        assert info["name"] == "dp-roundrobin-baseline"
         assert "parameters" in info
         assert "config_count" in info
-        assert info["config_count"] == 8
+        assert info["config_count"] == 3
     
     def test_get_suite_info_unknown_suite(self):
         """Test getting info for unknown suite raises ValueError"""
@@ -119,7 +119,7 @@ class TestExperimentSuite:
     def test_configs_with_defaults(self):
         """Test generating configs with default parameters"""
         configs = list(ExperimentSuite.get_configs(
-            "routing-alpha-comparison",
+            "dp-roundrobin-baseline",
             cv=2.0,
             num_token=15000
         ))
@@ -163,7 +163,7 @@ class TestExperimentSuite:
         }
         
         with pytest.raises(ValueError) as exc_info:
-            ExperimentSuite.add_custom_suite("routing-alpha-comparison", custom_suite)
+            ExperimentSuite.add_custom_suite("dp-roundrobin-baseline", custom_suite)
         
         assert "already exists" in str(exc_info.value).lower()
     
@@ -187,9 +187,9 @@ class TestSuitePropertyBased:
     
     @given(
         suite_name=st.sampled_from([
-            "routing-alpha-comparison",
-            "routing-adapter-scaling",
-            "routing-full-comparison"
+            "dp-roundrobin-baseline",
+            "dp-roundrobin-rate-scaling",
+            "dp-rwpt-baseline"
         ])
     )
     def test_suite_generation_property(self, suite_name):

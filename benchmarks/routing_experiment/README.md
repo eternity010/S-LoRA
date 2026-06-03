@@ -11,10 +11,10 @@ cd benchmarks
 python run_routing_comparison.py --list-suites
 
 # 运行实验（自动启动服务器、运行测试、分析结果、生成图表）
-python run_routing_comparison.py --suite routing-alpha-comparison
+python run_routing_comparison.py --suite dp-roundrobin-baseline
 
 # 从中断处恢复
-python run_routing_comparison.py --suite routing-full-comparison --resume
+python run_routing_comparison.py --suite dp-rwpt-rate-scaling --resume
 
 # 仅分析已有结果
 python run_routing_comparison.py --analyze-only --output-dir routing_comparison_results
@@ -27,10 +27,10 @@ python run_routing_comparison.py --generate-charts --output-dir routing_comparis
 
 | 套件名 | 说明 | 配置数 |
 |--------|------|--------|
-| `routing-alpha-comparison` | 对比不同 alpha 值（0.3, 0.6, 1.0） | 6 |
-| `routing-adapter-scaling` | 对比不同 adapter 数量（50, 100, 200） | 6 |
-| `routing-full-comparison` | 完整对比（3 alpha × 3 adapters） | 18 |
-| `routing-weight-comparison` | 对比不同 w1/w2 权重组合 | 18 |
+| `dp-roundrobin-baseline` | Round-Robin 基线（alpha=0.1/0.3/0.8） | 3 |
+| `dp-rwpt-baseline` | RWPT 基线（alpha=0.1/0.3/0.8） | 3 |
+| `dp-roundrobin-rate-scaling` | Round-Robin 速率扩展（2/4/6/8 req/s） | 4 |
+| `dp-rwpt-rate-scaling` | RWPT 速率扩展（2/4/6/8 req/s） | 4 |
 
 ## 动态路由配置更新
 
@@ -95,7 +95,7 @@ routing_comparison_results/
 python run_routing_comparison.py [OPTIONS]
 ```
 
-- `--suite <name>` - 实验套件（默认：routing-alpha-comparison）
+- `--suite <name>` - 实验套件（默认：dp-roundrobin-baseline）
 - `--output-dir <path>` - 输出目录（默认：routing_comparison_results）
 - `--model-setting <Real|Dummy>` - 模型设置（默认：Real）
 - `--gpu-ids <ids>` - GPU ID 列表（默认：1,2,3）
@@ -109,7 +109,7 @@ from routing_experiment import ExperimentRunner, ResultAnalyzer, ChartGenerator
 
 # 运行实验
 runner = ExperimentRunner(output_dir="results")
-runner.run_suite("routing-alpha-comparison")
+runner.run_suite("dp-roundrobin-baseline")
 
 # 动态更新路由配置（无需重启服务器）
 runner._update_routing_config(w1=2.0, w2=0.5, reset_stats=True)
@@ -140,5 +140,5 @@ generator.plot_all_comparisons([r.result for r in records])
 - 使用 `--resume` 可从中断处恢复，避免重复运行
 - 真实模式需确保模型和 adapter 路径正确
 - 每个配置运行约 60 秒，完整套件需较长时间
-- 建议先用小规模套件测试（如 routing-alpha-comparison）
+- 建议先用小规模正式套件测试（如 dp-roundrobin-baseline）
 - **w1/w2/w3 变化不会触发服务器重启**，通过 API 动态更新

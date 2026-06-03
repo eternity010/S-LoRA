@@ -18,7 +18,7 @@ Usage:
     # Run a predefined suite
     from routing_experiment import ExperimentRunner
     runner = ExperimentRunner(output_dir="results")
-    runner.run_suite("routing-alpha-comparison")
+    runner.run_suite("dp-roundrobin-baseline")
     
     # Analyze results
     from routing_experiment import ResultAnalyzer, ExperimentRecord

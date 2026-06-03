@@ -55,9 +55,10 @@ results.jsonl (per-suite)  →  ResultAnalyzer / ChartGenerator
 | `rwpt-w2-search` | w2 ∈ [0.5, 5.0] | 10 | RWPT 负载度量 w2 甜点搜索 |
 | `tc-w2-search` | w2 ∈ [0.3, 4.0] | 10 | Token Count w2 甜点搜索 |
 | `ql-w2-search` | w2 ∈ [0.05, 0.8] | 10 | Queue Length w2 甜点搜索 |
-| `routing-alpha-comparison` | alpha × 策略 | 8 | 热点程度对路由效果的影响 |
-| `routing-adapter-scaling` | adapters × 策略 | 8 | adapter 规模扩展性 |
-| `routing-full-comparison` | alpha × adapters × 策略 | 12 | 完整对比 |
+| `dp-roundrobin-baseline` | alpha | 3 | 多卡 Round-Robin 基线 |
+| `dp-rwpt-baseline` | alpha | 3 | RWPT 主方法基线 |
+| `dp-roundrobin-rate-scaling` | req_rate | 4 | Round-Robin 吞吐-延迟曲线 |
+| `dp-rwpt-rate-scaling` | req_rate | 4 | RWPT 吞吐-延迟曲线 |
 
 ## 环境参数
 

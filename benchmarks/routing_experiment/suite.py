@@ -13,28 +13,6 @@ class ExperimentSuite:
     
     # Predefined experiment suites
     SUITES: Dict[str, Dict[str, List[Any]]] = {
-        "routing-alpha-comparison": {
-            "routing_strategy": ["round-robin", "adapter-aware"],
-            "alpha": [0.3, 0.6, 0.8, 1.0],
-            "num_adapters": [100],
-            "req_rate": [8.0],
-            "duration": [120],
-        },
-        "routing-adapter-scaling": {
-            "routing_strategy": ["round-robin", "adapter-aware"],
-            "alpha": [0.3],
-            "num_adapters": [50, 100, 150, 200],
-            "req_rate": [8.0],
-            "duration": [120],
-        },
-        "routing-full-comparison": {
-            "routing_strategy": ["round-robin", "adapter-aware"],
-            "alpha": [0.3, 0.6, 1.0],
-            "num_adapters": [50, 100],
-            "req_rate": [8.0],
-            "duration": [180],
-        },
-
         "rwpt-w2-search": {
             # RWPT 专用 w2 甜点搜索（移除 decode 项后）
             # load-metric-w2-sweep 结果显示 rwpt 在 w2=0.8 时最优（5.21/20.5s）
@@ -94,6 +72,45 @@ class ExperimentSuite:
             "duration": [240],
         },
 
+        # 端到端性能基线对比：固定 alpha=0.3，改变请求到达率
+        # 用于绘制 round-robin 的吞吐-延迟曲线
+        # 5 request rates = 5 experiments
+        "dp-roundrobin-rate-scaling": {
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [2.0, 4.0, 6.0, 8.0],
+            "duration": [180],
+        },
+
+        # 端到端性能基线对比：固定 alpha=0.3，改变请求到达率
+        # 与 dp-roundrobin-rate-scaling 完全对齐，仅切换为 adapter-aware + rwpt
+        # 3 request rates = 3 experiments
+        "dp-rwpt-rate-scaling": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [2.0, 4.0, 6.0, 8.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0],
+            "load_metric": ["rwpt"],
+        },
+
+        # 验证 8 req/s 下 RWPT 尾延迟恶化是否由 w2 偏小导致
+        # 固定 alpha=0.3、req_rate=8.0，仅扫描更强的负载惩罚区间
+        # 5 experiments
+        "dp-rwpt-rate8-w2-search": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0, 1.5, 2.0, 2.5, 3.0],
+            "load_metric": ["rwpt"],
+        },
+
         # 图 6 / 系统基线对比用的 RWPT 对照组
         # 与 dp-roundrobin-baseline 保持相同 alpha、req_rate、duration，仅切换为 adapter-aware + rwpt
         # 3 alphas = 3 experiments
@@ -106,6 +123,34 @@ class ExperimentSuite:
             "routing_w1": [1.0],
             "routing_w2": [1.0],
             "load_metric": ["rwpt"],
+        },
+
+        # 图 6 / 系统基线对比用的 token_count 对照组
+        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 token_count + w2=1.5
+        # 3 alphas = 3 experiments
+        "dp-tokencount-baseline": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1, 0.3, 0.8],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [240],
+            "routing_w1": [1.0],
+            "routing_w2": [1.5],
+            "load_metric": ["token_count"],
+        },
+
+        # 图 6 / 系统基线对比用的 queue_length 对照组
+        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 queue_length + w2=0.10
+        # 3 alphas = 3 experiments
+        "dp-queuelength-baseline": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1, 0.3, 0.8],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [240],
+            "routing_w1": [1.0],
+            "routing_w2": [0.10],
+            "load_metric": ["queue_length"],
         },
 
         # 热门 Adapter 主动复制对比实验
