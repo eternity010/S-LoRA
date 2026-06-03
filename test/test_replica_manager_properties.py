@@ -401,13 +401,23 @@ class TestProperty10ReplicaProtectionBlocksEviction:
 from slora.server.router.replica_manager import ReplicaManager
 
 
-def _make_replica_manager(num_workers=3, capacity=1000.0, w1=1.0, w2=1.0, ema_alpha=0.3, cooldown_sec=5.0, max_protected_per_worker=2):
+def _make_replica_manager(
+    num_workers=3,
+    capacity=1000.0,
+    w1=1.0,
+    w2=1.0,
+    ema_alpha=0.3,
+    cooldown_sec=5.0,
+    max_protected_per_worker=2,
+    congestion_threshold=1.0,
+):
     """Helper to create a ReplicaManager for testing."""
     return ReplicaManager(
         num_workers=num_workers,
         capacity=capacity,
         w1=w1,
         w2=w2,
+        congestion_threshold=congestion_threshold,
         ema_alpha=ema_alpha,
         cooldown_sec=cooldown_sec,
         max_protected_per_worker=max_protected_per_worker,
@@ -545,6 +555,11 @@ class TestProperty4TCongestionFormula:
         assert rm.w1 == w1
         assert rm.w2 == w2
 
+    def test_invalid_congestion_threshold_rejected(self):
+        """主动复制拥塞阈值必须为正数"""
+        with pytest.raises(ValueError):
+            _make_replica_manager(congestion_threshold=0.0)
+
 
 # ─── Property 11: 心跳同步 replica_map ──────────────────────────────────────
 
@@ -635,7 +650,7 @@ class TestProperty5CongestionDetection:
     """
     Feature: hot-adapter-replication, Property 5: 拥塞检测阈值
 
-    当且仅当 EMA(RWPT/Capacity) > T_congestion/Capacity 时，
+    当且仅当 EMA(RWPT/Capacity) > congestion_threshold 时，
     该 Worker 应被判定为拥塞状态。
 
     Validates: Requirements 3.4
@@ -649,12 +664,12 @@ class TestProperty5CongestionDetection:
     )
     @settings(max_examples=300, deadline=None)
     def test_congestion_iff_ema_exceeds_threshold(self, ema_value, w1, w2, capacity):
-        """当且仅当 EMA > T_congestion/Capacity 时判定为拥塞"""
+        """当且仅当 EMA > congestion_threshold 时判定为拥塞"""
         rm = _make_replica_manager(num_workers=1, capacity=capacity, w1=w1, w2=w2)
         # Directly set EMA to the test value (bypass heartbeat)
         rm.ema_rwpt[0] = ema_value
 
-        threshold = rm.t_congestion / capacity  # = w1/w2
+        threshold = rm.congestion_threshold
         congested = rm._detect_congested_workers()
 
         if ema_value > threshold:
@@ -676,7 +691,7 @@ class TestProperty5CongestionDetection:
         """多 Worker 场景：每个 Worker 独立判定拥塞"""
         assume(len(ema_values) >= num_workers)
         rm = _make_replica_manager(num_workers=num_workers, capacity=1000.0, w1=w1, w2=w2)
-        threshold = rm.t_congestion / rm.capacity
+        threshold = rm.congestion_threshold
 
         for wid in range(num_workers):
             rm.ema_rwpt[wid] = ema_values[wid]
@@ -697,9 +712,22 @@ class TestProperty5CongestionDetection:
     def test_exactly_at_threshold_not_congested(self):
         """EMA 恰好等于阈值时不判定为拥塞（严格大于）"""
         rm = _make_replica_manager(num_workers=1, capacity=1000.0, w1=1.0, w2=1.0)
-        threshold = rm.t_congestion / rm.capacity  # = 1.0
+        threshold = rm.congestion_threshold
         rm.ema_rwpt[0] = threshold  # exactly at threshold
         assert rm._detect_congested_workers() == []
+
+    def test_w2_change_does_not_change_congestion_detection(self):
+        """复制拥塞阈值与 routing w2 解耦"""
+        rm = _make_replica_manager(num_workers=1, capacity=1000.0, w1=1.0, w2=1.0)
+        rm.ema_rwpt[0] = 0.5
+        assert rm._detect_congested_workers() == []
+
+        rm.update_config(w1=1.0, w2=4.0)
+        assert rm.congestion_threshold == 1.0
+        assert rm._detect_congested_workers() == []
+
+        rm.ema_rwpt[0] = 1.1
+        assert rm._detect_congested_workers() == [0]
 
 
 # ─── Property 6: 元凶识别 ────────────────────────────────────────────────────
@@ -869,7 +897,7 @@ class TestProperty8TargetWorkerSelection:
 
     选择的目标 Worker 应满足：
     (a) 尚未缓存该 adapter
-    (b) EMA(RWPT/Capacity) < T_congestion/Capacity × 0.9
+    (b) EMA(RWPT/Capacity) < congestion_threshold × 0.9
     (c) 当前受保护副本数 < max_protected_per_worker
     在所有合格候选中，应选择 EMA 最低的 Worker。
     当无合格候选时，应返回 None。
@@ -914,14 +942,14 @@ class TestProperty8TargetWorkerSelection:
     )
     @settings(max_examples=200, deadline=None)
     def test_selected_worker_below_load_threshold(self, num_workers, ema_values, w1, w2):
-        """选中的 Worker EMA < T_congestion/Capacity × 0.9"""
+        """选中的 Worker EMA < congestion_threshold × 0.9"""
         assume(len(ema_values) >= num_workers)
         rm = _make_replica_manager(num_workers=num_workers, w1=w1, w2=w2)
 
         for wid in range(num_workers):
             rm.ema_rwpt[wid] = ema_values[wid]
 
-        threshold = (rm.t_congestion / rm.capacity) * 0.9
+        threshold = rm.congestion_threshold * 0.9
         target = rm._select_target_worker('adapter_T')
 
         if target is not None:
@@ -938,7 +966,7 @@ class TestProperty8TargetWorkerSelection:
     def test_selected_worker_is_lowest_ema(self, num_workers, ema_values):
         """在所有合格候选中，选 EMA 最低的"""
         assume(len(ema_values) >= num_workers)
-        # Use w1=w2=1 so threshold = 0.9, all ema_values < 0.9 qualify
+        # Use default threshold=1.0 so target threshold=0.9, all ema_values < 0.9 qualify
         rm = _make_replica_manager(num_workers=num_workers, w1=1.0, w2=1.0)
 
         for wid in range(num_workers):
@@ -948,7 +976,7 @@ class TestProperty8TargetWorkerSelection:
 
         if target is not None:
             # target must have the lowest EMA among all qualifying workers
-            threshold = (rm.t_congestion / rm.capacity) * 0.9
+            threshold = rm.congestion_threshold * 0.9
             for wid in range(num_workers):
                 if (wid not in rm.replica_map.get('adapter_T', set()) and
                         rm.ema_rwpt[wid] < threshold and

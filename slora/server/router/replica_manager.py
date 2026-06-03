@@ -5,7 +5,7 @@ ReplicaManager — 热门 Adapter 主动复制决策模块
 选择目标 Worker 并触发预加载。
 
 核心设计决策：
-- 拥塞阈值 T_congestion = (w1/w2) × Capacity，零新增超参数
+- 拥塞阈值 EMA(RWPT/Capacity) > 1.0，表示约一个 prefill batch 积压
 - 副本上限 N_max = num_workers - 1
 - EMA 平滑系数 α = 0.3（约 5 次心跳窗口）
 - 巡检周期 0.5~2s，每周期最多 1 个复制动作
@@ -35,7 +35,7 @@ class ReplicaManager:
         capacity: batch_max_tokens（RWPT 归一化分母）
         w1: 路由评分函数的缓存亲和性权重
         w2: 路由评分函数的负载惩罚权重
-        t_congestion: 拥塞阈值 = (w1/w2) × capacity
+        congestion_threshold: 归一化 RWPT 拥塞阈值，默认 1.0 batch
         n_max: 单 adapter 最大副本数 = num_workers - 1
         patrol_interval_sec: 巡检周期（秒）
         cooldown_sec: 同一 adapter 两次复制最小间隔（秒）
@@ -54,6 +54,7 @@ class ReplicaManager:
         patrol_interval_sec: float = 1.0,
         cooldown_sec: float = 5.0,
         protection_sec: float = 30.0,
+        congestion_threshold: float = 1.0,
         ema_alpha: float = 0.3,
         max_protected_per_worker: int = 2,
         preload_callback: Optional[Callable] = None,
@@ -66,12 +67,18 @@ class ReplicaManager:
         self.patrol_interval_sec = patrol_interval_sec
         self.cooldown_sec = cooldown_sec
         self.protection_sec = protection_sec
+        if congestion_threshold <= 0:
+            raise ValueError(
+                f"congestion_threshold must be positive, got {congestion_threshold}"
+            )
+        self.congestion_threshold = congestion_threshold
         self.ema_alpha = ema_alpha
         self.max_protected_per_worker = max_protected_per_worker
         self.preload_callback = preload_callback
 
         # --- 派生参数 ---
         self.n_max = num_workers - 1  # 单 adapter 最大副本数
+        # Historical scoring-boundary threshold, kept for observability only.
         self.t_congestion = self._compute_t_congestion(w1, w2, capacity)
 
         # --- 状态字典 ---
@@ -99,7 +106,8 @@ class ReplicaManager:
         logger.info(
             f"ReplicaManager initialized: num_workers={num_workers}, "
             f"capacity={capacity}, w1={w1}, w2={w2}, "
-            f"T_congestion={self.t_congestion:.2f}, N_max={self.n_max}, "
+            f"congestion_threshold={self.congestion_threshold:.2f}, "
+            f"T_congestion_legacy={self.t_congestion:.2f}, N_max={self.n_max}, "
             f"cooldown={cooldown_sec}s, protection={protection_sec}s, "
             f"ema_alpha={ema_alpha}, patrol_interval={patrol_interval_sec}s"
         )
@@ -167,7 +175,7 @@ class ReplicaManager:
 
     def update_config(self, w1: float, w2: float) -> None:
         """
-        动态更新 w1/w2 时同步重新计算 T_congestion。
+        动态更新 w1/w2 日志状态；复制触发阈值保持独立。
 
         Args:
             w1: 新的缓存亲和性权重
@@ -181,7 +189,8 @@ class ReplicaManager:
         self.t_congestion = self._compute_t_congestion(w1, w2, self.capacity)
         logger.info(
             f"ReplicaManager config updated: w1={w1}, w2={w2}, "
-            f"T_congestion {old_t:.2f} -> {self.t_congestion:.2f}"
+            f"T_congestion_legacy {old_t:.2f} -> {self.t_congestion:.2f}, "
+            f"congestion_threshold={self.congestion_threshold:.2f}"
         )
 
     def get_replica_count(self, adapter_dir: str) -> int:
@@ -212,6 +221,7 @@ class ReplicaManager:
             },
             "ema_rwpt": dict(self.ema_rwpt),
             "t_congestion": self.t_congestion,
+            "congestion_threshold": self.congestion_threshold,
             "n_max": self.n_max,
         }
 
@@ -223,21 +233,17 @@ class ReplicaManager:
         """
         检测拥塞 Worker。
 
-        判定条件：EMA(RWPT/Capacity) > T_congestion / Capacity
-        即 EMA > w1/w2（因为 T_congestion = (w1/w2) × Capacity）。
+        判定条件：EMA(RWPT/Capacity) > congestion_threshold。
+        默认阈值 1.0 表示约一个 prefill batch 的积压工作量。
 
         Returns:
             拥塞 Worker 的 worker_id 列表
 
         Requirements: 3.1, 3.2, 3.3, 3.4
         """
-        if self.capacity <= 0:
-            return []
-
-        threshold = self.t_congestion / self.capacity  # = w1/w2
         congested = []
         for worker_id, ema in self.ema_rwpt.items():
-            if ema > threshold:
+            if ema > self.congestion_threshold:
                 congested.append(worker_id)
         return congested
 
@@ -313,7 +319,7 @@ class ReplicaManager:
 
         三个筛选条件：
         1. 尚未缓存该 adapter
-        2. EMA(RWPT/Capacity) < T_congestion/Capacity × 0.9
+        2. EMA(RWPT/Capacity) < congestion_threshold × 0.9
         3. 当前受保护副本数 < max_protected_per_worker
 
         无合格候选时返回 None（弹性降级）。
@@ -326,10 +332,7 @@ class ReplicaManager:
 
         Requirements: 6.1, 6.2, 6.3
         """
-        if self.capacity <= 0:
-            return None
-
-        load_threshold = (self.t_congestion / self.capacity) * 0.9
+        load_threshold = self.congestion_threshold * 0.9
         cached_workers = self.replica_map.get(adapter_dir, set())
 
         best_worker = None

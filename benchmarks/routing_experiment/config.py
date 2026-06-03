@@ -45,6 +45,7 @@ class ExperimentConfig:
     cooldown_sec: float = 5.0        # 同一 adapter 两次复制最小间隔
     patrol_interval_sec: float = 1.0  # 巡检周期
     protection_sec: float = 30.0      # 新副本淘汰保护时长
+    replication_congestion_threshold: float = 1.0  # 归一化 RWPT 主动复制触发阈值
     
     def validate(self) -> None:
         """Validate configuration parameters"""
@@ -79,6 +80,12 @@ class ExperimentConfig:
         
         if self.load_metric not in ("queue_length", "token_count", "rwpt"):
             raise ValueError(f"Invalid load_metric: {self.load_metric}")
+        
+        if self.replication_congestion_threshold <= 0:
+            raise ValueError(
+                "replication_congestion_threshold must be positive, "
+                f"got {self.replication_congestion_threshold}"
+            )
     
     def to_server_args(self) -> List[str]:
         """Convert to launch_server.py command line arguments"""
@@ -107,6 +114,10 @@ class ExperimentConfig:
             args.extend(["--cooldown-sec", str(self.cooldown_sec)])
             args.extend(["--patrol-interval-sec", str(self.patrol_interval_sec)])
             args.extend(["--protection-sec", str(self.protection_sec)])
+            args.extend([
+                "--replication-congestion-threshold",
+                str(self.replication_congestion_threshold),
+            ])
         
         return args
     

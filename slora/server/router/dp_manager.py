@@ -339,6 +339,7 @@ class DataParallelRouterManager:
             patrol_interval_sec=getattr(self.args, 'patrol_interval_sec', 1.0),
             cooldown_sec=getattr(self.args, 'cooldown_sec', 5.0),
             protection_sec=getattr(self.args, 'protection_sec', 30.0),
+            congestion_threshold=getattr(self.args, 'replication_congestion_threshold', 1.0),
             ema_alpha=getattr(self.args, 'ema_alpha', 0.3),
             max_protected_per_worker=getattr(self.args, 'max_protected_per_worker', 2),
             preload_callback=self.send_preload_to_worker,
@@ -1226,7 +1227,7 @@ class DataParallelRouterManager:
             result = self.router.update_config(**update)
             print(f"[DataParallelRouterManager] Routing config updated: {result}")
             
-            # 同步更新 ReplicaManager 的 w1/w2（如果有变更）
+            # 同步更新 ReplicaManager 的 w1/w2 日志状态；复制触发阈值不跟随 w2 变化
             if self.replica_manager and ('w1' in update or 'w2' in update):
                 new_w1 = result.get('w1', self.replica_manager.w1)
                 new_w2 = result.get('w2', self.replica_manager.w2)

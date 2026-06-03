@@ -609,6 +609,8 @@ def main():
                         help="ReplicaManager 巡检周期秒数 (默认: 1.0)")
     parser.add_argument("--protection-sec", type=float, default=30.0,
                         help="新副本的淘汰保护时长秒数 (默认: 30.0)")
+    parser.add_argument("--replication-congestion-threshold", type=float, default=1.0,
+                        help="主动复制触发阈值，单位为归一化 RWPT batch 数 (默认: 1.0)")
 
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,

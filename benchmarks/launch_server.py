@@ -71,6 +71,8 @@ if __name__ == "__main__":
                         help="ReplicaManager 巡检周期秒数 (默认: 1.0)")
     parser.add_argument("--protection-sec", type=float, default=30.0,
                         help="新副本的淘汰保护时长秒数 (默认: 30.0)")
+    parser.add_argument("--replication-congestion-threshold", type=float, default=1.0,
+                        help="主动复制触发阈值，单位为归一化 RWPT batch 数 (默认: 1.0)")
     
     # 阈值淘汰相关参数
     parser.add_argument("--evict-interval-threshold", type=float, default=0.85,
@@ -171,6 +173,7 @@ if __name__ == "__main__":
             cmd += f" --cooldown-sec {args.cooldown_sec}"
             cmd += f" --patrol-interval-sec {args.patrol_interval_sec}"
             cmd += f" --protection-sec {args.protection_sec}"
+            cmd += f" --replication-congestion-threshold {args.replication_congestion_threshold}"
 
         # 添加阈值淘汰参数
         cmd += f" --evict-interval-threshold {args.evict_interval_threshold}"
