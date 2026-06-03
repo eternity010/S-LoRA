@@ -153,7 +153,7 @@ class TestExperimentConfigValidation:
             alpha=0.6,
             req_rate=4.0,
             duration=120,
-            gpu_ids="1,2,3",
+            gpu_ids="0,1,2",
             num_workers=3,
             num_token=12000
         )
@@ -164,7 +164,7 @@ class TestExperimentConfigValidation:
         assert "--num-adapter" in args
         assert "100" in args
         assert "--gpu-ids" in args
-        assert "1,2,3" in args
+        assert "0,1,2" in args
         # Should not include routing weights for round-robin
         assert "--routing-w1" not in args
     

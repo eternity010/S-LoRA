@@ -314,8 +314,8 @@ def main():
     parser.add_argument(
         '--gpu-ids',
         type=str,
-        default='1,2,3',
-        help='GPU IDs for data parallel mode (default: 1,2,3)'
+        default='0,1,2',
+        help='GPU IDs for data parallel mode (default: 0,1,2)'
     )
     parser.add_argument(
         '--num-workers',

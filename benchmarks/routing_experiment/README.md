@@ -98,7 +98,7 @@ python run_routing_comparison.py [OPTIONS]
 - `--suite <name>` - 实验套件（默认：dp-roundrobin-baseline）
 - `--output-dir <path>` - 输出目录（默认：routing_comparison_results）
 - `--model-setting <Real|Dummy>` - 模型设置（默认：Real）
-- `--gpu-ids <ids>` - GPU ID 列表（默认：1,2,3）
+- `--gpu-ids <ids>` - GPU ID 列表（默认：0,1,2）
 - `--num-workers <n>` - Worker 数量（默认：3）
 - `--resume` - 从检查点恢复
 

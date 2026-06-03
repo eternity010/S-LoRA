@@ -62,7 +62,7 @@ results.jsonl (per-suite)  →  ResultAnalyzer / ChartGenerator
 
 ## 环境参数
 
-- 3× RTX 3090 (GPU 1,2,3)，数据并行模式
+- 3× RTX 3090 (GPU 0,1,2)，数据并行模式
 - `max_lora_ratio = 0.2`（每 Worker 约 18-19 个 adapter）
 - `max_total_token_num = 15000`
 - 100 个 adapter（alpaca-lora-7b rank=16 + bactrian-x-llama-7b-lora rank=64 交替）
