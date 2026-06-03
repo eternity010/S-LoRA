@@ -395,6 +395,47 @@ class DataParallelRouterManager:
         
         logger.info(f"Loaded ranks for {len(adapter_ranks)} adapters")
         return adapter_ranks
+
+    def _optimistically_update_worker_load(self, worker_id: int, request: dict) -> None:
+        """
+        乐观更新 Router 侧缓存的 Worker 负载状态。
+
+        该估计仅用于填补 Worker 状态上报之间的短暂窗口，后续会被真实上报覆盖。
+        """
+        if self.routing_strategy != 'adapter-aware' or not hasattr(self.router, 'worker_states'):
+            return
+
+        state = self.router.worker_states.get(worker_id)
+        if state is None:
+            return
+
+        state.queue_length += 1
+
+        routing_config = getattr(self.router, 'config', None)
+        if routing_config is None or routing_config.load_metric != 'rwpt':
+            return
+
+        adapter_dir = request.get('adapter_dir')
+        prompt_ids = request.get('prompt_ids')
+        if not adapter_dir or prompt_ids is None:
+            return
+
+        try:
+            prompt_len = len(prompt_ids)
+        except TypeError:
+            return
+
+        if prompt_len <= 0:
+            return
+
+        hidden_size = getattr(routing_config, 'hidden_dim', None) or 4096
+        gamma = 2.0 / (3.0 * hidden_size)
+        default_rank = getattr(routing_config, 'default_lora_rank', 16)
+        adapter_ranks = getattr(self.router, 'adapter_ranks', {})
+        rank = adapter_ranks.get(adapter_dir, default_rank)
+
+        estimated_prefill = int(prompt_len * (1.0 + gamma * rank))
+        state.pending_prefill_tokens += estimated_prefill
     
     def _create_router(self) -> Union[RoundRobinRouter, AdapterAwareRouter]:
         """
@@ -858,11 +899,9 @@ class DataParallelRouterManager:
                 # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
                 await self.request_senders[worker_id].send_json(request)
                 
-                # 立即递增 Router 端的 queue_length 估计值，避免连续请求全部路由到同一 Worker
-                if self.routing_strategy == 'adapter-aware' and hasattr(self.router, 'worker_states'):
-                    state = self.router.worker_states.get(worker_id)
-                    if state:
-                        state.queue_length += 1
+                # 乐观更新 Router 端的 Worker 状态，缓解状态上报窗口带来的低估
+                if self.routing_strategy == 'adapter-aware':
+                    self._optimistically_update_worker_load(worker_id, request)
                 
                 # 更新统计信息（Requirement 8.2）
                 self.stats['total_requests'] += 1
