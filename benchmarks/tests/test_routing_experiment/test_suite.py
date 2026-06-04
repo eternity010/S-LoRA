@@ -69,6 +69,19 @@ class TestExperimentSuite:
         assert strategies == {"round-robin"}
         assert rates == {2.0, 4.0, 6.0, 8.0}
         assert all(c.alpha == 0.3 for c in configs)
+
+    def test_dp_roundrobin_rate8_validation_suite(self):
+        """Test dp-roundrobin-rate8-validation suite generates one rate-8 config"""
+        configs = list(ExperimentSuite.get_configs("dp-roundrobin-rate8-validation"))
+
+        assert len(configs) == 1
+        config = configs[0]
+        config.validate()
+        assert config.routing_strategy == "round-robin"
+        assert config.alpha == 0.3
+        assert config.num_adapters == 100
+        assert config.req_rate == 8.0
+        assert config.duration == 180
     
     def test_dp_rwpt_baseline_suite(self):
         """Test dp-rwpt-baseline suite generates correct configs"""

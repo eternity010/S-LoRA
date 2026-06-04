@@ -83,6 +83,15 @@ class ExperimentSuite:
             "duration": [180],
         },
 
+        # 单点复核 round-robin 在 8 req/s 下的高压表现
+        "dp-roundrobin-rate8-validation": {
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.3],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+        },
+
         # 端到端性能基线对比：固定 alpha=0.3，改变请求到达率
         # 与 dp-roundrobin-rate-scaling 完全对齐，仅切换为 adapter-aware + rwpt
         # 3 request rates = 3 experiments
