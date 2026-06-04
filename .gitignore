@@ -31,3 +31,6 @@ benchmarks/exported_results/*.pdf
 benchmarks/exported_results/*.csv
 benchmarks/exported_results/*.json
 benchmarks/exported_results/*.jsonl
+
+# Preprocessed real-workload trace artifacts
+benchmarks/real_workload/outputs/
