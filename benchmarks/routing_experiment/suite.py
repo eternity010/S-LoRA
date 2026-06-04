@@ -107,7 +107,7 @@ class ExperimentSuite:
             "req_rate": [8.0],
             "duration": [180],
             "routing_w1": [1.0],
-            "routing_w2": [1.0, 1.5, 2.0, 2.5, 3.0],
+            "routing_w2": [1.0],
             "load_metric": ["rwpt"],
         },
 
