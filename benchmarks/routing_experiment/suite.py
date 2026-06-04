@@ -83,10 +83,10 @@ class ExperimentSuite:
             "duration": [180],
         },
 
-        # 单点复核 round-robin 在 8 req/s 下的高压表现
+        # 单点复核 round-robin 在强热点 8 req/s 下的高压表现
         "dp-roundrobin-rate8-validation": {
             "routing_strategy": ["round-robin"],
-            "alpha": [0.3],
+            "alpha": [0.1],
             "num_adapters": [100],
             "req_rate": [8.0],
             "duration": [180],
@@ -106,12 +106,12 @@ class ExperimentSuite:
             "load_metric": ["rwpt"],
         },
 
-        # 验证 8 req/s 下 RWPT 尾延迟恶化是否由 w2 偏小导致
-        # 固定 alpha=0.3、req_rate=8.0，仅扫描更强的负载惩罚区间
-        # 5 experiments
+        # 验证强热点 8 req/s 下 RWPT 尾延迟表现
+        # 固定 alpha=0.1、req_rate=8.0，仅保留当前主线 w2
+        # 1 experiment
         "dp-rwpt-rate8-w2-search": {
             "routing_strategy": ["adapter-aware"],
-            "alpha": [0.3],
+            "alpha": [0.1],
             "num_adapters": [100],
             "req_rate": [8.0],
             "duration": [180],
