@@ -92,6 +92,15 @@ class ExperimentSuite:
             "duration": [180],
         },
 
+        # 单点复核 round-robin 在中等强热点 8 req/s 下的高压表现
+        "dp-roundrobin-rate8-alpha02-validation": {
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.2],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+        },
+
         # 端到端性能基线对比：固定 alpha=0.3，改变请求到达率
         # 与 dp-roundrobin-rate-scaling 完全对齐，仅切换为 adapter-aware + rwpt
         # 3 request rates = 3 experiments
@@ -112,6 +121,20 @@ class ExperimentSuite:
         "dp-rwpt-rate8-w2-search": {
             "routing_strategy": ["adapter-aware"],
             "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0],
+            "load_metric": ["rwpt"],
+        },
+
+        # 验证中等强热点 8 req/s 下 RWPT 尾延迟表现
+        # 固定 alpha=0.2、req_rate=8.0，仅保留当前主线 w2
+        # 1 experiment
+        "dp-rwpt-rate8-alpha02-validation": {
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.2],
             "num_adapters": [100],
             "req_rate": [8.0],
             "duration": [180],
