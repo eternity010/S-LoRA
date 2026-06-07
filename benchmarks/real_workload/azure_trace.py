@@ -120,6 +120,56 @@ def downsample_requests(
     return [rows[int(index)] for index in indices]
 
 
+def sample_requests_per_second(
+    rows: List[dict],
+    target_rate: float,
+    duration_sec: float,
+) -> List[dict]:
+    """
+    Deterministically sample a fixed number of requests from each one-second bucket.
+
+    This keeps the benchmark request rate stable while preserving the trace order and
+    representative token lengths inside each second.
+    """
+
+    if target_rate <= 0:
+        raise ValueError(f"target_rate must be positive, got {target_rate}")
+    target_per_second = int(target_rate)
+    if not np.isclose(target_rate, target_per_second):
+        raise ValueError(f"target_rate must be an integer for per-second sampling, got {target_rate}")
+
+    if duration_sec <= 0:
+        raise ValueError(f"duration_sec must be positive, got {duration_sec}")
+    duration_seconds = int(duration_sec)
+    if not np.isclose(duration_sec, duration_seconds):
+        raise ValueError(
+            f"duration_sec must be an integer for per-second sampling, got {duration_sec}"
+        )
+
+    target_count = target_per_second * duration_seconds
+    if target_count >= len(rows):
+        return list(rows)
+
+    buckets: List[List[int]] = [[] for _ in range(duration_seconds)]
+    for index, row in enumerate(rows):
+        second = int(float(row["req_time"]))
+        if 0 <= second < duration_seconds:
+            buckets[second].append(index)
+
+    selected_indices: List[int] = []
+    for bucket in buckets:
+        count = min(target_per_second, len(bucket))
+        selected_indices.extend(_evenly_spaced_indices(bucket, count))
+
+    if len(selected_indices) < target_count:
+        selected_set = set(selected_indices)
+        remaining = [index for index in range(len(rows)) if index not in selected_set]
+        needed = target_count - len(selected_indices)
+        selected_indices.extend(_evenly_spaced_indices(remaining, needed))
+
+    return [rows[index] for index in sorted(selected_indices)]
+
+
 def assign_zipf_adapters(
     rows: List[dict],
     num_adapters: int,
@@ -153,6 +203,91 @@ def assign_zipf_adapters(
             )
         )
     return requests
+
+
+def assign_weighted_adapters(
+    rows: List[dict],
+    adapter_counts: List[int],
+) -> List[AzureTraceRequest]:
+    """Assign adapter ids deterministically according to invocation counts."""
+
+    if not adapter_counts:
+        raise ValueError("adapter_counts must not be empty")
+    if any(count < 0 for count in adapter_counts):
+        raise ValueError("adapter_counts must be non-negative")
+    if sum(adapter_counts) <= 0:
+        raise ValueError("adapter_counts must contain at least one positive count")
+
+    adapter_ids = build_weighted_adapter_sequence(
+        request_count=len(rows),
+        adapter_counts=adapter_counts,
+    )
+
+    requests = []
+    for req_id, (row, adapter_id) in enumerate(zip(rows, adapter_ids)):
+        requests.append(
+            AzureTraceRequest(
+                req_id=req_id,
+                req_time=float(row["req_time"]),
+                adapter_id=int(adapter_id),
+                input_len=int(row["input_len"]),
+                output_len=int(row["output_len"]),
+                source_timestamp=str(row["source_timestamp"]),
+            )
+        )
+    return requests
+
+
+def build_weighted_adapter_sequence(
+    request_count: int,
+    adapter_counts: List[int],
+) -> List[int]:
+    """Build a deterministic time-spread adapter sequence from popularity counts."""
+
+    if request_count < 0:
+        raise ValueError(f"request_count must be non-negative, got {request_count}")
+    if request_count == 0:
+        return []
+
+    target_counts = allocate_counts_by_weight(request_count, adapter_counts)
+    sequence: List[int | None] = [None] * request_count
+
+    for adapter_id, count in enumerate(target_counts):
+        if count == 0:
+            continue
+        for position in _evenly_spaced_indices(list(range(request_count)), count):
+            while sequence[position] is not None:
+                position = (position + 1) % request_count
+            sequence[position] = adapter_id
+
+    return [adapter_id if adapter_id is not None else 0 for adapter_id in sequence]
+
+
+def allocate_counts_by_weight(total_count: int, weights: List[int]) -> List[int]:
+    """Allocate integer counts using largest remainders."""
+
+    if total_count < 0:
+        raise ValueError(f"total_count must be non-negative, got {total_count}")
+    if not weights:
+        raise ValueError("weights must not be empty")
+    if any(weight < 0 for weight in weights):
+        raise ValueError("weights must be non-negative")
+
+    weight_sum = sum(weights)
+    if weight_sum <= 0:
+        raise ValueError("weights must contain at least one positive value")
+
+    raw_counts = np.array(weights, dtype=np.float64) * total_count / weight_sum
+    floor_counts = np.floor(raw_counts).astype(np.int64)
+    remainder = total_count - int(floor_counts.sum())
+
+    if remainder > 0:
+        fractional = raw_counts - floor_counts
+        order = np.argsort(-fractional, kind="stable")
+        for index in order[:remainder]:
+            floor_counts[index] += 1
+
+    return [int(count) for count in floor_counts]
 
 
 def write_jsonl(requests: Iterable[AzureTraceRequest], output_path: Path) -> None:
@@ -227,3 +362,13 @@ def top_share(top_counts: List[tuple], total: int, top_k: int) -> float:
 def _iter_with_first(first_row: dict, reader: Iterable[dict]) -> Iterable[dict]:
     yield first_row
     yield from reader
+
+
+def _evenly_spaced_indices(indices: List[int], count: int) -> List[int]:
+    if count <= 0:
+        return []
+    if count >= len(indices):
+        return list(indices)
+
+    size = len(indices)
+    return [indices[min(int((offset + 0.5) * size / count), size - 1)] for offset in range(count)]

@@ -21,8 +21,8 @@ from pathlib import Path
 
 from azure_trace import (
     assign_zipf_adapters,
-    downsample_requests,
     load_azure_llm_window,
+    sample_requests_per_second,
     summarize_requests,
     write_jsonl,
 )
@@ -81,13 +81,14 @@ def main() -> None:
         max_generated_tokens=args.max_generated_tokens,
     )
 
-    target_count = None
+    sampled_rows = rows
     if args.target_rate is not None:
-        if args.target_rate <= 0:
-            raise ValueError(f"target-rate must be positive, got {args.target_rate}")
-        target_count = int(args.target_rate * args.duration)
+        sampled_rows = sample_requests_per_second(
+            rows,
+            target_rate=args.target_rate,
+            duration_sec=args.duration,
+        )
 
-    sampled_rows = downsample_requests(rows, target_count=target_count, seed=args.seed)
     requests = assign_zipf_adapters(
         sampled_rows,
         num_adapters=args.num_adapters,
