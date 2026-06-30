@@ -1225,7 +1225,10 @@ class GPUWorker:
             - 处理 prefill 和 decode 两种模式
             - 推理失败时生成错误响应并清理批次
         """
+        new_batch = None
         try:
+            responses = []
+
             # 使用 ReqQueue 生成新批次
             new_batch = self.req_queue.generate_new_batch(
                 self.current_batch,
@@ -1234,34 +1237,68 @@ class GPUWorker:
             )
             
             if new_batch is not None:
-                # 加载批次所需的 adapters
-                if not getattr(self.args, 'no_lora', False) and new_batch.adapter_dirs:
-                    await self._load_adapters(new_batch.adapter_dirs)
-                
-                # 先对新批次执行 prefill
-                reqs_rpc = [req.to_rpc_obj() for req in new_batch.reqs]
-                await self.model_rpc.init_batch(new_batch.batch_id, reqs_rpc)
-                
-                # 执行 prefill，获取第一个 token
-                req_to_out_token_id = await self.model_rpc.prefill_batch(new_batch.batch_id)
-                
-                # 将第一个 token 添加到新批次的请求中
-                for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
-                    req = new_batch.id_to_reqs[req_id]
-                    req.output_ids.append(new_token_id)
-                    req.output_metadata_list.append(new_gen_metadata)
-                
-                # 标记新批次中已完成的请求
-                eos_id = getattr(self.args, 'eos_id', 2)
-                has_new_finished = new_batch.mark_finished_req(eos_id)
-                
-                # 处理新批次中已完成的请求
-                if has_new_finished:
-                    await self._handle_finish_req(new_batch, has_new_finished)
-                
+                try:
+                    # 加载批次所需的 adapters
+                    if not getattr(self.args, 'no_lora', False) and new_batch.adapter_dirs:
+                        await self._load_adapters(new_batch.adapter_dirs)
+
+                    # 先对新批次执行 prefill
+                    reqs_rpc = [req.to_rpc_obj() for req in new_batch.reqs]
+                    await self.model_rpc.init_batch(new_batch.batch_id, reqs_rpc)
+
+                    # 执行 prefill，获取第一个 token
+                    req_to_out_token_id = await self.model_rpc.prefill_batch(new_batch.batch_id)
+
+                    # 将第一个 token 添加到新批次的请求中
+                    for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                        req = new_batch.id_to_reqs[req_id]
+                        req.output_ids.append(new_token_id)
+                        req.output_metadata_list.append(new_gen_metadata)
+
+                    # 标记新批次中已完成的请求
+                    eos_id = getattr(self.args, 'eos_id', 2)
+                    has_new_finished = new_batch.mark_finished_req(eos_id)
+
+                    for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                        req = new_batch.id_to_reqs[req_id]
+                        is_finished = req.has_generate_finished
+                        output_ids = req.prompt_ids + req.output_ids
+                        metadata = {
+                            'finish_reason': 'stop' if is_finished else 'generating',
+                            'prompt_tokens': req.input_len,
+                            'completion_tokens': len(req.output_ids),
+                            'gen_metadata': new_gen_metadata
+                        }
+                        if is_finished:
+                            responses.append({
+                                'request_id': req.request_id,
+                                'worker_id': self.worker_id,
+                                'output_ids': output_ids,
+                                'metadata': metadata,
+                                'success': True,
+                                'error': None,
+                                'finished': is_finished
+                            })
+
+                    # 处理新批次中已完成的请求
+                    if has_new_finished:
+                        await self._handle_finish_req(new_batch, has_new_finished)
+                except Exception as e:
+                    print(f"[Worker {self.worker_id}] New batch failed, generating error responses: {e}")
+                    responses.extend(self._make_error_responses(new_batch, str(e)))
+                    try:
+                        if self.model_rpc:
+                            await self.model_rpc.remove_batch(new_batch.batch_id)
+                    except Exception as cleanup_error:
+                        print(f"[Worker {self.worker_id}] Error cleaning up failed new batch: {cleanup_error}")
+                    new_batch.reqs = []
+                    new_batch.id_to_reqs = {}
+                    new_batch.adapter_dirs = set()
+
                 # 合并到当前批次
                 if self.current_batch is None:
-                    self.current_batch = new_batch
+                    if not new_batch.is_clear():
+                        self.current_batch = new_batch
                 else:
                     if not new_batch.is_clear():
                         await self.model_rpc.merge_batch(self.current_batch.batch_id, new_batch.batch_id)
@@ -1286,7 +1323,6 @@ class GPUWorker:
                     has_new_finished_req = self.current_batch.mark_finished_req(eos_id)
                     
                     # 生成响应
-                    responses = []
                     for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
                         req = self.current_batch.id_to_reqs[req_id]
                         
@@ -1323,21 +1359,7 @@ class GPUWorker:
                     print(f"[Worker {self.worker_id}] Inference failed, generating error responses")
                     
                     # 为批次中的所有请求生成错误响应
-                    error_responses = []
-                    for req in self.current_batch.reqs:
-                        error_responses.append({
-                            'request_id': req.request_id,
-                            'worker_id': self.worker_id,
-                            'output_ids': req.prompt_ids,  # 只返回 prompt
-                            'metadata': {
-                                'finish_reason': 'error',
-                                'prompt_tokens': req.input_len,
-                                'completion_tokens': 0,
-                                'error_type': error_msg.split(']')[0].strip('[') if '[' in error_msg else 'UNKNOWN'
-                            },
-                            'success': False,
-                            'error': error_msg
-                        })
+                    error_responses = self._make_error_responses(self.current_batch, error_msg)
                     
                     # 清理失败的批次
                     if self.model_rpc:
@@ -1350,7 +1372,7 @@ class GPUWorker:
                     
                     return error_responses
             
-            return []
+            return responses
             
         except Exception as e:
             # 捕获其他异常（如 ReqQueue 错误、adapter 加载错误等）
@@ -1369,8 +1391,34 @@ class GPUWorker:
                     print(f"[Worker {self.worker_id}] Error cleaning up batch: {cleanup_error}")
                 
                 self.current_batch = None
-            
+
+            if new_batch is not None and not new_batch.is_clear():
+                return self._make_error_responses(new_batch, str(e))
+
             return []
+
+    def _make_error_responses(self, batch: Batch, error_msg: str) -> List[dict]:
+        if batch is None:
+            return []
+
+        error_type = error_msg.split(']')[0].strip('[') if '[' in error_msg else 'UNKNOWN'
+        return [
+            {
+                'request_id': req.request_id,
+                'worker_id': self.worker_id,
+                'output_ids': req.prompt_ids,
+                'metadata': {
+                    'finish_reason': 'error',
+                    'prompt_tokens': req.input_len,
+                    'completion_tokens': len(req.output_ids),
+                    'error_type': error_type
+                },
+                'success': False,
+                'error': error_msg,
+                'finished': True
+            }
+            for req in batch.reqs
+        ]
     
     def _calculate_dynamic_evict_ratio(self, usage_ratio: float, threshold: float) -> float:
         """
@@ -1431,6 +1479,9 @@ class GPUWorker:
             
             # 保存 filter_finished 之前的 adapter_dirs（用于淘汰时保护）
             original_adapter_dirs = set(batch.adapter_dirs) if hasattr(batch, 'adapter_dirs') else set()
+            preserve_adapter_dirs = set(original_adapter_dirs)
+            if self.current_batch is not None and self.current_batch is not batch:
+                preserve_adapter_dirs.update(getattr(self.current_batch, 'adapter_dirs', set()))
             
             # 过滤掉已完成的请求，只保留未完成的请求
             # 同时会更新 batch.adapter_dirs，只包含未完成请求使用的适配器
@@ -1464,7 +1515,7 @@ class GPUWorker:
                             # 统计队列中等待各 adapter 的请求数
                             pending_counts = self._get_pending_adapter_counts()
                             evict_result = await self.model_rpc.trigger_threshold_eviction(
-                                preserve_dirs=original_adapter_dirs,
+                                preserve_dirs=preserve_adapter_dirs,
                                 threshold=threshold,
                                 evict_ratio=dynamic_ratio,
                                 max_lora_ratio=max_lora_ratio,
@@ -1491,7 +1542,7 @@ class GPUWorker:
                 if not getattr(self.args, 'no_lora', False) and self.model_rpc is not None:
                     try:
                         evict_result = await self.model_rpc.trigger_threshold_eviction(
-                            preserve_dirs=None,
+                            preserve_dirs=preserve_adapter_dirs if self.current_batch is not batch else None,
                             threshold=getattr(self.args, 'evict_idle_threshold', 0.8),
                             evict_ratio=getattr(self.args, 'evict_idle_ratio', 0.7),
                             max_lora_ratio=getattr(self.args, 'max_lora_ratio', None)
@@ -1507,7 +1558,8 @@ class GPUWorker:
                     except Exception as e:
                         print(f"[Worker {self.worker_id}] Eviction error (idle): {e}")
                 
-                self.current_batch = None
+                if self.current_batch is batch:
+                    self.current_batch = None
             else:
                 # 批次还有未完成的请求，过滤 RPC 端的批次
                 req_id_list = [req.request_id for req in batch.reqs]
