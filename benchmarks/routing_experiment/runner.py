@@ -157,11 +157,16 @@ class ExperimentRunner:
     @staticmethod
     def _make_config_id(config: ExperimentConfig) -> str:
         """Create unique ID for an experiment config (used in checkpoint)."""
+        workload_id = config.workload_name
+        if not workload_id and config.trace_file:
+            workload_id = Path(config.trace_file).stem
+        workload_id = workload_id or config.workload_type
         return (
             f"{config.routing_strategy}_alpha{config.alpha}"
             f"_adapters{config.num_adapters}"
             f"_rate{config.req_rate}"
             f"_dur{config.duration}"
+            f"_workload{workload_id}"
             f"_w1{config.routing_w1}_w2{config.routing_w2}"
             f"_lm{config.load_metric}"
             f"_repl{int(config.enable_replication)}"
@@ -600,10 +605,13 @@ class ExperimentRunner:
         # Import from benchmarks modules
         sys.path.insert(0, str(self.benchmarks_dir))
         from exp_suite import BASE_MODEL, LORA_DIR
-        from trace import generate_requests
+        from trace import generate_requests, load_jsonl_trace_requests
         
         print(f"     Running {config.duration}s benchmark with {config.num_adapters} adapters...")
         print(f"     Request rate: {config.req_rate} req/s, Alpha: {config.alpha}")
+        if config.workload_type == "trace":
+            print(f"     Workload: {config.workload_name or 'trace'}")
+            print(f"     Trace file: {config.trace_file}")
         
         # Prepare adapter directories
         base_model = BASE_MODEL[self.model_setting]
@@ -619,17 +627,24 @@ class ExperimentRunner:
         adapter_dirs = [(base_model, adapter_dirs[i]) for i in range(config.num_adapters)]
         
         # Generate requests
-        requests = generate_requests(
-            num_adapters=config.num_adapters,
-            alpha=config.alpha,
-            req_rate=config.req_rate,
-            cv=config.cv,
-            duration=config.duration,
-            input_range=config.input_range,
-            output_range=config.output_range,
-            adapter_dirs=adapter_dirs,
-            seed=42
-        )
+        if config.workload_type == "trace":
+            requests = load_jsonl_trace_requests(
+                trace_file=self._resolve_trace_file(config.trace_file),
+                base_model=base_model,
+                adapter_dirs=adapter_dirs,
+            )
+        else:
+            requests = generate_requests(
+                num_adapters=config.num_adapters,
+                alpha=config.alpha,
+                req_rate=config.req_rate,
+                cv=config.cv,
+                duration=config.duration,
+                input_range=config.input_range,
+                output_range=config.output_range,
+                adapter_dirs=adapter_dirs,
+                seed=42
+            )
         
         total_requests = len(requests)
         print(f"     Generated {total_requests} requests")
@@ -642,6 +657,12 @@ class ExperimentRunner:
         
         # Calculate statistics
         return self._calculate_benchmark_stats(per_req_latency, benchmark_time, config.req_rate)
+
+    def _resolve_trace_file(self, trace_file: str) -> Path:
+        trace_path = Path(trace_file)
+        if trace_path.is_absolute():
+            return trace_path
+        return self.benchmarks_dir / trace_path
     
     async def _async_benchmark(self, requests) -> list:
         """Run async benchmark, sending requests at specified times"""

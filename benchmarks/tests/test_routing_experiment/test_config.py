@@ -39,6 +39,53 @@ class TestExperimentConfigValidation:
             duration=180
         )
         config.validate()  # Should not raise
+
+    def test_valid_trace_workload_config(self):
+        """Test valid trace workload configuration"""
+        config = ExperimentConfig(
+            routing_strategy="round-robin",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            workload_type="trace",
+            trace_file="real_workload/outputs/trace.jsonl",
+            workload_name="realtrace-6rps",
+        )
+        config.validate()
+
+        params = config.to_benchmark_args()
+        assert params["workload_type"] == "trace"
+        assert params["trace_file"] == "real_workload/outputs/trace.jsonl"
+        assert params["workload_name"] == "realtrace-6rps"
+
+    def test_trace_workload_requires_trace_file(self):
+        """Test trace workload without trace_file raises ValueError"""
+        config = ExperimentConfig(
+            routing_strategy="round-robin",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            workload_type="trace",
+        )
+        with pytest.raises(ValueError) as exc_info:
+            config.validate()
+        assert "trace_file" in str(exc_info.value)
+
+    def test_invalid_workload_type(self):
+        """Test invalid workload type raises ValueError"""
+        config = ExperimentConfig(
+            routing_strategy="round-robin",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            workload_type="invalid",
+        )
+        with pytest.raises(ValueError) as exc_info:
+            config.validate()
+        assert "workload_type" in str(exc_info.value)
     
     def test_invalid_routing_strategy(self):
         """Test invalid routing strategy raises ValueError"""

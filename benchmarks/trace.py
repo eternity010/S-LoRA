@@ -60,6 +60,42 @@ def generate_requests(num_adapters, alpha, req_rate, cv, duration,
                                 tic))
     return requests
 
+
+def load_jsonl_trace_requests(trace_file, base_model, adapter_dirs):
+    requests = []
+    required = {"req_id", "req_time", "adapter_id", "input_len", "output_len"}
+
+    with open(trace_file, "r") as file:
+        for line_no, line in enumerate(file, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            missing = required - set(row)
+            if missing:
+                raise ValueError(f"{trace_file}:{line_no} missing fields: {sorted(missing)}")
+
+            adapter_id = int(row["adapter_id"])
+            if adapter_id < 0 or adapter_id >= len(adapter_dirs):
+                raise ValueError(
+                    f"{trace_file}:{line_no} adapter_id {adapter_id} out of range "
+                    f"for {len(adapter_dirs)} adapters"
+                )
+
+            requests.append(
+                Request(
+                    req_id=int(row["req_id"]),
+                    model_dir=base_model,
+                    adapter_dir=adapter_dirs[adapter_id][1],
+                    prompt=dummy_prompt(int(row["input_len"])),
+                    prompt_len=int(row["input_len"]),
+                    output_len=int(row["output_len"]),
+                    req_time=float(row["req_time"]),
+                )
+            )
+
+    return requests
+
+
 def get_real_requests(trace_file, req_rate, duration, base_model, adapter_dirs, input_range, output_range, seed=42):
     np.random.seed(seed)
     tokenizer = AutoTokenizer.from_pretrained(base_model)
@@ -131,4 +167,3 @@ def parse_into_req(base_model, conversations, model_mapping, tokenizer):
         reqs.append(req)
     # print(reqs)
     return reqs
-

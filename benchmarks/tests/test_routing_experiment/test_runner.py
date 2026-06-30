@@ -38,6 +38,61 @@ class TestExperimentRunnerConfigId:
 
         assert ExperimentRunner._make_config_id(config_a) != ExperimentRunner._make_config_id(config_b)
 
+    def test_config_id_distinguishes_synthetic_and_trace_workloads(self):
+        synthetic = ExperimentConfig(
+            routing_strategy="round-robin",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+        )
+        trace = ExperimentConfig(
+            routing_strategy="round-robin",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            workload_type="trace",
+            trace_file="real_workload/outputs/azure_llm_http_top100_6rps_180s_v1.jsonl",
+            workload_name="azure-http-top100-6rps",
+        )
+
+        assert ExperimentRunner._make_config_id(synthetic) != ExperimentRunner._make_config_id(trace)
+
+    def test_config_id_distinguishes_trace_workloads(self):
+        trace_a = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            workload_type="trace",
+            trace_file="real_workload/outputs/azure_llm_http_top100_6rps_180s_v1.jsonl",
+            workload_name="azure-http-top100-6rps",
+        )
+        trace_b = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=8.0,
+            duration=180,
+            workload_type="trace",
+            trace_file="real_workload/outputs/azure_llm_http_top100_8rps_180s_v1.jsonl",
+            workload_name="azure-http-top100-8rps",
+        )
+
+        assert ExperimentRunner._make_config_id(trace_a) != ExperimentRunner._make_config_id(trace_b)
+
+    def test_resolve_trace_file_uses_benchmarks_dir_for_relative_paths(self):
+        runner = ExperimentRunner(
+            output_dir=tempfile.mkdtemp(),
+            benchmarks_dir="/repo/benchmarks",
+        )
+
+        assert runner._resolve_trace_file("real_workload/outputs/trace.jsonl") == Path(
+            "/repo/benchmarks/real_workload/outputs/trace.jsonl"
+        )
+
 
 class TestExperimentRunnerRuntimeCleanup:
     def test_cleanup_runtime_state_files_removes_stale_files(self):

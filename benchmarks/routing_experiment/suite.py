@@ -247,10 +247,16 @@ class ExperimentSuite:
         if suite_name == "alpha-robustness-sla":
             yield from cls.get_alpha_robustness_sla_configs(**defaults)
             return
+        if suite_name == "dp-realtrace-comparison":
+            yield from cls.get_realtrace_comparison_configs(**defaults)
+            return
         
         suite = cls.SUITES.get(suite_name)
         if suite is None:
-            available = ", ".join(list(cls.SUITES.keys()) + ["alpha-robustness", "alpha-robustness-sla"])
+            available = ", ".join(
+                list(cls.SUITES.keys())
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison"]
+            )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
             )
@@ -276,7 +282,11 @@ class ExperimentSuite:
         Returns:
             List of suite names
         """
-        return list(cls.SUITES.keys()) + ["alpha-robustness", "alpha-robustness-sla"]
+        return list(cls.SUITES.keys()) + [
+            "alpha-robustness",
+            "alpha-robustness-sla",
+            "dp-realtrace-comparison",
+        ]
     
     @classmethod
     def get_suite_info(cls, suite_name: str) -> Dict[str, Any]:
@@ -315,10 +325,25 @@ class ExperimentSuite:
                 },
                 "config_count": 9,
             }
+        if suite_name == "dp-realtrace-comparison":
+            return {
+                "name": suite_name,
+                "parameters": {
+                    "routing_strategy": ["round-robin", "adapter-aware"],
+                    "workload_name": ["azure-http-top100-6rps", "azure-http-top100-8rps"],
+                    "num_adapters": [100],
+                    "duration": [180],
+                    "load_metric": ["rwpt"],
+                },
+                "config_count": 4,
+            }
         
         suite = cls.SUITES.get(suite_name)
         if suite is None:
-            available = ", ".join(list(cls.SUITES.keys()) + ["alpha-robustness", "alpha-robustness-sla"])
+            available = ", ".join(
+                list(cls.SUITES.keys())
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison"]
+            )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
             )
@@ -391,6 +416,39 @@ class ExperimentSuite:
                     load_metric=load_metric,
                     **defaults,
                 )
+
+    @classmethod
+    def get_realtrace_comparison_configs(cls, **defaults):
+        traces = [
+            (
+                "azure-http-top100-6rps",
+                6.0,
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ),
+            (
+                "azure-http-top100-8rps",
+                8.0,
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ),
+        ]
+        strategies = ["round-robin", "adapter-aware"]
+
+        for workload_name, req_rate, trace_file in traces:
+            for strategy in strategies:
+                params = {
+                    "routing_strategy": strategy,
+                    "alpha": 0.1,
+                    "num_adapters": 100,
+                    "req_rate": req_rate,
+                    "duration": 180,
+                    "workload_type": "trace",
+                    "trace_file": trace_file,
+                    "workload_name": workload_name,
+                    "routing_w1": 1.0,
+                    "routing_w2": 1.0,
+                    "load_metric": "rwpt",
+                }
+                yield ExperimentConfig(**{**defaults, **params})
 
     @classmethod
     def get_alpha_robustness_sla_configs(cls, **defaults):

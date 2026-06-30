@@ -3,7 +3,7 @@ Experiment configuration module for routing strategy comparison.
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 @dataclass
@@ -19,6 +19,9 @@ class ExperimentConfig:
     req_rate: float  # Request rate (req/s)
     duration: int  # Experiment duration (seconds)
     cv: float = 1.0  # Coefficient of variation
+    workload_type: str = "synthetic"  # "synthetic" | "trace"
+    trace_file: Optional[str] = None
+    workload_name: Optional[str] = None
     
     # Token length ranges
     input_range: Tuple[int, int] = (128, 512)
@@ -57,6 +60,12 @@ class ExperimentConfig:
         
         if not 0.1 <= self.alpha <= 1.0:
             raise ValueError(f"Alpha must be in [0.1, 1.0], got {self.alpha}")
+
+        if self.workload_type not in ("synthetic", "trace"):
+            raise ValueError(f"Invalid workload_type: {self.workload_type}")
+
+        if self.workload_type == "trace" and not self.trace_file:
+            raise ValueError("trace_file must be set when workload_type is 'trace'")
         
         if not 10 <= self.num_adapters <= 200:
             raise ValueError(
@@ -131,4 +140,7 @@ class ExperimentConfig:
             "cv": self.cv,
             "input_range": self.input_range,
             "output_range": self.output_range,
+            "workload_type": self.workload_type,
+            "trace_file": self.trace_file,
+            "workload_name": self.workload_name,
         }
