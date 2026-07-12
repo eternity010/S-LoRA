@@ -422,12 +422,11 @@ class DataParallelRouterManager:
         state.queue_length += 1
 
         routing_config = getattr(self.router, 'config', None)
-        if routing_config is None or routing_config.load_metric != 'rwpt':
+        if routing_config is None:
             return
 
-        adapter_dir = request.get('adapter_dir')
         prompt_ids = request.get('prompt_ids')
-        if not adapter_dir or prompt_ids is None:
+        if prompt_ids is None:
             return
 
         try:
@@ -436,6 +435,17 @@ class DataParallelRouterManager:
             return
 
         if prompt_len <= 0:
+            return
+
+        if routing_config.load_metric == 'token_count':
+            state.pending_raw_tokens += prompt_len
+            return
+
+        if routing_config.load_metric != 'rwpt':
+            return
+
+        adapter_dir = request.get('adapter_dir')
+        if not adapter_dir:
             return
 
         hidden_size = getattr(routing_config, 'hidden_dim', None) or 4096

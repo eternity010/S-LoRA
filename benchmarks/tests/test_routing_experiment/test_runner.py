@@ -227,6 +227,40 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         assert state.queue_length == 1
         assert state.pending_prefill_tokens == expected
 
+    def test_optimistic_update_increments_raw_tokens_for_token_count(self):
+        manager = self._make_adapter_aware_manager()
+        manager.router.config.load_metric = "token_count"
+
+        manager._optimistically_update_worker_load(
+            0,
+            {
+                "adapter_dir": "/adapters/a",
+                "prompt_ids": list(range(120)),
+            },
+        )
+
+        state = manager.router.worker_states[0]
+        assert state.queue_length == 1
+        assert state.pending_raw_tokens == 120
+        assert state.pending_prefill_tokens == 0
+
+    def test_optimistic_update_does_not_increment_raw_tokens_for_queue_length(self):
+        manager = self._make_adapter_aware_manager()
+        manager.router.config.load_metric = "queue_length"
+
+        manager._optimistically_update_worker_load(
+            0,
+            {
+                "adapter_dir": "/adapters/a",
+                "prompt_ids": list(range(120)),
+            },
+        )
+
+        state = manager.router.worker_states[0]
+        assert state.queue_length == 1
+        assert state.pending_raw_tokens == 0
+        assert state.pending_prefill_tokens == 0
+
     def test_optimistic_update_only_increments_queue_when_prompt_missing(self):
         manager = self._make_adapter_aware_manager()
 
