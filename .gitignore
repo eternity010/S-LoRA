@@ -24,6 +24,8 @@ benchmarks/repeat_results/
 # Benchmark logs
 benchmarks/**/logs/
 benchmarks/**/server_log.txt
+benchmarks/routing_experiment/debug.log
+benchmarks/debug_all_results_*.jsonl
 
 # Exported benchmark artifacts (keep scripts in this directory trackable)
 benchmarks/exported_results/*.png
