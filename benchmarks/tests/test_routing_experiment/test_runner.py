@@ -3,6 +3,7 @@ Tests for ExperimentRunner config identity behavior.
 """
 
 import os
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,7 @@ sys.path.insert(0, str(repo_root / "benchmarks"))
 
 from routing_experiment.config import ExperimentConfig
 from routing_experiment.runner import ExperimentRunner
+from trace import Request
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.dp_manager import DataParallelRouterManager
 from slora.server.router.worker_state import RoutingConfig, WorkerState
@@ -184,6 +186,66 @@ class TestExperimentRunnerRuntimeCleanup:
             {"w2": 2.0},
             timeout=0.0,
         )
+
+
+class TestExperimentRunnerRequestTracing:
+    def test_generation_request_preserves_request_id(self):
+        req = Request(
+            req_id=17,
+            model_dir="/models/base",
+            adapter_dir="/adapters/a",
+            prompt="Hello",
+            prompt_len=8,
+            output_len=12,
+            req_time=1.5,
+        )
+
+        payload = ExperimentRunner._build_generation_request(req, "run-1-req-17")
+
+        assert payload["req_id"] == "run-1-req-17"
+        assert payload["lora_dir"] == "/adapters/a"
+        assert payload["parameters"]["max_new_tokens"] == 12
+
+    def test_calculate_benchmark_stats_accepts_request_records(self):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+        records = [
+            {"success": True, "total_latency": 2.0, "ttft": 1.0},
+            {"success": True, "total_latency": 4.0, "ttft": 2.0},
+            {"success": False, "total_latency": None, "ttft": None},
+        ]
+
+        stats = runner._calculate_benchmark_stats(records, benchmark_time=10.0, req_rate=1.0)
+
+        assert stats["total_requests"] == 3
+        assert stats["num_abort"] == 1
+        assert stats["throughput"] == 0.2
+        assert stats["avg_latency"] == 3.0
+        assert stats["avg_first_token_latency"] == 1.5
+
+    def test_save_request_latency_trace_adds_config_metadata(self, tmp_path):
+        runner = ExperimentRunner(output_dir=str(tmp_path), benchmarks_dir=".", debug=False)
+        runner._current_diagnostics_dir = tmp_path / "diagnostics"
+        runner._current_diagnostics_dir.mkdir()
+        config = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=4.0,
+            duration=180,
+            workload_type="trace",
+            trace_file="trace.jsonl",
+            workload_name="trace-4rps",
+            routing_w2=3.0,
+        )
+        records = [{"request_id": "run-req-1", "success": True}]
+
+        output = runner._save_request_latency_trace(records, config, "run1")
+        saved = json.loads(output.read_text().strip())
+
+        assert saved["request_id"] == "run-req-1"
+        assert saved["routing_strategy"] == "adapter-aware"
+        assert saved["routing_w2"] == 3.0
+        assert saved["workload_name"] == "trace-4rps"
 
 
 class DummyRouter:

@@ -10,6 +10,7 @@ import signal
 import sys
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
@@ -58,6 +59,8 @@ class ExperimentRunner:
         self._latest_log_file = self.output_dir / "server_log.txt"
         self.checkpoint_file = self.output_dir / "checkpoint.json"
         self._current_server_config = None  # Track current server configuration
+        self._current_diagnostics_dir: Optional[Path] = None
+        self._current_routing_debug_file: Optional[Path] = None
         
         # Per-suite output directory (set in run_suite)
         self._suite_output_dir: Optional[Path] = None
@@ -460,14 +463,20 @@ class ExperimentRunner:
 
         env = os.environ.copy()
         env.pop("SLORA_ROUTING_DEBUG_FILE", None)
-        if self.debug and config.routing_strategy == 'adapter-aware':
-            routing_debug_dir = target_dir / "routing_debug"
-            routing_debug_dir.mkdir(parents=True, exist_ok=True)
-            routing_debug_file = (
-                routing_debug_dir
-                / f"route_decisions_{config.routing_strategy}_adapters{config.num_adapters}.jsonl"
-            )
-            env["SLORA_ROUTING_DEBUG_FILE"] = str(routing_debug_file)
+        self._current_diagnostics_dir = None
+        self._current_routing_debug_file = None
+        if self.debug:
+            server_run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            diagnostics_dir = (
+                target_dir / "diagnostics" / f"server_{server_run_id}"
+            ).resolve()
+            diagnostics_dir.mkdir(parents=True, exist_ok=False)
+            self._current_diagnostics_dir = diagnostics_dir
+
+            if config.routing_strategy == 'adapter-aware':
+                routing_debug_file = diagnostics_dir / "route_decisions.jsonl"
+                self._current_routing_debug_file = routing_debug_file
+                env["SLORA_ROUTING_DEBUG_FILE"] = str(routing_debug_file)
         
         # Start server in a new process group so we can kill all children together
         self.server_process = subprocess.Popen(
@@ -664,10 +673,36 @@ class ExperimentRunner:
         print(f"     Generated {total_requests} requests")
         
         # Run benchmark
+        benchmark_run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        request_id_prefix = f"bench-{benchmark_run_id}"
         benchmark_start_time = time.time()
-        per_req_latency = asyncio.run(self._async_benchmark(requests))
+        per_req_latency = asyncio.run(
+            self._async_benchmark(requests, request_id_prefix=request_id_prefix)
+        )
         benchmark_end_time = time.time()
         benchmark_time = benchmark_end_time - benchmark_start_time
+
+        if self.debug:
+            latency_file = self._save_request_latency_trace(
+                per_req_latency,
+                config,
+                benchmark_run_id,
+            )
+            if self._current_routing_debug_file is not None:
+                from .request_diagnostics import join_request_diagnostics
+
+                try:
+                    summary = join_request_diagnostics(
+                        latency_file=latency_file,
+                        routing_file=self._current_routing_debug_file,
+                    )
+                    print(
+                        "     Request diagnostics joined: "
+                        f"{summary['matched_requests']}/{summary['latency_requests']} requests"
+                    )
+                except (OSError, ValueError, KeyError) as exc:
+                    print(f"     Warning: Could not join request diagnostics: {exc}")
+                    self._log(f"request diagnostics join failed: {exc}")
         
         # Calculate statistics
         return self._calculate_benchmark_stats(per_req_latency, benchmark_time, config.req_rate)
@@ -678,10 +713,8 @@ class ExperimentRunner:
             return trace_path
         return self.benchmarks_dir / trace_path
     
-    async def _async_benchmark(self, requests) -> list:
+    async def _async_benchmark(self, requests, request_id_prefix: str) -> list:
         """Run async benchmark, sending requests at specified times"""
-        import aiohttp
-        
         start = time.time()
         tasks = []
         
@@ -690,10 +723,14 @@ class ExperimentRunner:
             wait_time = start + req.req_time - time.time()
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
-            
+
+            request_id = f"{request_id_prefix}-req-{req.req_id}"
             task = asyncio.create_task(
-                self._send_request(req.model_dir, req.adapter_dir, req.prompt,
-                                   req.prompt_len, req.output_len)
+                self._send_request(
+                    req,
+                    request_id=request_id,
+                    benchmark_start_time=start,
+                )
             )
             tasks.append(task)
         
@@ -701,37 +738,64 @@ class ExperimentRunner:
         
         # Filter out exceptions
         valid_results = []
-        for r in results:
+        for req, r in zip(requests, results):
             if isinstance(r, Exception):
                 print(f"     Request failed: {r}")
-                valid_results.append((0, 0, 0, None))  # Mark as failed
+                valid_results.append({
+                    "request_id": f"{request_id_prefix}-req-{req.req_id}",
+                    "trace_req_id": req.req_id,
+                    "req_time": req.req_time,
+                    "adapter_dir": req.adapter_dir,
+                    "adapter_name": Path(req.adapter_dir).name,
+                    "input_len": req.prompt_len,
+                    "output_len": req.output_len,
+                    "scheduled_at": start + req.req_time,
+                    "sent_at": None,
+                    "first_token_at": None,
+                    "finished_at": None,
+                    "schedule_delay": None,
+                    "ttft": None,
+                    "total_latency": None,
+                    "success": False,
+                    "error": str(r),
+                })
             else:
                 valid_results.append(r)
         
         return valid_results
     
-    async def _send_request(self, model_dir: str, adapter_dir: str, prompt: str,
-                           prompt_len: int, output_len: int) -> tuple:
+    async def _send_request(self, req, request_id: str,
+                           benchmark_start_time: float) -> Dict[str, Any]:
         """Send a single request to the server"""
         import aiohttp
-        
+
         request_start_time = time.time()
         url = f"{self.server_host}/generate_stream"
-        
-        data = {
-            'model_dir': model_dir,
-            'lora_dir': adapter_dir,
-            'inputs': prompt,
-            'parameters': {
-                'do_sample': False,
-                'ignore_eos': True,
-                'max_new_tokens': output_len,
-            }
+
+        data = self._build_generation_request(req, request_id)
+
+        result = {
+            "request_id": request_id,
+            "trace_req_id": req.req_id,
+            "req_time": req.req_time,
+            "adapter_dir": req.adapter_dir,
+            "adapter_name": Path(req.adapter_dir).name,
+            "input_len": req.prompt_len,
+            "output_len": req.output_len,
+            "scheduled_at": benchmark_start_time + req.req_time,
+            "sent_at": request_start_time,
+            "first_token_at": None,
+            "finished_at": None,
+            "schedule_delay": request_start_time - (benchmark_start_time + req.req_time),
+            "ttft": None,
+            "total_latency": None,
+            "success": False,
+            "error": None,
         }
-        
+
         first_token_latency = None
         timeout = aiohttp.ClientTimeout(total=3 * 3600)
-        
+
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=data) as response:
@@ -739,10 +803,60 @@ class ExperimentRunner:
                         if first_token_latency is None:
                             first_token_latency = time.time() - request_start_time
         except Exception as e:
-            return (prompt_len, output_len, 0, None)
-        
-        request_latency = time.time() - request_start_time
-        return (prompt_len, output_len, request_latency, first_token_latency)
+            result["finished_at"] = time.time()
+            result["error"] = str(e)
+            return result
+
+        finished_at = time.time()
+        result.update({
+            "first_token_at": (
+                request_start_time + first_token_latency
+                if first_token_latency is not None else None
+            ),
+            "finished_at": finished_at,
+            "ttft": first_token_latency,
+            "total_latency": finished_at - request_start_time,
+            "success": first_token_latency is not None,
+        })
+        return result
+
+    @staticmethod
+    def _build_generation_request(req, request_id: str) -> Dict[str, Any]:
+        """Build the HTTP request body while preserving the benchmark request ID."""
+        return {
+            'req_id': request_id,
+            'model_dir': req.model_dir,
+            'lora_dir': req.adapter_dir,
+            'inputs': req.prompt,
+            'parameters': {
+                'do_sample': False,
+                'ignore_eos': True,
+                'max_new_tokens': req.output_len,
+            }
+        }
+
+    def _save_request_latency_trace(self, records: list, config: ExperimentConfig,
+                                    benchmark_run_id: str) -> Path:
+        """Save request-level benchmark timings for offline routing analysis."""
+        target_dir = self._current_diagnostics_dir
+        if target_dir is None:
+            target_dir = (self._suite_output_dir or self.output_dir) / "diagnostics"
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        latency_file = target_dir / f"request_latencies_{benchmark_run_id}.jsonl"
+        with open(latency_file, "w") as file:
+            for record in records:
+                enriched = {
+                    **record,
+                    "routing_strategy": config.routing_strategy,
+                    "load_metric": config.load_metric,
+                    "routing_w2": config.routing_w2,
+                    "workload_name": config.workload_name,
+                }
+                file.write(json.dumps(enriched, ensure_ascii=True) + "\n")
+
+        print(f"     Request latency trace: {latency_file}")
+        return latency_file
     
     def _calculate_benchmark_stats(self, per_req_latency: list, benchmark_time: float,
                                    req_rate: float) -> Dict[str, Any]:
@@ -750,8 +864,8 @@ class ExperimentRunner:
         import numpy as np
         
         # Filter out failed requests
-        num_abort = len([r for r in per_req_latency if r[3] is None])
-        valid_latency = [r for r in per_req_latency if r[3] is not None]
+        num_abort = len([r for r in per_req_latency if not r["success"]])
+        valid_latency = [r for r in per_req_latency if r["success"]]
         
         if not valid_latency:
             print(f"     ⚠ All {len(per_req_latency)} requests failed!")
@@ -778,8 +892,8 @@ class ExperimentRunner:
             strip_throughput = throughput
         
         # Latency statistics
-        latencies = [r[2] for r in valid_latency]
-        first_token_latencies = [r[3] for r in valid_latency]
+        latencies = [r["total_latency"] for r in valid_latency]
+        first_token_latencies = [r["ttft"] for r in valid_latency]
         
         avg_latency = np.mean(latencies)
         avg_first_token_latency = np.mean(first_token_latencies)

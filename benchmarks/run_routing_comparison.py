@@ -77,6 +77,7 @@ def run_experiments(args):
     print(f"  Results saved to: {args.output_dir}/{args.suite}/results.jsonl")
     if args.debug:
         print(f"  Debug log: routing_experiment/debug.log")
+        print(f"  Request diagnostics: {args.output_dir}/{args.suite}/diagnostics/")
     
     return start_ts
 
@@ -278,7 +279,7 @@ def main():
     parser.add_argument(
         '--debug',
         action='store_true',
-        help='Enable debug logging to routing_experiment/debug.log'
+        help='Enable debug logs and request-level routing diagnostics'
     )
     
     # Output configuration
