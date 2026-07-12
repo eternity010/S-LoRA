@@ -17,6 +17,7 @@ Requirements:
 
 import os
 import time
+import json
 import torch
 import argparse
 import asyncio
@@ -24,7 +25,7 @@ import zmq
 import zmq.asyncio
 import multiprocessing as mp
 import logging
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from slora.server.router.round_robin_router import RoundRobinRouter
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
@@ -169,6 +170,14 @@ class DataParallelRouterManager:
         self._enable_replication = getattr(args, 'enable_replication', False)
         if self._enable_replication and self.routing_strategy == 'adapter-aware':
             self._init_replica_manager()
+
+        self._routing_debug_file = os.environ.get("SLORA_ROUTING_DEBUG_FILE")
+        if self._routing_debug_file:
+            debug_dir = os.path.dirname(self._routing_debug_file)
+            if debug_dir:
+                os.makedirs(debug_dir, exist_ok=True)
+            with open(self._routing_debug_file, "w"):
+                pass
         
         print(f"[DataParallelRouterManager] Configuration:")
         print(f"[DataParallelRouterManager]   Number of workers: {self.num_workers}")
@@ -437,6 +446,86 @@ class DataParallelRouterManager:
 
         estimated_prefill = int(prompt_len * (1.0 + gamma * rank))
         state.pending_prefill_tokens += estimated_prefill
+
+    def _build_routing_debug_record(self, worker_id: int, request: dict) -> Optional[Dict[str, Any]]:
+        if self.routing_strategy != 'adapter-aware' or not hasattr(self.router, 'worker_states'):
+            return None
+
+        adapter_dir = request.get('adapter_dir', '')
+        prompt_ids = request.get('prompt_ids')
+        try:
+            prompt_len = len(prompt_ids) if prompt_ids is not None else None
+        except TypeError:
+            prompt_len = None
+
+        routing_config = getattr(self.router, 'config', None)
+        capacity = getattr(self.router, '_capacity', 0)
+        load_metric = getattr(routing_config, 'load_metric', 'rwpt') if routing_config else 'rwpt'
+        worker_debug = {}
+
+        for wid, state in sorted(self.router.worker_states.items()):
+            if load_metric == 'queue_length':
+                load_pressure = state.queue_length
+            elif load_metric == 'token_count':
+                load_pressure = state.pending_raw_tokens / capacity if capacity > 0 else 0.0
+            else:
+                load_pressure = state.pending_prefill_tokens / capacity if capacity > 0 else 0.0
+
+            if routing_config is not None and hasattr(self.router, '_effective_cache_affinity_weight'):
+                effective_w1 = self.router._effective_cache_affinity_weight(load_pressure)
+            else:
+                effective_w1 = getattr(routing_config, 'w1', 1.0) if routing_config else 1.0
+
+            has_adapter = state.has_adapter(adapter_dir)
+            cache_bonus = effective_w1 if has_adapter else 0.0
+            try:
+                score = self.router.calculate_score(wid, adapter_dir)
+            except Exception:
+                score = None
+
+            worker_debug[str(wid)] = {
+                'selected': wid == worker_id,
+                'score': score,
+                'has_adapter': has_adapter,
+                'cache_bonus': cache_bonus,
+                'load_pressure': load_pressure,
+                'queue_length': state.queue_length,
+                'pending_prefill_tokens': state.pending_prefill_tokens,
+                'pending_raw_tokens': state.pending_raw_tokens,
+                'active_decode_seqs': state.active_decode_seqs,
+                'cached_adapters': len(state.cached_adapters),
+                'is_healthy': state.is_healthy,
+            }
+
+        return {
+            'timestamp': time.time(),
+            'request_id': request.get('request_id'),
+            'adapter_dir': adapter_dir,
+            'adapter_name': adapter_dir.rstrip('/').split('/')[-1] if adapter_dir else '',
+            'prompt_len': prompt_len,
+            'selected_worker': worker_id,
+            'load_metric': load_metric,
+            'routing_w1': getattr(routing_config, 'w1', None) if routing_config else None,
+            'routing_w2': getattr(routing_config, 'w2', None) if routing_config else None,
+            'routing_w3': getattr(routing_config, 'w3', None) if routing_config else None,
+            'capacity': capacity,
+            'workers': worker_debug,
+        }
+
+    def _write_routing_debug_record(self, worker_id: int, request: dict) -> None:
+        routing_debug_file = getattr(self, '_routing_debug_file', None)
+        if not routing_debug_file:
+            return
+
+        record = self._build_routing_debug_record(worker_id, request)
+        if record is None:
+            return
+
+        try:
+            with open(routing_debug_file, "a") as f:
+                f.write(json.dumps(record, ensure_ascii=True) + "\n")
+        except Exception as e:
+            logger.warning(f"Failed to write routing debug record: {e}")
     
     def _create_router(self) -> Union[RoundRobinRouter, AdapterAwareRouter]:
         """
@@ -899,6 +988,8 @@ class DataParallelRouterManager:
                 
                 # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
                 await self.request_senders[worker_id].send_json(request)
+
+                self._write_routing_debug_record(worker_id, request)
                 
                 # 乐观更新 Router 端的 Worker 状态，缓解状态上报窗口带来的低估
                 if self.routing_strategy == 'adapter-aware':

@@ -455,6 +455,17 @@ class ExperimentRunner:
         self.server_log = open(log_file, 'w')
         self._current_log_file = log_file
         self._latest_log_file = latest_log
+
+        env = os.environ.copy()
+        env.pop("SLORA_ROUTING_DEBUG_FILE", None)
+        if self.debug and config.routing_strategy == 'adapter-aware':
+            routing_debug_dir = target_dir / "routing_debug"
+            routing_debug_dir.mkdir(parents=True, exist_ok=True)
+            routing_debug_file = (
+                routing_debug_dir
+                / f"route_decisions_{config.routing_strategy}_adapters{config.num_adapters}.jsonl"
+            )
+            env["SLORA_ROUTING_DEBUG_FILE"] = str(routing_debug_file)
         
         # Start server in a new process group so we can kill all children together
         self.server_process = subprocess.Popen(
@@ -463,6 +474,7 @@ class ExperimentRunner:
             stdout=self.server_log,
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
+            env=env,
             start_new_session=True  # Create new process group for clean termination
         )
         
