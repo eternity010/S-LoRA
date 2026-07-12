@@ -190,6 +190,31 @@ class TestExperimentSuite:
         assert info["parameters"]["workload_name"] == ["azure-http-top100-4rps"]
         assert info["parameters"]["routing_w2"] == [3.0]
 
+    def test_dp_realtrace_2rps_comparison_suite(self):
+        configs = list(ExperimentSuite.get_configs("dp-realtrace-comparison-2rps"))
+
+        assert len(configs) == 2
+        assert {config.routing_strategy for config in configs} == {
+            "round-robin", "adapter-aware",
+        }
+        for config in configs:
+            config.validate()
+            assert config.workload_type == "trace"
+            assert config.workload_name == "azure-http-top100-2rps"
+            assert config.req_rate == 2.0
+            assert config.duration == 180
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file == (
+                "real_workload/outputs/"
+                "azure_llm_http_top100_2rps_180s_capped2048_512_v1.jsonl"
+            )
+            expected_w2 = 3.0 if config.routing_strategy == "adapter-aware" else 1.0
+            assert config.routing_w2 == expected_w2
+
+        info = ExperimentSuite.get_suite_info("dp-realtrace-comparison-2rps")
+        assert info["config_count"] == 2
+        assert info["parameters"]["workload_name"] == ["azure-http-top100-2rps"]
+
     def test_dp_realtrace_rwpt_4rps_debug_suite(self):
         """Test the single-point real-trace RWPT diagnostic suite."""
         configs = list(ExperimentSuite.get_configs("dp-realtrace-rwpt-4rps-debug"))
@@ -208,7 +233,63 @@ class TestExperimentSuite:
             "real_workload/outputs/"
             "azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl"
         )
-    
+
+    def test_dp_realtrace_queue_length_w2_search_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-queue-length-w2-search"
+        ))
+
+        assert len(configs) == 4
+        assert {config.routing_w2 for config in configs} == {
+            0.05, 0.10, 0.20, 0.30,
+        }
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.workload_type == "trace"
+            assert config.workload_name == "azure-http-top100-6rps"
+            assert config.req_rate == 6.0
+            assert config.duration == 180
+            assert config.gpu_ids == "1,2,3"
+            assert config.load_metric == "queue_length"
+            assert config.trace_file == (
+                "real_workload/outputs/"
+                "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        info = ExperimentSuite.get_suite_info(
+            "dp-realtrace-queue-length-w2-search"
+        )
+        assert info["config_count"] == 4
+
+    def test_dp_realtrace_token_count_w2_search_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-token-count-w2-search"
+        ))
+
+        assert len(configs) == 4
+        assert {config.routing_w2 for config in configs} == {
+            1.0, 2.0, 3.0, 4.0,
+        }
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.workload_type == "trace"
+            assert config.workload_name == "azure-http-top100-6rps"
+            assert config.req_rate == 6.0
+            assert config.duration == 180
+            assert config.gpu_ids == "1,2,3"
+            assert config.load_metric == "token_count"
+            assert config.trace_file == (
+                "real_workload/outputs/"
+                "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        info = ExperimentSuite.get_suite_info(
+            "dp-realtrace-token-count-w2-search"
+        )
+        assert info["config_count"] == 4
+
     def test_dp_rwpt_baseline_suite(self):
         """Test dp-rwpt-baseline suite generates correct configs"""
         configs = list(ExperimentSuite.get_configs("dp-rwpt-baseline"))
