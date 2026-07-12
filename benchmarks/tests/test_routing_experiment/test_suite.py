@@ -158,7 +158,7 @@ class TestExperimentSuite:
         """Test dp-realtrace-comparison suite generates paired trace configs"""
         configs = list(ExperimentSuite.get_configs("dp-realtrace-comparison"))
 
-        assert len(configs) == 4
+        assert len(configs) == 2
         for config in configs:
             config.validate()
             assert config.workload_type == "trace"
@@ -172,11 +172,13 @@ class TestExperimentSuite:
         rates = {config.req_rate for config in configs}
 
         assert strategies == {"round-robin", "adapter-aware"}
-        assert workloads == {"azure-http-top100-6rps", "azure-http-top100-8rps"}
-        assert rates == {6.0, 8.0}
+        assert workloads == {"azure-http-top100-4rps"}
+        assert rates == {4.0}
+        for config in configs:
+            if config.routing_strategy == "adapter-aware":
+                assert config.routing_w2 == 3.0
         assert trace_files == {
-            "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
-            "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
         }
 
     def test_dp_realtrace_comparison_suite_info(self):
@@ -184,11 +186,28 @@ class TestExperimentSuite:
         info = ExperimentSuite.get_suite_info("dp-realtrace-comparison")
 
         assert info["name"] == "dp-realtrace-comparison"
-        assert info["config_count"] == 4
-        assert info["parameters"]["workload_name"] == [
-            "azure-http-top100-6rps",
-            "azure-http-top100-8rps",
-        ]
+        assert info["config_count"] == 2
+        assert info["parameters"]["workload_name"] == ["azure-http-top100-4rps"]
+        assert info["parameters"]["routing_w2"] == [3.0]
+
+    def test_dp_realtrace_rwpt_4rps_debug_suite(self):
+        """Test the single-point real-trace RWPT diagnostic suite."""
+        configs = list(ExperimentSuite.get_configs("dp-realtrace-rwpt-4rps-debug"))
+
+        assert len(configs) == 1
+        config = configs[0]
+        config.validate()
+        assert config.routing_strategy == "adapter-aware"
+        assert config.workload_type == "trace"
+        assert config.workload_name == "azure-http-top100-4rps"
+        assert config.req_rate == 4.0
+        assert config.duration == 180
+        assert config.routing_w2 == 3.0
+        assert config.load_metric == "rwpt"
+        assert config.trace_file == (
+            "real_workload/outputs/"
+            "azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl"
+        )
     
     def test_dp_rwpt_baseline_suite(self):
         """Test dp-rwpt-baseline suite generates correct configs"""

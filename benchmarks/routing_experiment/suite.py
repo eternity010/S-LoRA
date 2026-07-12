@@ -60,6 +60,61 @@ class ExperimentSuite:
             "routing_w2": [0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
             "load_metric": ["token_count"],
         },
+        "dp-realtrace-w2-search": {
+            # 真实 trace 下的 RWPT 小范围 w2 搜索
+            # 目标：在保持真实请求到达序列不变的前提下，验证 w2 是否存在更合适的甜点位
+            # 只保留 adapter-aware + rwpt；round-robin 不受 w2 影响，不纳入本套件
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-roundrobin-6rps": {
+            # 真实 trace 下的 round-robin 单点基线
+            # 用于和 dp-realtrace-w2-search 的 6 rps RWPT 结果做同环境对比
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps",
+            ],
+        },
+        "dp-realtrace-rwpt-4rps-debug": {
+            # 单点诊断：复现真实 trace 4 rps 下的 RWPT 路由偏斜。
+            # 运行时配合 --debug，将逐请求路由决策写入 routing_debug/。
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [4.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-4rps",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
+        },
 
         # R-LoRA round-robin 基线（与 S-LoRA 基线参数对齐）
         # DP=3 round-robin，用于对比 DP 架构本身的收益（无智能路由）
@@ -250,12 +305,15 @@ class ExperimentSuite:
         if suite_name == "dp-realtrace-comparison":
             yield from cls.get_realtrace_comparison_configs(**defaults)
             return
+        if suite_name == "dp-realtrace-w2-search":
+            yield from cls.get_realtrace_w2_search_configs(**defaults)
+            return
         
         suite = cls.SUITES.get(suite_name)
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -286,6 +344,7 @@ class ExperimentSuite:
             "alpha-robustness",
             "alpha-robustness-sla",
             "dp-realtrace-comparison",
+            "dp-realtrace-w2-search",
         ]
     
     @classmethod
@@ -330,19 +389,33 @@ class ExperimentSuite:
                 "name": suite_name,
                 "parameters": {
                     "routing_strategy": ["round-robin", "adapter-aware"],
-                    "workload_name": ["azure-http-top100-6rps", "azure-http-top100-8rps"],
+                    "workload_name": ["azure-http-top100-4rps"],
+                    "routing_w2": [3.0],
                     "num_adapters": [100],
                     "duration": [180],
                     "load_metric": ["rwpt"],
                 },
-                "config_count": 4,
+                "config_count": 2,
+            }
+        if suite_name == "dp-realtrace-w2-search":
+            return {
+                "name": suite_name,
+                "parameters": {
+                    "routing_strategy": ["adapter-aware"],
+                    "workload_name": ["azure-http-top100-6rps"],
+                    "routing_w2": [3.0],
+                    "num_adapters": [100],
+                    "duration": [180],
+                    "load_metric": ["rwpt"],
+                },
+                "config_count": 1,
             }
         
         suite = cls.SUITES.get(suite_name)
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -421,14 +494,9 @@ class ExperimentSuite:
     def get_realtrace_comparison_configs(cls, **defaults):
         traces = [
             (
-                "azure-http-top100-6rps",
-                6.0,
-                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
-            ),
-            (
-                "azure-http-top100-8rps",
-                8.0,
-                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+                "azure-http-top100-4rps",
+                4.0,
+                "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
             ),
         ]
         strategies = ["round-robin", "adapter-aware"]
@@ -445,7 +513,35 @@ class ExperimentSuite:
                     "trace_file": trace_file,
                     "workload_name": workload_name,
                     "routing_w1": 1.0,
-                    "routing_w2": 1.0,
+                    "routing_w2": 3.0 if strategy == "adapter-aware" else 1.0,
+                    "load_metric": "rwpt",
+                }
+                yield ExperimentConfig(**{**defaults, **params})
+
+    @classmethod
+    def get_realtrace_w2_search_configs(cls, **defaults):
+        traces = [
+            (
+                "azure-http-top100-6rps",
+                6.0,
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ),
+        ]
+        w2_values = [3.0]
+
+        for workload_name, req_rate, trace_file in traces:
+            for w2 in w2_values:
+                params = {
+                    "routing_strategy": "adapter-aware",
+                    "alpha": 0.1,
+                    "num_adapters": 100,
+                    "req_rate": req_rate,
+                    "duration": 180,
+                    "workload_type": "trace",
+                    "trace_file": trace_file,
+                    "workload_name": workload_name,
+                    "routing_w1": 1.0,
+                    "routing_w2": w2,
                     "load_metric": "rwpt",
                 }
                 yield ExperimentConfig(**{**defaults, **params})
