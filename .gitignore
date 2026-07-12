@@ -29,6 +29,7 @@ benchmarks/**/server_log.txt
 benchmarks/exported_results/*.png
 benchmarks/exported_results/*.pdf
 benchmarks/exported_results/*.csv
+!benchmarks/exported_results/manual_experiment_registry.csv
 benchmarks/exported_results/*.json
 benchmarks/exported_results/*.jsonl
 
