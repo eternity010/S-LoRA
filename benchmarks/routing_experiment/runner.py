@@ -289,8 +289,8 @@ class ExperimentRunner:
                     )
                     
                     # Wait for server to finish processing and cool down
-                    print("  Waiting for server to stabilize (30s)...")
-                    time.sleep(30)
+                    print("  Waiting for server to stabilize (45s)...")
+                    time.sleep(45)
                     
                     self._log(f"success: tput={result.throughput:.2f}, lat={result.avg_latency:.3f}")
                     print(f"✓ Success: throughput={result.throughput:.2f} req/s, "
