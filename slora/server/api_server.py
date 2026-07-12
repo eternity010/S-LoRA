@@ -240,9 +240,13 @@ async def reset_adapter_cache(request: Request):
             with open(reset_result_file, 'r') as f:
                 result = json.load(f)
             
-            # 清理文件
-            os.remove(reset_trigger_file)
-            os.remove(reset_result_file)
+            # 清理文件。dp_manager 也会删除 trigger 文件，因此这里需要容忍
+            # trigger 已被处理方先删除的情况。
+            for path in (reset_trigger_file, reset_result_file):
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
             
             if result.get('success', False):
                 return JSONResponse({
