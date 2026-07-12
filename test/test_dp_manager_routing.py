@@ -15,12 +15,46 @@ Requirements:
 import pytest
 import asyncio
 import argparse
+import json
 import zmq
 import zmq.asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from slora.server.router.dp_manager import DataParallelRouterManager
 from slora.server.sampling_params import SamplingParams
+
+
+class TestConfigUpdateAcknowledgement:
+    def test_update_id_is_recorded_after_config_is_applied(self, tmp_path):
+        manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
+        manager.routing_strategy = "adapter-aware"
+        manager.router = Mock()
+        manager.router.update_config.return_value = {
+            "w1": 1.0,
+            "w2": 2.0,
+            "w3": 0.0,
+            "load_metric": "token_count",
+        }
+        manager.replica_manager = None
+        manager._write_stats_file = Mock()
+        update_file = tmp_path / "routing-config.json"
+        update_file.write_text(json.dumps({
+            "w2": 2.0,
+            "load_metric": "token_count",
+            "reset_stats": True,
+            "update_id": "update-123",
+        }))
+
+        manager._check_config_update(str(update_file))
+
+        manager.router.update_config.assert_called_once_with(
+            w2=2.0,
+            load_metric="token_count",
+            reset_stats=True,
+        )
+        assert manager._last_config_update_id == "update-123"
+        manager._write_stats_file.assert_called_once_with()
+        assert not update_file.exists()
 
 
 @pytest.fixture

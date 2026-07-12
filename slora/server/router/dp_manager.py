@@ -1274,8 +1274,18 @@ class DataParallelRouterManager:
                 'worker_request_counts': {str(i): self.stats['worker_request_counts'][i] for i in range(self.num_workers)},
                 'num_workers': self.num_workers,
                 'gpu_ids': self.gpu_ids,
-                'timestamp': time.time()
+                'timestamp': time.time(),
+                'config_update_id': getattr(self, '_last_config_update_id', None),
             }
+
+            routing_config = getattr(self.router, 'config', None)
+            if routing_config is not None:
+                stats_data['routing_config'] = {
+                    'w1': routing_config.w1,
+                    'w2': routing_config.w2,
+                    'w3': routing_config.w3,
+                    'load_metric': routing_config.load_metric,
+                }
             
             temp_file = stats_file + ".tmp"
             with open(temp_file, 'w') as f:
@@ -1309,6 +1319,8 @@ class DataParallelRouterManager:
             # 读取配置文件
             with open(config_update_file, 'r') as f:
                 update = json.load(f)
+
+            update_id = update.pop('update_id', None)
             
             # 删除配置文件（无论更新是否成功）
             os.remove(config_update_file)
@@ -1326,6 +1338,7 @@ class DataParallelRouterManager:
             
             # 应用配置更新
             result = self.router.update_config(**update)
+            self._last_config_update_id = update_id
             print(f"[DataParallelRouterManager] Routing config updated: {result}")
             
             # 同步更新 ReplicaManager 的 w1/w2 日志状态；复制触发阈值不跟随 w2 变化
@@ -1336,8 +1349,7 @@ class DataParallelRouterManager:
             
             # 如果执行了 reset_stats，立即刷新 stats 文件，
             # 避免 runner 读到 reset 前的旧快照（竞态修复）
-            if update.get('reset_stats', False):
-                self._write_stats_file()
+            self._write_stats_file()
             
         except json.JSONDecodeError as e:
             print(f"[DataParallelRouterManager] ERROR: Invalid config file format: {e}")

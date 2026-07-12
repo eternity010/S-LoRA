@@ -146,6 +146,45 @@ class TestExperimentRunnerRuntimeCleanup:
 
         assert ExperimentRunner._make_config_id(config_a) != ExperimentRunner._make_config_id(config_b)
 
+    def test_wait_for_routing_config_requires_matching_update_id(self, monkeypatch):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+        responses = iter([
+            SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "config_update_id": "old-update",
+                    "routing_config": {"w2": 2.0, "load_metric": "token_count"},
+                },
+            ),
+            SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "config_update_id": "target-update",
+                    "routing_config": {"w2": 2.0, "load_metric": "token_count"},
+                },
+            ),
+        ])
+        monkeypatch.setattr(
+            "routing_experiment.runner.requests.get",
+            lambda *_args, **_kwargs: next(responses),
+        )
+        monkeypatch.setattr("routing_experiment.runner.time.sleep", lambda _seconds: None)
+
+        assert runner._wait_for_routing_config(
+            "target-update",
+            {"w2": 2.0, "load_metric": "token_count"},
+            timeout=1.0,
+        )
+
+    def test_wait_for_routing_config_times_out_without_confirmation(self):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+
+        assert not runner._wait_for_routing_config(
+            "missing-update",
+            {"w2": 2.0},
+            timeout=0.0,
+        )
+
 
 class DummyRouter:
     def __init__(self):

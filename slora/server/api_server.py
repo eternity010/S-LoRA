@@ -133,7 +133,7 @@ async def update_routing_config(request: Request):
         }, status_code=400)
     
     # 验证参数
-    valid_keys = {"w1", "w2", "w3", "load_metric", "reset_stats"}
+    valid_keys = {"w1", "w2", "w3", "load_metric", "reset_stats", "update_id"}
     invalid_keys = set(request_dict.keys()) - valid_keys
     if invalid_keys:
         return JSONResponse({
@@ -163,6 +163,12 @@ async def update_routing_config(request: Request):
                 "error": "Invalid parameter type",
                 "message": f"reset_stats must be a boolean"
             }, status_code=400)
+
+    if "update_id" in request_dict and not isinstance(request_dict["update_id"], str):
+        return JSONResponse({
+            "error": "Invalid parameter type",
+            "message": "update_id must be a string"
+        }, status_code=400)
     
     # 验证 load_metric 参数
     if "load_metric" in request_dict:

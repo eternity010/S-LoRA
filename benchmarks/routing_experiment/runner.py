@@ -9,6 +9,7 @@ import json
 import signal
 import sys
 import os
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
@@ -365,13 +366,14 @@ class ExperimentRunner:
         # 动态更新路由配置 (w1/w2/w3/load_metric)，无需重启服务器
         if config.routing_strategy == 'adapter-aware':
             print("  2.5. Updating routing config (w1/w2/w3/load_metric)...")
-            self._update_routing_config(
+            if not self._update_routing_config(
                 w1=config.routing_w1,
                 w2=config.routing_w2,
                 w3=config.routing_w3,
                 load_metric=config.load_metric,
                 reset_stats=True  # 重置统计以获得干净的实验数据
-            )
+            ):
+                raise RuntimeError("Routing configuration update was not applied")
         
         # Collect stats before benchmark to calculate delta
         stats_before = self._collect_routing_stats()
@@ -852,6 +854,8 @@ class ExperimentRunner:
         if load_metric is not None:
             data['load_metric'] = load_metric
         data['reset_stats'] = reset_stats
+        update_id = uuid.uuid4().hex
+        data['update_id'] = update_id
 
         if not data or (len(data) == 1 and 'reset_stats' in data):
             self._log("_update_routing_config: no parameters to update")
@@ -871,11 +875,11 @@ class ExperimentRunner:
                 print(f"     Routing config updated: {result.get('config', {})}")
                 self._log(f"config update success: {result}")
 
-                # 等待配置生效 (服务器每 5 秒检查一次配置文件)
-                # 使用 10 秒确保至少经过一个完整轮询周期，
-                # 避免 stats_before 采集时 reset 尚未执行
-                time.sleep(10)
-                return True
+                expected = {
+                    key: value for key, value in data.items()
+                    if key in ("w1", "w2", "w3", "load_metric")
+                }
+                return self._wait_for_routing_config(update_id, expected)
             else:
                 error = resp.json() if resp.content else {}
                 print(f"     Warning: Failed to update routing config: {error}")
@@ -886,6 +890,31 @@ class ExperimentRunner:
             print(f"     Warning: Could not update routing config: {e}")
             self._log(f"config update error: {e}")
             return False
+
+    def _wait_for_routing_config(self, update_id: str, expected: Dict[str, Any],
+                                 timeout: float = 20.0) -> bool:
+        """Wait until the router confirms that a config update was applied."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                resp = requests.get(f"{self.server_host}/routing_stats", timeout=5)
+                if resp.status_code == 200:
+                    stats = resp.json()
+                    actual = stats.get("routing_config", {})
+                    values_match = all(
+                        actual.get(key) == value for key, value in expected.items()
+                    )
+                    if stats.get("config_update_id") == update_id and values_match:
+                        print(f"     Routing config applied: {actual}")
+                        self._log(f"config update applied: id={update_id} config={actual}")
+                        return True
+            except requests.RequestException:
+                pass
+            time.sleep(0.25)
+
+        print("     Warning: Timed out waiting for routing config to be applied")
+        self._log(f"config update confirmation timed out: id={update_id}")
+        return False
     
     def _reset_adapter_cache(self) -> bool:
         """
