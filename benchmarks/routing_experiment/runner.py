@@ -364,7 +364,8 @@ class ExperimentRunner:
             
             # 重置 adapter cache，确保实验公平性
             print("  1.5. Resetting adapter cache for fair comparison...")
-            self._reset_adapter_cache()
+            if not self._reset_adapter_cache():
+                raise RuntimeError("Adapter cache reset did not complete")
         
         # 动态更新路由配置 (w1/w2/w3/load_metric)，无需重启服务器
         if config.routing_strategy == 'adapter-aware':
@@ -385,7 +386,12 @@ class ExperimentRunner:
         result = self._run_benchmark(config)
         
         print("  4. Collecting routing statistics...")
-        stats_after = self._collect_routing_stats()
+        completed_requests = result.get("total_requests", 0) - result.get("num_abort", 0)
+        expected_total_requests = completed_requests
+        stats_after = self._collect_routing_stats(
+            min_total_requests=expected_total_requests,
+            timeout=15.0,
+        )
         
         # Calculate delta for worker_request_counts
         routing_stats = self._calculate_stats_delta(stats_before, stats_after)
@@ -499,7 +505,9 @@ class ExperimentRunner:
             "/tmp/slora_routing_stats.json.tmp",
             "/tmp/slora_routing_config_update.json",
             "/tmp/slora_reset_adapter_cache.trigger",
+            "/tmp/slora_reset_adapter_cache.trigger.tmp",
             "/tmp/slora_reset_adapter_cache.result",
+            "/tmp/slora_reset_adapter_cache.result.tmp",
         ]
 
         for path in runtime_files:
@@ -925,18 +933,36 @@ class ExperimentRunner:
             "num_abort": num_abort,
         }
     
-    def _collect_routing_stats(self) -> Dict[str, Any]:
-        """Collect routing statistics from server"""
-        try:
-            resp = requests.get(f"{self.server_host}/routing_stats", timeout=10)
-            if resp.status_code == 200:
-                stats = resp.json()
-                print(f"     Routing stats collected: {len(stats)} entries")
-                return stats
-        except requests.RequestException as e:
-            print(f"     Warning: Could not collect routing stats: {e}")
-        
-        return {}
+    def _collect_routing_stats(self, min_total_requests: int = None,
+                               timeout: float = 0.0) -> Dict[str, Any]:
+        """Collect routing statistics, optionally waiting for a complete snapshot."""
+        deadline = time.time() + timeout
+        latest_stats = {}
+
+        while True:
+            try:
+                resp = requests.get(f"{self.server_host}/routing_stats", timeout=10)
+                if resp.status_code == 200:
+                    latest_stats = resp.json()
+                    total_requests = latest_stats.get("total_requests", 0)
+                    if min_total_requests is None or total_requests >= min_total_requests:
+                        print(f"     Routing stats collected: {len(latest_stats)} entries")
+                        return latest_stats
+            except requests.RequestException as e:
+                if timeout <= 0:
+                    print(f"     Warning: Could not collect routing stats: {e}")
+                    return {}
+
+            if time.time() >= deadline:
+                if min_total_requests is not None:
+                    actual = latest_stats.get("total_requests", 0)
+                    print(
+                        "     Warning: Routing stats snapshot incomplete: "
+                        f"expected >= {min_total_requests}, got {actual}"
+                    )
+                return latest_stats
+
+            time.sleep(0.25)
     
     def _update_routing_config(self, w1: float = None, w2: float = None, 
                                w3: float = None, load_metric: str = None,
@@ -1040,22 +1066,29 @@ class ExperimentRunner:
             bool: 重置是否成功
         """
         self._log("_reset_adapter_cache: starting")
+        reset_id = uuid.uuid4().hex
         
         try:
             resp = requests.post(
                 f"{self.server_host}/reset_adapter_cache",
-                json={},
+                json={"reset_id": reset_id, "wait_seconds": 20.0},
                 timeout=30  # 给足够的时间让所有 Worker 完成
             )
             
             if resp.status_code == 200:
                 result = resp.json()
-                print(f"     Adapter cache reset: {result.get('message', 'success')}")
-                self._log(f"cache reset success: {result}")
-                
-                # 额外等待一小段时间确保状态同步
-                time.sleep(1)
-                return True
+                completed = (
+                    result.get("status") == "success"
+                    and result.get("reset_id") == reset_id
+                )
+                if completed:
+                    print(f"     Adapter cache reset completed: {result.get('message', 'success')}")
+                    self._log(f"cache reset success: {result}")
+                    return True
+
+                print(f"     Warning: Adapter cache reset was not confirmed: {result}")
+                self._log(f"cache reset unconfirmed: {result}")
+                return False
             else:
                 error = resp.json() if resp.content else {}
                 print(f"     Warning: Failed to reset adapter cache: {error}")

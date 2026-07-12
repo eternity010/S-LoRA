@@ -206,13 +206,15 @@ async def reset_adapter_cache(request: Request):
     
     通过文件通信触发 dp_manager 执行重置操作。
     
-    请求体 JSON 格式 (可选):
+    请求体 JSON 格式:
     {
-        "wait_seconds": float  # 等待完成的时间 (可选, 默认 3.0)
+        "reset_id": str,       # 本次 reset 的唯一 ID
+        "wait_seconds": float  # 等待完成的时间 (可选, 默认 20.0)
     }
     
     返回:
-    - 200: 重置命令已提交
+    - 200: 重置已完成
+    - 504: 等待重置完成超时
     - 500: 重置失败
     """
     import json
@@ -228,23 +230,41 @@ async def reset_adapter_cache(request: Request):
         except Exception:
             request_dict = {}
         
-        wait_seconds = request_dict.get('wait_seconds', 3.0)
+        wait_seconds = request_dict.get('wait_seconds', 20.0)
+        if not isinstance(wait_seconds, (int, float)) or wait_seconds <= 0:
+            return JSONResponse({
+                "status": "error",
+                "message": "wait_seconds must be a positive number"
+            }, status_code=400)
+        reset_id = request_dict.get('reset_id')
+        if not isinstance(reset_id, str) or not reset_id:
+            return JSONResponse({
+                "status": "error",
+                "message": "reset_id must be a non-empty string"
+            }, status_code=400)
         
         # 清除旧的结果文件
         if os.path.exists(reset_result_file):
             os.remove(reset_result_file)
         
         # 写入触发文件
-        with open(reset_trigger_file, 'w') as f:
-            json.dump({'timestamp': time.time()}, f)
+        trigger_temp_file = reset_trigger_file + ".tmp"
+        with open(trigger_temp_file, 'w') as f:
+            json.dump({'timestamp': time.time(), 'reset_id': reset_id}, f)
+        os.replace(trigger_temp_file, reset_trigger_file)
         
-        # 等待 dp_manager 处理并写入结果
-        await asyncio.sleep(wait_seconds)
-        
-        # 读取结果
-        if os.path.exists(reset_result_file):
+        deadline = time.time() + wait_seconds
+        while time.time() < deadline:
+            if not os.path.exists(reset_result_file):
+                await asyncio.sleep(0.1)
+                continue
+
             with open(reset_result_file, 'r') as f:
                 result = json.load(f)
+
+            if result.get('reset_id') != reset_id:
+                await asyncio.sleep(0.1)
+                continue
             
             # 清理文件。dp_manager 也会删除 trigger 文件，因此这里需要容忍
             # trigger 已被处理方先删除的情况。
@@ -258,7 +278,8 @@ async def reset_adapter_cache(request: Request):
                 return JSONResponse({
                     "status": "success",
                     "message": result.get('message', 'Adapter cache reset completed'),
-                    "num_workers": result.get('num_workers', 0)
+                    "num_workers": result.get('num_workers', 0),
+                    "reset_id": reset_id,
                 })
             else:
                 return JSONResponse({
@@ -266,12 +287,11 @@ async def reset_adapter_cache(request: Request):
                     "message": result.get('message', 'Reset failed'),
                     "error": result.get('error')
                 }, status_code=500)
-        else:
-            # 触发文件已写入，但没有结果文件，可能 dp_manager 还没处理
-            return JSONResponse({
-                "status": "submitted",
-                "message": f"Reset command submitted. Check server logs for completion."
-            })
+        return JSONResponse({
+            "status": "timeout",
+            "message": "Timed out waiting for adapter cache reset completion",
+            "reset_id": reset_id,
+        }, status_code=504)
             
     except Exception as e:
         return JSONResponse({

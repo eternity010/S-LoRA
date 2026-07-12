@@ -1067,12 +1067,19 @@ class DataParallelRouterManager:
                 - worker_results: 每个 Worker 的结果
                 - error: 错误信息（如果有）
         """
+        import json
+        import os
         import uuid
         
         print(f"[DataParallelRouterManager] Resetting adapter caches on all {self.num_workers} workers...")
         
         # 生成唯一的请求 ID
         reset_request_id = f"reset_{uuid.uuid4().hex[:8]}"
+        ack_file = f"/tmp/slora_reset_cache_{reset_request_id}.jsonl"
+        try:
+            os.remove(ack_file)
+        except FileNotFoundError:
+            pass
         
         # 向所有 Worker 发送 reset_cache 命令
         reset_command = {
@@ -1086,11 +1093,39 @@ class DataParallelRouterManager:
                 await self.request_senders[worker_id].send_json(reset_command)
             
             print(f"[DataParallelRouterManager] Reset commands sent to all workers, waiting for responses...")
-            
-            # 等待所有 Worker 的响应（通过 response merger 收集）
-            # 由于响应会通过 response_merger 返回，我们需要等待一段时间让 Worker 处理完成
-            # 这里使用简单的等待策略，实际生产环境可以实现更精确的同步机制
-            await asyncio.sleep(2.0)  # 等待 2 秒让所有 Worker 完成 reset
+
+            worker_results = {}
+            deadline = time.time() + 15.0
+            while time.time() < deadline and len(worker_results) < self.num_workers:
+                if os.path.exists(ack_file):
+                    try:
+                        with open(ack_file, 'r') as f:
+                            for line in f:
+                                response = json.loads(line)
+                                worker_id = response.get('worker_id')
+                                if worker_id is not None:
+                                    worker_results[int(worker_id)] = response
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                if len(worker_results) < self.num_workers:
+                    await asyncio.sleep(0.05)
+
+            missing_workers = sorted(set(range(self.num_workers)) - set(worker_results))
+            failed_workers = sorted(
+                worker_id for worker_id, result in worker_results.items()
+                if not result.get('success', False)
+            )
+            if missing_workers or failed_workers:
+                return {
+                    'success': False,
+                    'num_workers': self.num_workers,
+                    'worker_results': worker_results,
+                    'message': (
+                        f"Cache reset incomplete: missing={missing_workers}, "
+                        f"failed={failed_workers}"
+                    ),
+                    'error': 'Worker cache reset acknowledgement failed',
+                }
             
             # 重置路由器的 adapter 索引
             if hasattr(self.router, 'adapter_to_workers'):
@@ -1106,7 +1141,8 @@ class DataParallelRouterManager:
             return {
                 'success': True,
                 'num_workers': self.num_workers,
-                'message': f'Reset commands sent to {self.num_workers} workers',
+                'worker_results': worker_results,
+                'message': f'Reset completed on {self.num_workers} workers',
                 'error': None
             }
             
@@ -1119,6 +1155,11 @@ class DataParallelRouterManager:
                 'message': error_msg,
                 'error': str(e)
             }
+        finally:
+            try:
+                os.remove(ack_file)
+            except FileNotFoundError:
+                pass
 
     def _reset_experiment_stats(self) -> None:
         """Reset per-experiment statistics kept by the router manager and router."""
@@ -1384,15 +1425,22 @@ class DataParallelRouterManager:
         try:
             if not os.path.exists(trigger_file):
                 return
+
+            with open(trigger_file, 'r') as f:
+                trigger = json.load(f)
+            reset_id = trigger.get('reset_id')
             
             print(f"[DataParallelRouterManager] Cache reset triggered")
             
             # 执行重置
             result = await self.reset_all_adapter_caches()
+            result['reset_id'] = reset_id
             
             # 写入结果文件
-            with open(result_file, 'w') as f:
+            result_temp_file = result_file + ".tmp"
+            with open(result_temp_file, 'w') as f:
                 json.dump(result, f)
+            os.replace(result_temp_file, result_file)
             
             # 删除触发文件
             try:

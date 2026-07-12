@@ -18,6 +18,7 @@ import os
 import zmq
 import zmq.asyncio
 import asyncio
+import json
 from typing import Dict, Any
 
 from slora.server.io_struct import BatchTokenIdOut, ReqDetokenizationState
@@ -212,6 +213,16 @@ class ResponseMerger:
         
         # 发送到 Detokenization
         await self.detoken_sender.send_pyobj(detoken_msg)
+
+    @staticmethod
+    def _record_reset_cache_response(response: Dict[str, Any]) -> None:
+        """Persist a Worker cache-reset acknowledgement for the router manager."""
+        request_id = response.get('request_id')
+        if not request_id:
+            return
+        ack_file = f"/tmp/slora_reset_cache_{request_id}.jsonl"
+        with open(ack_file, 'a') as f:
+            f.write(json.dumps(response) + "\n")
     
     async def run(self) -> None:
         """
@@ -233,6 +244,10 @@ class ResponseMerger:
             try:
                 # 接收 Worker 响应（JSON 格式）
                 response = await self.worker_receiver.recv_json()
+
+                if response.get('type') == 'reset_cache_response':
+                    self._record_reset_cache_response(response)
+                    continue
                 
                 # 转发到 Detokenization
                 await self._forward_to_detokenization(response)

@@ -16,8 +16,10 @@ import pytest
 import asyncio
 import argparse
 import json
+import os
 import zmq
 import zmq.asyncio
+from types import SimpleNamespace
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from slora.server.router.dp_manager import DataParallelRouterManager
@@ -55,6 +57,62 @@ class TestConfigUpdateAcknowledgement:
         assert manager._last_config_update_id == "update-123"
         manager._write_stats_file.assert_called_once_with()
         assert not update_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_cache_reset_result_preserves_trigger_id(self, tmp_path):
+        manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
+        manager.reset_all_adapter_caches = AsyncMock(return_value={
+            "success": True,
+            "num_workers": 3,
+            "message": "completed",
+        })
+        trigger_file = tmp_path / "reset.trigger"
+        result_file = tmp_path / "reset.result"
+        trigger_file.write_text(json.dumps({"reset_id": "reset-123"}))
+
+        await manager._check_cache_reset(str(trigger_file), str(result_file))
+
+        result = json.loads(result_file.read_text())
+        assert result["reset_id"] == "reset-123"
+        assert result["success"] is True
+        assert not trigger_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_reset_waits_for_all_worker_acknowledgements(self, monkeypatch):
+        manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
+        manager.num_workers = 3
+        manager.router = Mock()
+        manager.router.adapter_to_workers = {"adapter": {0, 1}}
+        manager._reset_experiment_stats = Mock()
+        manager._write_stats_file = Mock()
+        ack_file = "/tmp/slora_reset_cache_reset_deadbeef.jsonl"
+        try:
+            os.remove(ack_file)
+        except FileNotFoundError:
+            pass
+
+        senders = []
+        for worker_id in range(3):
+            async def send_json(command, worker_id=worker_id):
+                with open(ack_file, "a") as f:
+                    f.write(json.dumps({
+                        "type": "reset_cache_response",
+                        "request_id": command["request_id"],
+                        "worker_id": worker_id,
+                        "success": True,
+                    }) + "\n")
+            senders.append(SimpleNamespace(send_json=send_json))
+        manager.request_senders = senders
+        monkeypatch.setattr("uuid.uuid4", lambda: SimpleNamespace(hex="deadbeef"))
+
+        result = await manager.reset_all_adapter_caches()
+
+        assert result["success"] is True
+        assert set(result["worker_results"]) == {0, 1, 2}
+        assert manager.router.adapter_to_workers == {}
+        manager._reset_experiment_stats.assert_called_once_with()
+        manager._write_stats_file.assert_called_once_with()
+        assert not os.path.exists(ack_file)
 
 
 @pytest.fixture

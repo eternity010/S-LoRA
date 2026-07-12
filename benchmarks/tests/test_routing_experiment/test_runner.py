@@ -105,7 +105,9 @@ class TestExperimentRunnerRuntimeCleanup:
             "/tmp/slora_routing_stats.json.tmp",
             "/tmp/slora_routing_config_update.json",
             "/tmp/slora_reset_adapter_cache.trigger",
+            "/tmp/slora_reset_adapter_cache.trigger.tmp",
             "/tmp/slora_reset_adapter_cache.result",
+            "/tmp/slora_reset_adapter_cache.result.tmp",
         ]
 
         created = []
@@ -186,6 +188,66 @@ class TestExperimentRunnerRuntimeCleanup:
             {"w2": 2.0},
             timeout=0.0,
         )
+
+    def test_collect_routing_stats_waits_for_complete_snapshot(self, monkeypatch):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+        responses = iter([
+            SimpleNamespace(
+                status_code=200,
+                json=lambda: {"total_requests": 1070},
+            ),
+            SimpleNamespace(
+                status_code=200,
+                json=lambda: {"total_requests": 1080},
+            ),
+        ])
+        monkeypatch.setattr(
+            "routing_experiment.runner.requests.get",
+            lambda *_args, **_kwargs: next(responses),
+        )
+        monkeypatch.setattr("routing_experiment.runner.time.sleep", lambda _seconds: None)
+
+        stats = runner._collect_routing_stats(
+            min_total_requests=1080,
+            timeout=1.0,
+        )
+
+        assert stats["total_requests"] == 1080
+
+    def test_reset_adapter_cache_requires_matching_completion_id(self, monkeypatch):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+
+        def post(_url, json, timeout):
+            assert timeout == 30
+            assert json["wait_seconds"] == 20.0
+            return SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "status": "success",
+                    "reset_id": json["reset_id"],
+                    "message": "completed",
+                },
+            )
+
+        monkeypatch.setattr("routing_experiment.runner.requests.post", post)
+
+        assert runner._reset_adapter_cache()
+
+    def test_reset_adapter_cache_rejects_stale_completion_id(self, monkeypatch):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+        monkeypatch.setattr(
+            "routing_experiment.runner.requests.post",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                status_code=200,
+                json=lambda: {
+                    "status": "success",
+                    "reset_id": "stale-reset",
+                    "message": "completed",
+                },
+            ),
+        )
+
+        assert not runner._reset_adapter_cache()
 
 
 class TestExperimentRunnerRequestTracing:
