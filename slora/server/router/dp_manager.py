@@ -1142,13 +1142,17 @@ class DataParallelRouterManager:
                 if not result.get('success', False)
             )
             if missing_workers or failed_workers:
+                worker_errors = {
+                    worker_id: worker_results[worker_id].get('error')
+                    for worker_id in failed_workers
+                }
                 return {
                     'success': False,
                     'num_workers': self.num_workers,
                     'worker_results': worker_results,
                     'message': (
                         f"Cache reset incomplete: missing={missing_workers}, "
-                        f"failed={failed_workers}"
+                        f"failed={failed_workers}, errors={worker_errors}"
                     ),
                     'error': 'Worker cache reset acknowledgement failed',
                 }

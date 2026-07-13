@@ -114,6 +114,43 @@ class TestConfigUpdateAcknowledgement:
         manager._write_stats_file.assert_called_once_with()
         assert not os.path.exists(ack_file)
 
+    @pytest.mark.asyncio
+    async def test_reset_reports_worker_acknowledgement_errors(self, monkeypatch):
+        manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
+        manager.num_workers = 2
+        manager.router = Mock()
+        manager._reset_experiment_stats = Mock()
+        manager._write_stats_file = Mock()
+        ack_file = "/tmp/slora_reset_cache_reset_failed.jsonl"
+        try:
+            os.remove(ack_file)
+        except FileNotFoundError:
+            pass
+
+        senders = []
+        for worker_id in range(2):
+            async def send_json(command, worker_id=worker_id):
+                with open(ack_file, "a") as f:
+                    f.write(json.dumps({
+                        "type": "reset_cache_response",
+                        "request_id": command["request_id"],
+                        "worker_id": worker_id,
+                        "success": worker_id == 0,
+                        "error": None if worker_id == 0 else "remote reset failed",
+                    }) + "\n")
+            senders.append(SimpleNamespace(send_json=send_json))
+        manager.request_senders = senders
+        monkeypatch.setattr("uuid.uuid4", lambda: SimpleNamespace(hex="failed"))
+
+        result = await manager.reset_all_adapter_caches()
+
+        assert result["success"] is False
+        assert result["worker_results"][1]["error"] == "remote reset failed"
+        assert "errors={1: 'remote reset failed'}" in result["message"]
+        manager._reset_experiment_stats.assert_not_called()
+        manager._write_stats_file.assert_not_called()
+        assert not os.path.exists(ack_file)
+
 
 @pytest.fixture
 def mock_args():
