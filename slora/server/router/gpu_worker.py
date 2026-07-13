@@ -193,11 +193,13 @@ class GPUWorker:
         cached_adapters = set(self.adapter_cache.keys()) if self.adapter_cache else set()
         
         # 获取队列长度
-        queue_length = 0
+        waiting_request_count = 0
+        current_batch_size = 0
         if self.req_queue:
-            queue_length = len(self.req_queue.waiting_req_list)
+            waiting_request_count = len(self.req_queue.waiting_req_list)
         if self.current_batch:
-            queue_length += len(self.current_batch.reqs)
+            current_batch_size = len(self.current_batch.reqs)
+        queue_length = waiting_request_count + current_batch_size
         
         # 获取可用 GPU 显存
         gpu_memory_free = 0
@@ -253,11 +255,16 @@ class GPUWorker:
         # 采集 active_decode_seqs：当前 batch 中正在 decode 的序列数
         # Requirements: 2.2, 2.4
         active_decode_seqs = 0
+        current_batch_prompt_tokens = 0
         try:
             if self.current_batch and self.current_batch.reqs:
                 active_decode_seqs = len(self.current_batch.reqs)
+                current_batch_prompt_tokens = sum(
+                    len(req.prompt_ids) for req in self.current_batch.reqs
+                )
         except Exception:
             active_decode_seqs = 0
+            current_batch_prompt_tokens = 0
 
         # 采集 pool_used_ratio：内存池使用率
         # Requirements: 2.3, 2.4
@@ -279,6 +286,9 @@ class GPUWorker:
             'pending_prefill_tokens': pending_prefill_tokens,
             'pending_raw_tokens': pending_raw_tokens,
             'active_decode_seqs': active_decode_seqs,
+            'waiting_request_count': waiting_request_count,
+            'current_batch_size': current_batch_size,
+            'current_batch_prompt_tokens': current_batch_prompt_tokens,
             'pool_used_ratio': pool_used_ratio,
             'profiled_alpha': self._profiled_alpha,
             'hidden_dim': self._hidden_dim,

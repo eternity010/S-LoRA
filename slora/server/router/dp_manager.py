@@ -420,6 +420,7 @@ class DataParallelRouterManager:
             return
 
         state.queue_length += 1
+        state.optimistic_request_count += 1
 
         routing_config = getattr(self.router, 'config', None)
         if routing_config is None:
@@ -439,6 +440,7 @@ class DataParallelRouterManager:
 
         if routing_config.load_metric == 'token_count':
             state.pending_raw_tokens += prompt_len
+            state.optimistic_raw_tokens += prompt_len
             return
 
         if routing_config.load_metric != 'rwpt':
@@ -456,6 +458,7 @@ class DataParallelRouterManager:
 
         estimated_prefill = int(prompt_len * (1.0 + gamma * rank))
         state.pending_prefill_tokens += estimated_prefill
+        state.optimistic_prefill_tokens += estimated_prefill
 
     def _build_routing_debug_record(self, worker_id: int, request: dict) -> Optional[Dict[str, Any]]:
         if self.routing_strategy != 'adapter-aware' or not hasattr(self.router, 'worker_states'):
@@ -472,6 +475,7 @@ class DataParallelRouterManager:
         capacity = getattr(self.router, '_capacity', 0)
         load_metric = getattr(routing_config, 'load_metric', 'rwpt') if routing_config else 'rwpt'
         worker_debug = {}
+        debug_time = time.time()
 
         for wid, state in sorted(self.router.worker_states.items()):
             if load_metric == 'queue_length':
@@ -503,12 +507,34 @@ class DataParallelRouterManager:
                 'pending_prefill_tokens': state.pending_prefill_tokens,
                 'pending_raw_tokens': state.pending_raw_tokens,
                 'active_decode_seqs': state.active_decode_seqs,
+                'waiting_request_count': state.waiting_request_count,
+                'current_batch_size': state.current_batch_size,
+                'current_batch_prompt_tokens': state.current_batch_prompt_tokens,
+                'report_seq': state.report_seq,
+                'worker_report_time': state.worker_report_time,
+                'router_received_time': state.router_received_time,
+                'report_age_ms': (
+                    max(0.0, (debug_time - state.worker_report_time) * 1000.0)
+                    if state.worker_report_time > 0 else None
+                ),
+                'transport_delay_ms': (
+                    max(0.0, (state.router_received_time - state.worker_report_time) * 1000.0)
+                    if state.worker_report_time > 0 and state.router_received_time > 0 else None
+                ),
+                'optimistic_request_count': state.optimistic_request_count,
+                'optimistic_raw_tokens': state.optimistic_raw_tokens,
+                'optimistic_prefill_tokens': state.optimistic_prefill_tokens,
+                'state_source': (
+                    'worker_report+optimistic'
+                    if state.optimistic_request_count > 0
+                    else ('worker_report' if state.report_seq > 0 else 'initial')
+                ),
                 'cached_adapters': len(state.cached_adapters),
                 'is_healthy': state.is_healthy,
             }
 
         return {
-            'timestamp': time.time(),
+            'timestamp': debug_time,
             'request_id': request.get('request_id'),
             'adapter_dir': adapter_dir,
             'adapter_name': adapter_dir.rstrip('/').split('/')[-1] if adapter_dir else '',
@@ -1708,6 +1734,7 @@ class DataParallelRouterManager:
                     continue
                 
                 # 创建 WorkerState 对象
+                router_received_time = time.time()
                 state = WorkerState(
                     worker_id=worker_id,
                     cached_adapters=set(message.get('cached_adapters', [])),
@@ -1720,6 +1747,16 @@ class DataParallelRouterManager:
                     pending_raw_tokens=message.get('pending_raw_tokens', 0),
                     active_decode_seqs=message.get('active_decode_seqs', 0),
                     pool_used_ratio=message.get('pool_used_ratio', 0.0),
+                    report_seq=message.get('report_seq', 0),
+                    worker_report_time=message.get(
+                        'worker_report_time', message.get('timestamp', 0.0)
+                    ),
+                    router_received_time=router_received_time,
+                    waiting_request_count=message.get('waiting_request_count', 0),
+                    current_batch_size=message.get('current_batch_size', 0),
+                    current_batch_prompt_tokens=message.get(
+                        'current_batch_prompt_tokens', 0
+                    ),
                     # Hot adapter replication: top-K RWPT contributors
                     top_k_rwpt_adapters=[
                         tuple(t) for t in message.get('top_k_rwpt_adapters', [])

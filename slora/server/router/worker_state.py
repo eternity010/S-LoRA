@@ -48,6 +48,16 @@ class WorkerState:
     pending_raw_tokens: int = 0        # 等待队列中 prompt token 总数（不含 rank 加权）
     active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
     pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
+    # State-report diagnostics. These fields do not participate in scoring.
+    report_seq: int = 0
+    worker_report_time: float = 0.0
+    router_received_time: float = 0.0
+    waiting_request_count: int = 0
+    current_batch_size: int = 0
+    current_batch_prompt_tokens: int = 0
+    optimistic_request_count: int = 0
+    optimistic_raw_tokens: int = 0
+    optimistic_prefill_tokens: int = 0
     # Hot adapter replication: top-K RWPT contributors
     top_k_rwpt_adapters: List[Tuple[str, float]] = field(default_factory=list)  # [(adapter_dir, rwpt_contribution), ...]
     
@@ -75,6 +85,15 @@ class WorkerState:
             'pending_raw_tokens': self.pending_raw_tokens,
             'active_decode_seqs': self.active_decode_seqs,
             'pool_used_ratio': self.pool_used_ratio,
+            'report_seq': self.report_seq,
+            'worker_report_time': self.worker_report_time,
+            'router_received_time': self.router_received_time,
+            'waiting_request_count': self.waiting_request_count,
+            'current_batch_size': self.current_batch_size,
+            'current_batch_prompt_tokens': self.current_batch_prompt_tokens,
+            'optimistic_request_count': self.optimistic_request_count,
+            'optimistic_raw_tokens': self.optimistic_raw_tokens,
+            'optimistic_prefill_tokens': self.optimistic_prefill_tokens,
             'top_k_rwpt_adapters': [list(t) for t in self.top_k_rwpt_adapters],
         }
     
@@ -95,6 +114,15 @@ class WorkerState:
             pending_raw_tokens=data.get('pending_raw_tokens', 0),
             active_decode_seqs=data.get('active_decode_seqs', 0),
             pool_used_ratio=data.get('pool_used_ratio', 0.0),
+            report_seq=data.get('report_seq', 0),
+            worker_report_time=data.get('worker_report_time', 0.0),
+            router_received_time=data.get('router_received_time', 0.0),
+            waiting_request_count=data.get('waiting_request_count', 0),
+            current_batch_size=data.get('current_batch_size', 0),
+            current_batch_prompt_tokens=data.get('current_batch_prompt_tokens', 0),
+            optimistic_request_count=data.get('optimistic_request_count', 0),
+            optimistic_raw_tokens=data.get('optimistic_raw_tokens', 0),
+            optimistic_prefill_tokens=data.get('optimistic_prefill_tokens', 0),
             top_k_rwpt_adapters=[tuple(t) for t in data.get('top_k_rwpt_adapters', [])],
         )
 

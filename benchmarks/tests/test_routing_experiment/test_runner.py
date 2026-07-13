@@ -406,6 +406,8 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         assert state.queue_length == 1
         assert state.pending_raw_tokens == 120
         assert state.pending_prefill_tokens == 0
+        assert state.optimistic_request_count == 1
+        assert state.optimistic_raw_tokens == 120
 
     def test_optimistic_update_does_not_increment_raw_tokens_for_queue_length(self):
         manager = self._make_adapter_aware_manager()

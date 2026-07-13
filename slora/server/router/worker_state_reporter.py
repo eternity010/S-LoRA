@@ -90,6 +90,7 @@ class WorkerStateReporter:
         
         # 统计信息
         self._report_count = 0
+        self._report_sequence = 0
         self._last_report_time = 0.0
         self._error_count = 0
         
@@ -182,8 +183,14 @@ class WorkerStateReporter:
                     max_rank=state_dict.get('max_rank', 0),
                     # RWPT fields
                     pending_prefill_tokens=state_dict.get('pending_prefill_tokens', 0),
+                    pending_raw_tokens=state_dict.get('pending_raw_tokens', 0),
                     active_decode_seqs=state_dict.get('active_decode_seqs', 0),
                     pool_used_ratio=state_dict.get('pool_used_ratio', 0.0),
+                    waiting_request_count=state_dict.get('waiting_request_count', 0),
+                    current_batch_size=state_dict.get('current_batch_size', 0),
+                    current_batch_prompt_tokens=state_dict.get(
+                        'current_batch_prompt_tokens', 0
+                    ),
                     top_k_rwpt_adapters=state_dict.get('top_k_rwpt_adapters', []),
                 )
             except Exception as e:
@@ -201,6 +208,7 @@ class WorkerStateReporter:
             min_rank=0,
             max_rank=0,
             pending_prefill_tokens=0,
+            pending_raw_tokens=0,
             active_decode_seqs=0,
             pool_used_ratio=0.0,
         )
@@ -217,21 +225,29 @@ class WorkerStateReporter:
         
         Requirements: 1.1, 1.2, 1.3
         """
+        report_time = time.time()
+        self._report_sequence += 1
         msg = {
             'type': 'worker_state',
             'worker_id': state.worker_id,
             'cached_adapters': list(state.cached_adapters),
             'queue_length': state.queue_length,
             'gpu_memory_free': state.gpu_memory_free,
-            'timestamp': time.time(),
+            'timestamp': report_time,
+            'report_seq': self._report_sequence,
+            'worker_report_time': report_time,
             # Rank distribution fields for Rank-Aware Routing
             'avg_rank': state.avg_rank,
             'min_rank': state.min_rank,
             'max_rank': state.max_rank,
             # RWPT fields
             'pending_prefill_tokens': state.pending_prefill_tokens,
+            'pending_raw_tokens': state.pending_raw_tokens,
             'active_decode_seqs': state.active_decode_seqs,
             'pool_used_ratio': state.pool_used_ratio,
+            'waiting_request_count': state.waiting_request_count,
+            'current_batch_size': state.current_batch_size,
+            'current_batch_prompt_tokens': state.current_batch_prompt_tokens,
             # Hot adapter replication: top-K RWPT contributors
             'top_k_rwpt_adapters': [list(t) for t in state.top_k_rwpt_adapters],
         }

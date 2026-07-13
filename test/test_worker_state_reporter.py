@@ -77,7 +77,11 @@ class TestStateGetter:
             return {
                 'cached_adapters': {'adapter1', 'adapter2'},
                 'queue_length': 10,
-                'gpu_memory_free': 1000000
+                'gpu_memory_free': 1000000,
+                'pending_raw_tokens': 1234,
+                'waiting_request_count': 3,
+                'current_batch_size': 4,
+                'current_batch_prompt_tokens': 567,
             }
         
         reporter = WorkerStateReporter(worker_id=3, state_getter=getter)
@@ -87,6 +91,10 @@ class TestStateGetter:
         assert state.cached_adapters == {'adapter1', 'adapter2'}
         assert state.queue_length == 10
         assert state.gpu_memory_free == 1000000
+        assert state.pending_raw_tokens == 1234
+        assert state.waiting_request_count == 3
+        assert state.current_batch_size == 4
+        assert state.current_batch_prompt_tokens == 567
         assert state.is_healthy is True
     
     def test_get_current_state_with_list_adapters(self):
@@ -139,7 +147,11 @@ class TestStateMessage:
             worker_id=1,
             cached_adapters={'adapter1', 'adapter2'},
             queue_length=5,
-            gpu_memory_free=2000000
+            gpu_memory_free=2000000,
+            pending_raw_tokens=900,
+            waiting_request_count=2,
+            current_batch_size=3,
+            current_batch_prompt_tokens=700,
         )
         
         message = reporter._create_state_message(state)
@@ -148,6 +160,12 @@ class TestStateMessage:
         assert message['worker_id'] == 1
         assert set(message['cached_adapters']) == {'adapter1', 'adapter2'}
         assert message['queue_length'] == 5
+        assert message['pending_raw_tokens'] == 900
+        assert message['waiting_request_count'] == 2
+        assert message['current_batch_size'] == 3
+        assert message['current_batch_prompt_tokens'] == 700
+        assert message['report_seq'] == 1
+        assert message['worker_report_time'] == message['timestamp']
         assert message['gpu_memory_free'] == 2000000
         assert 'timestamp' in message
         assert isinstance(message['timestamp'], float)
