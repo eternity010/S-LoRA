@@ -590,7 +590,11 @@ class ModelRpcClient:
         
         用于实验间的 cache 重置，确保实验公平性。
         """
-        self._offload_adapters(reserved_reqs=[])
+        ans = self._offload_adapters([])
+        if self.use_rpc:
+            await asyncio.to_thread(ans.wait)
+            return ans.value
+        return ans
     
     async def update_adapter_stats(self, adapter_dirs):
         """更新适配器使用统计信息"""
