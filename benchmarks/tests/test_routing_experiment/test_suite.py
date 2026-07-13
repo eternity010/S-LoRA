@@ -290,6 +290,58 @@ class TestExperimentSuite:
         )
         assert info["config_count"] == 4
 
+    def test_dp_realtrace_load_metric_comparison_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-load-metric-comparison"
+        ))
+
+        assert len(configs) == 3
+        assert {(config.load_metric, config.routing_w2) for config in configs} == {
+            ("queue_length", 0.20),
+            ("token_count", 3.0),
+            ("rwpt", 3.0),
+        }
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.workload_type == "trace"
+            assert config.workload_name == "azure-http-top100-6rps"
+            assert config.req_rate == 6.0
+            assert config.duration == 180
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file == (
+                "real_workload/outputs/"
+                "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        info = ExperimentSuite.get_suite_info(
+            "dp-realtrace-load-metric-comparison"
+        )
+        assert info["config_count"] == 3
+        assert set(info["parameters"]["metric_w2_pairs"]) == {
+            ("queue_length", 0.20),
+            ("token_count", 3.0),
+            ("rwpt", 3.0),
+        }
+
+    def test_dp_realtrace_token_count_state_debug_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-token-count-state-debug"
+        ))
+
+        assert len(configs) == 1
+        config = configs[0]
+        config.validate()
+        assert config.routing_strategy == "adapter-aware"
+        assert config.load_metric == "token_count"
+        assert config.routing_w2 == 3.0
+        assert config.req_rate == 6.0
+        assert config.duration == 60
+        assert config.gpu_ids == "1,2,3"
+        assert config.trace_file.endswith(
+            "azure_llm_http_top100_6rps_60s_capped2048_512_debug.jsonl"
+        )
+
     def test_dp_rwpt_baseline_suite(self):
         """Test dp-rwpt-baseline suite generates correct configs"""
         configs = list(ExperimentSuite.get_configs("dp-rwpt-baseline"))
@@ -310,6 +362,39 @@ class TestExperimentSuite:
         assert strategies == {"adapter-aware"}
         assert alphas == {0.1, 0.3, 0.8}
         assert load_metrics == {"rwpt"}
+
+    @pytest.mark.parametrize(
+        ("suite_name", "load_metric", "expected_w2"),
+        [
+            ("dp-tokencount-baseline", "token_count", 3.0),
+            ("dp-queuelength-baseline", "queue_length", 0.20),
+        ],
+    )
+    def test_metric_baselines_use_calibrated_w2(
+        self, suite_name, load_metric, expected_w2
+    ):
+        configs = list(ExperimentSuite.get_configs(suite_name))
+
+        assert len(configs) == 3
+        assert {config.load_metric for config in configs} == {load_metric}
+        assert {config.routing_w2 for config in configs} == {expected_w2}
+        for config in configs:
+            config.validate()
+
+    def test_alpha_robustness_sla_uses_current_metric_w2(self):
+        configs = list(ExperimentSuite.get_configs("alpha-robustness-sla"))
+        metric_w2 = {
+            (config.load_metric, config.routing_w2) for config in configs
+        }
+
+        assert metric_w2 == {
+            ("rwpt", 1.0),
+            ("token_count", 3.0),
+            ("queue_length", 0.20),
+        }
+
+        info = ExperimentSuite.get_suite_info("alpha-robustness-sla")
+        assert set(info["parameters"]["metric_w2_pairs"]) == metric_w2
     
     def test_unknown_suite_raises_error(self):
         """Test requesting unknown suite raises ValueError"""

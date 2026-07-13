@@ -118,6 +118,22 @@ class ExperimentSuite:
             "routing_w2": [1.0, 2.0, 3.0, 4.0],
             "load_metric": ["token_count"],
         },
+        "dp-realtrace-token-count-state-debug": {
+            # Short single-point run for validating worker state propagation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [60],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_60s_capped2048_512_debug.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-6rps-60s-debug"],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["token_count"],
+        },
         "dp-realtrace-roundrobin-6rps": {
             # 真实 trace 下的 round-robin 单点基线
             # 用于和 dp-realtrace-w2-search 的 6 rps RWPT 结果做同环境对比
@@ -273,7 +289,7 @@ class ExperimentSuite:
         },
 
         # 图 6 / 系统基线对比用的 token_count 对照组
-        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 token_count + w2=1.5
+        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 token_count + w2=3.0
         # 3 alphas = 3 experiments
         "dp-tokencount-baseline": {
             "routing_strategy": ["adapter-aware"],
@@ -282,12 +298,12 @@ class ExperimentSuite:
             "req_rate": [6.0],
             "duration": [240],
             "routing_w1": [1.0],
-            "routing_w2": [1.5],
+            "routing_w2": [3.0],
             "load_metric": ["token_count"],
         },
 
         # 图 6 / 系统基线对比用的 queue_length 对照组
-        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 queue_length + w2=0.10
+        # 与 dp-rwpt-baseline 保持相同 alpha、req_rate、duration，仅切换为 queue_length + w2=0.20
         # 3 alphas = 3 experiments
         "dp-queuelength-baseline": {
             "routing_strategy": ["adapter-aware"],
@@ -296,7 +312,7 @@ class ExperimentSuite:
             "req_rate": [6.0],
             "duration": [240],
             "routing_w1": [1.0],
-            "routing_w2": [0.10],
+            "routing_w2": [0.20],
             "load_metric": ["queue_length"],
         },
 
@@ -345,6 +361,9 @@ class ExperimentSuite:
         if suite_name == "dp-realtrace-comparison-2rps":
             yield from cls.get_realtrace_2rps_comparison_configs(**defaults)
             return
+        if suite_name == "dp-realtrace-load-metric-comparison":
+            yield from cls.get_realtrace_load_metric_comparison_configs(**defaults)
+            return
         if suite_name == "dp-realtrace-w2-search":
             yield from cls.get_realtrace_w2_search_configs(**defaults)
             return
@@ -353,7 +372,7 @@ class ExperimentSuite:
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-w2-search"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -385,6 +404,7 @@ class ExperimentSuite:
             "alpha-robustness-sla",
             "dp-realtrace-comparison",
             "dp-realtrace-comparison-2rps",
+            "dp-realtrace-load-metric-comparison",
             "dp-realtrace-w2-search",
         ]
     
@@ -420,7 +440,7 @@ class ExperimentSuite:
                 "parameters": {
                     "alpha": [0.1, 0.3, 0.8],
                     "metric_w2_pairs": [
-                        ("rwpt", 1.0), ("token_count", 1.5), ("queue_length", 0.10),
+                        ("rwpt", 1.0), ("token_count", 3.0), ("queue_length", 0.20),
                     ],
                 },
                 "config_count": 9,
@@ -451,6 +471,22 @@ class ExperimentSuite:
                 },
                 "config_count": 2,
             }
+        if suite_name == "dp-realtrace-load-metric-comparison":
+            return {
+                "name": suite_name,
+                "parameters": {
+                    "routing_strategy": ["adapter-aware"],
+                    "workload_name": ["azure-http-top100-6rps"],
+                    "metric_w2_pairs": [
+                        ("queue_length", 0.20),
+                        ("token_count", 3.0),
+                        ("rwpt", 3.0),
+                    ],
+                    "num_adapters": [100],
+                    "duration": [180],
+                },
+                "config_count": 3,
+            }
         if suite_name == "dp-realtrace-w2-search":
             return {
                 "name": suite_name,
@@ -469,7 +505,7 @@ class ExperimentSuite:
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-w2-search"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -595,6 +631,34 @@ class ExperimentSuite:
             yield ExperimentConfig(**{**defaults, **params})
 
     @classmethod
+    def get_realtrace_load_metric_comparison_configs(cls, **defaults):
+        trace_file = (
+            "real_workload/outputs/"
+            "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
+        )
+        metric_w2_pairs = [
+            ("queue_length", 0.20),
+            ("token_count", 3.0),
+            ("rwpt", 3.0),
+        ]
+
+        for load_metric, w2 in metric_w2_pairs:
+            params = {
+                "routing_strategy": "adapter-aware",
+                "alpha": 0.1,
+                "num_adapters": 100,
+                "req_rate": 6.0,
+                "duration": 180,
+                "workload_type": "trace",
+                "trace_file": trace_file,
+                "workload_name": "azure-http-top100-6rps",
+                "routing_w1": 1.0,
+                "routing_w2": w2,
+                "load_metric": load_metric,
+            }
+            yield ExperimentConfig(**{**defaults, **params})
+
+    @classmethod
     def get_realtrace_w2_search_configs(cls, **defaults):
         traces = [
             (
@@ -625,22 +689,19 @@ class ExperimentSuite:
     @classmethod
     def get_alpha_robustness_sla_configs(cls, **defaults):
         """
-        Alpha 鲁棒性实验（SLA 约束模型 w2）：固定每个 metric 的最优 w2，变化 alpha。
+        Alpha 鲁棒性实验：固定每个 metric 的当前主线 w2，变化 alpha。
         3 metrics × 3 alphas = 9 experiments.
 
-        w2 来源：SLA 约束最大化模型（ε=5% P90, δ=2% Tput），基于 max_lora_ratio=0.2 实验数据
-          max Cache_Hit_Rate
-          s.t. P90 ≤ P90_min*(1+0.05), Tput ≥ Tput_max*(1-0.02)
-
-        选取结果：
+        token_count 和 queue_length 的 w2 来源于 6 rps 真实 trace 校准。
+        当前主线设置：
           rwpt:         w2=1.0   (P90=14.14s, tput=5.553, cache=72.1%)
-          token_count:  w2=1.5   (P90=14.68s, tput=5.508, cache=75.4%)
-          queue_length: w2=0.10  (P90=15.83s, tput=5.504, cache=66.7%)
+          token_count:  w2=3.0
+          queue_length: w2=0.20
         """
         metric_w2_pairs = [
             ("rwpt", 1.0),
-            ("token_count", 1.5),
-            ("queue_length", 0.10),
+            ("token_count", 3.0),
+            ("queue_length", 0.20),
         ]
         alphas = [0.1, 0.3, 0.8]
 
