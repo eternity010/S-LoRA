@@ -400,6 +400,13 @@ class WorkerStateReporter:
         else:
             logger.debug(f"Worker {self.worker_id} report_now called but no socket")
             return False
+
+    async def report_if_due(self) -> bool:
+        """Report immediately when the periodic interval has elapsed."""
+        interval_sec = self.report_interval_ms / 1000.0
+        if time.time() - self._last_report_time < interval_sec:
+            return False
+        return await self.report_now()
     
     def report_now_sync(self) -> None:
         """

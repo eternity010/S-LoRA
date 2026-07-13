@@ -354,6 +354,12 @@ class GPUWorker:
         
         print(f"[Worker {self.worker_id}] State reporter configured: "
               f"address={router_address}, interval={report_interval_ms}ms")
+
+    async def _cooperative_checkpoint(self) -> None:
+        """Let request receiving and state reporting run between model steps."""
+        if self.state_reporter:
+            await self.state_reporter.report_if_due()
+        await asyncio.sleep(0)
     
     async def _update_actual_adapter_usage(self) -> None:
         """
@@ -444,6 +450,7 @@ class GPUWorker:
             
             # 调用 RPC 加载 adapters
             await self.model_rpc.load_adapters(adapter_dirs)
+            await self._cooperative_checkpoint()
             
             print(f"[Worker {self.worker_id}] Loaded {len(adapter_dirs)} adapters: "
                   f"{[d.split('/')[-1] for d in list(adapter_dirs)[:5]]}")
@@ -1143,18 +1150,22 @@ class GPUWorker:
                 # 1. 初始化批次（将请求信息传递给 RPC）
                 reqs_rpc = [req.to_rpc_obj() for req in batch.reqs]
                 await self.model_rpc.init_batch(batch.batch_id, reqs_rpc)
+                await self._cooperative_checkpoint()
                 
                 # 2. 执行 prefill（处理 prompt）
                 req_to_out_token_id = await self.model_rpc.prefill_batch(batch.batch_id)
+                await self._cooperative_checkpoint()
             else:
                 # Decode 阶段：生成下一个 token
                 # 更新适配器使用统计信息（在推理前）
                 if not getattr(self.args, 'no_lora', False):
                     adapter_dirs_list = list(batch.adapter_dirs)
                     await self.model_rpc.update_adapter_stats(adapter_dirs_list)
+                    await self._cooperative_checkpoint()
                 
                 # 执行 decode
                 req_to_out_token_id = await self.model_rpc.decode_batch(batch.batch_id)
+                await self._cooperative_checkpoint()
             
             return req_to_out_token_id
             
@@ -1255,9 +1266,11 @@ class GPUWorker:
                     # 先对新批次执行 prefill
                     reqs_rpc = [req.to_rpc_obj() for req in new_batch.reqs]
                     await self.model_rpc.init_batch(new_batch.batch_id, reqs_rpc)
+                    await self._cooperative_checkpoint()
 
                     # 执行 prefill，获取第一个 token
                     req_to_out_token_id = await self.model_rpc.prefill_batch(new_batch.batch_id)
+                    await self._cooperative_checkpoint()
 
                     # 将第一个 token 添加到新批次的请求中
                     for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
@@ -1312,6 +1325,7 @@ class GPUWorker:
                 else:
                     if not new_batch.is_clear():
                         await self.model_rpc.merge_batch(self.current_batch.batch_id, new_batch.batch_id)
+                        await self._cooperative_checkpoint()
                         self.current_batch.merge(new_batch)
             
             # 执行推理
@@ -1727,6 +1741,8 @@ class GPUWorker:
                 # 如果没有待处理的请求，短暂等待
                 if not self.req_queue.waiting_req_list and self.current_batch is None:
                     await asyncio.sleep(0.01)  # 10ms
+
+                await self._cooperative_checkpoint()
                     
             except asyncio.CancelledError:
                 # 协程被取消，正常退出

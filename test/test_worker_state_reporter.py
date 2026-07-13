@@ -273,6 +273,19 @@ class TestReportNow:
         # Should not raise error
         reporter.report_now_sync()
 
+    @pytest.mark.asyncio
+    async def test_report_if_due_only_sends_after_interval(self):
+        reporter = WorkerStateReporter(worker_id=0, report_interval_ms=100)
+        reporter.report_now = AsyncMock(return_value=True)
+        reporter._last_report_time = time.time()
+
+        assert await reporter.report_if_due() is False
+        reporter.report_now.assert_not_awaited()
+
+        reporter._last_report_time = time.time() - 0.2
+        assert await reporter.report_if_due() is True
+        reporter.report_now.assert_awaited_once_with()
+
 
 class TestIntegration:
     """Integration tests for WorkerStateReporter"""
