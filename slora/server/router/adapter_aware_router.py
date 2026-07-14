@@ -246,10 +246,9 @@ class AdapterAwareRouter:
                         f"prefill_tokens={state.pending_prefill_tokens}, "
                         f"load_pressure={load_pressure:.4f}")
 
-        # Cache affinity: I(adapter ∈ Cache_i). 在高 RWPT 压力下逐步削弱缓存亲和性奖励。
+        # Cache affinity: I(adapter in Cache_i), with a fixed weight for all metrics.
         cache_indicator = 1.0 if state.has_adapter(adapter_dir) else 0.0
-        effective_w1 = self._effective_cache_affinity_weight(load_pressure)
-        score = effective_w1 * cache_indicator - load_value
+        score = self.config.w1 * cache_indicator - load_value
 
         # Rank 不匹配惩罚（仅当 w3 > 0 时应用）
         # Requirements: 5.1, 5.2, 5.4, 5.5
@@ -260,26 +259,13 @@ class AdapterAwareRouter:
             score -= rank_penalty
 
             logger.debug(f"Worker {worker_id} score breakdown: "
-                        f"cache={effective_w1 * cache_indicator:.2f}, "
+                        f"cache={self.config.w1 * cache_indicator:.2f}, "
                         f"load={-load_value:.2f}, "
                         f"rank_penalty={-rank_penalty:.2f}, "
                         f"total={score:.2f}")
 
         return score
 
-    def _effective_cache_affinity_weight(self, load_pressure: float) -> float:
-        """Return cache affinity weight after high-load decay."""
-        if self.config.load_metric != 'rwpt':
-            return self.config.w1
-
-        threshold = self.config.cache_affinity_decay_threshold
-        if load_pressure <= threshold:
-            return self.config.w1
-
-        decay_ratio = threshold / load_pressure
-        bounded_ratio = max(self.config.min_cache_affinity_ratio, decay_ratio)
-        return self.config.w1 * bounded_ratio
-    
     def select_worker(self, adapter_dir: str) -> int:
         """
         选择最佳 Worker

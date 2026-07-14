@@ -485,10 +485,7 @@ class DataParallelRouterManager:
             else:
                 load_pressure = state.pending_prefill_tokens / capacity if capacity > 0 else 0.0
 
-            if routing_config is not None and hasattr(self.router, '_effective_cache_affinity_weight'):
-                effective_w1 = self.router._effective_cache_affinity_weight(load_pressure)
-            else:
-                effective_w1 = getattr(routing_config, 'w1', 1.0) if routing_config else 1.0
+            effective_w1 = getattr(routing_config, 'w1', 1.0) if routing_config else 1.0
 
             has_adapter = state.has_adapter(adapter_dir)
             cache_bonus = effective_w1 if has_adapter else 0.0

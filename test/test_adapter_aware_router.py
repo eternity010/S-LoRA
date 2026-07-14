@@ -153,37 +153,17 @@ class TestScoringFormula:
         assert score == float('-inf')
 
 
-class TestCacheAffinityDecay:
-    """Test high-load cache affinity decay for RWPT routing."""
+class TestFixedCacheAffinity:
+    """Cache affinity uses the configured w1 at every RWPT pressure level."""
 
-    def _make_router(self, load_metric="rwpt"):
+    def test_rwpt_high_pressure_keeps_full_cache_affinity(self):
         config = RoutingConfig(
             w1=1.0,
             w2=1.0,
             batch_max_tokens=1000,
-            load_metric=load_metric,
-            cache_affinity_decay_threshold=0.8,
-            min_cache_affinity_ratio=0.2,
+            load_metric="rwpt",
         )
-        return AdapterAwareRouter(num_workers=2, config=config)
-
-    def test_rwpt_low_pressure_keeps_full_cache_affinity(self):
-        router = self._make_router()
-        adapter_dir = "/path/to/adapter_a"
-
-        router.update_worker_state(0, WorkerState(
-            worker_id=0,
-            cached_adapters={adapter_dir},
-            pending_prefill_tokens=500,
-        ))
-
-        score = router.calculate_score(0, adapter_dir)
-
-        # effective_w1=1.0, load_pressure=0.5
-        assert score == pytest.approx(0.5)
-
-    def test_rwpt_high_pressure_decays_cache_affinity(self):
-        router = self._make_router()
+        router = AdapterAwareRouter(num_workers=2, config=config)
         adapter_dir = "/path/to/adapter_a"
 
         router.update_worker_state(0, WorkerState(
@@ -194,51 +174,7 @@ class TestCacheAffinityDecay:
 
         score = router.calculate_score(0, adapter_dir)
 
-        # effective_w1=0.8/2.0=0.4, load_pressure=2.0
-        assert score == pytest.approx(-1.6)
-
-    def test_rwpt_decay_respects_minimum_ratio(self):
-        router = self._make_router()
-        adapter_dir = "/path/to/adapter_a"
-
-        router.update_worker_state(0, WorkerState(
-            worker_id=0,
-            cached_adapters={adapter_dir},
-            pending_prefill_tokens=5000,
-        ))
-
-        score = router.calculate_score(0, adapter_dir)
-
-        # threshold/load_pressure=0.16, bounded to min ratio 0.2
-        assert score == pytest.approx(-4.8)
-
-    def test_rwpt_cache_miss_has_no_cache_reward_to_decay(self):
-        router = self._make_router()
-        adapter_dir = "/path/to/adapter_a"
-
-        router.update_worker_state(0, WorkerState(
-            worker_id=0,
-            cached_adapters=set(),
-            pending_prefill_tokens=2000,
-        ))
-
-        score = router.calculate_score(0, adapter_dir)
-
-        assert score == pytest.approx(-2.0)
-
-    def test_non_rwpt_load_metric_keeps_original_cache_affinity(self):
-        router = self._make_router(load_metric="token_count")
-        adapter_dir = "/path/to/adapter_a"
-
-        router.update_worker_state(0, WorkerState(
-            worker_id=0,
-            cached_adapters={adapter_dir},
-            pending_raw_tokens=2000,
-        ))
-
-        score = router.calculate_score(0, adapter_dir)
-
-        # token_count keeps w1 unchanged: 1.0 - 2.0
+        # Fixed cache affinity: 1.0 - (1.0 * 2000 / 1000).
         assert score == pytest.approx(-1.0)
 
 
