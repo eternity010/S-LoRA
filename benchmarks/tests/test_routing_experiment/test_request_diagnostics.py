@@ -17,7 +17,8 @@ def _write_jsonl(path, records):
     path.write_text("".join(json.dumps(record) + "\n" for record in records))
 
 
-def _worker_state(selected=False, load=0.0, queue=0, decode=0, prefill=0, cached=False):
+def _worker_state(selected=False, load=0.0, queue=0, decode=0, prefill=0,
+                  current_batch=0, cached=False, report_seq=1):
     return {
         "selected": selected,
         "score": 1.0 if selected else 0.0,
@@ -28,6 +29,8 @@ def _worker_state(selected=False, load=0.0, queue=0, decode=0, prefill=0, cached
         "pending_prefill_tokens": prefill,
         "pending_raw_tokens": prefill,
         "active_decode_seqs": decode,
+        "current_batch_size": current_batch,
+        "report_seq": report_seq,
         "cached_adapters": 1 if cached else 0,
         "is_healthy": True,
     }
@@ -59,7 +62,8 @@ def test_join_request_diagnostics_matches_ids_and_summarizes(tmp_path):
             "workers": {
                 "0": _worker_state(load=0.0, queue=0),
                 "1": _worker_state(
-                    selected=True, load=0.0, queue=3, decode=3, prefill=0, cached=True,
+                    selected=True, load=0.0, queue=3, decode=3, prefill=0,
+                    current_batch=3, cached=True,
                 ),
             },
         },
@@ -72,6 +76,13 @@ def test_join_request_diagnostics_matches_ids_and_summarizes(tmp_path):
     assert summary["routing"]["cache_hits"] == 2
     assert summary["routing"]["selected_active_decode_with_zero_prefill"] == 1
     assert summary["routing"]["selected_higher_queue_at_same_min_pressure"] == 1
+    blind_spot = summary["token_count_blind_spot"]
+    assert blind_spot["worker_state_samples"] == 4
+    assert blind_spot["blind_worker_state_samples"] == 1
+    assert blind_spot["selected_blind_samples"] == 1
+    assert blind_spot["selected_blind_ratio"] == pytest.approx(0.5)
+    assert blind_spot["selected_blind_latency"]["avg_ttft"] == 9.0
+    assert blind_spot["selected_non_blind_latency"]["avg_ttft"] == 1.0
     assert summary["slow_ttft"]["worker_counts"] == {"1": 1}
     assert Path(summary["joined_file"]).exists()
     assert Path(summary["summary_file"]).exists()

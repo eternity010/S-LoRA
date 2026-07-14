@@ -77,7 +77,25 @@ class ExperimentSuite:
                 "azure-http-top100-6rps",
             ],
             "routing_w1": [1.0],
-            "routing_w2": [3.0],
+            "routing_w2": [1.0, 2.0, 3.0, 4.0],
+            "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-rwpt-w2-fine-search": {
+            # Refine the post-state-fix RWPT optimum and probe beyond w2=4.0.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0, 3.5, 4.0, 4.5, 5.0, 6.0],
             "load_metric": ["rwpt"],
         },
         "dp-realtrace-queue-length-w2-search": {
@@ -115,7 +133,7 @@ class ExperimentSuite:
                 "azure-http-top100-6rps",
             ],
             "routing_w1": [1.0],
-            "routing_w2": [1.0, 2.0, 3.0, 4.0],
+            "routing_w2": [2.0, 3.0, 4.0, 5.0],
             "load_metric": ["token_count"],
         },
         "dp-realtrace-token-count-state-debug": {
@@ -133,6 +151,71 @@ class ExperimentSuite:
             "routing_w1": [1.0],
             "routing_w2": [3.0],
             "load_metric": ["token_count"],
+        },
+        "dp-realtrace-token-count-8rps-debug": {
+            # Diagnose token_count blind spots under the 8 rps real trace.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-8rps-token-count-debug"],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["token_count"],
+        },
+        "dp-realtrace-queue-length-8rps-standalone": {
+            # Fresh-server 8 rps validation without debug I/O or server reuse.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-8rps-queue-length-standalone"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.20],
+            "load_metric": ["queue_length"],
+        },
+        "dp-realtrace-rwpt-8rps-no-decay-standalone": {
+            # Isolate removal of RWPT cache-affinity decay on a fresh server.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-8rps-rwpt-no-decay-standalone"],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-roundrobin-8rps-repeat2": {
+            # Run the same 8 rps round-robin baseline twice on one server.
+            # Distinct workload names keep checkpoint identities independent.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-roundrobin-run1",
+                "azure-http-top100-8rps-roundrobin-run2",
+            ],
         },
         "dp-realtrace-roundrobin-6rps": {
             # 真实 trace 下的 round-robin 单点基线
@@ -364,6 +447,9 @@ class ExperimentSuite:
         if suite_name == "dp-realtrace-load-metric-comparison":
             yield from cls.get_realtrace_load_metric_comparison_configs(**defaults)
             return
+        if suite_name == "dp-realtrace-8rps-load-metric-comparison":
+            yield from cls.get_realtrace_8rps_load_metric_comparison_configs(**defaults)
+            return
         if suite_name == "dp-realtrace-w2-search":
             yield from cls.get_realtrace_w2_search_configs(**defaults)
             return
@@ -372,7 +458,7 @@ class ExperimentSuite:
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-w2-search"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-8rps-load-metric-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -405,6 +491,7 @@ class ExperimentSuite:
             "dp-realtrace-comparison",
             "dp-realtrace-comparison-2rps",
             "dp-realtrace-load-metric-comparison",
+            "dp-realtrace-8rps-load-metric-comparison",
             "dp-realtrace-w2-search",
         ]
     
@@ -487,25 +574,42 @@ class ExperimentSuite:
                 },
                 "config_count": 3,
             }
+        if suite_name == "dp-realtrace-8rps-load-metric-comparison":
+            return {
+                "name": suite_name,
+                "parameters": {
+                    "routing_strategy": ["round-robin", "adapter-aware"],
+                    "workload_name": ["azure-http-top100-8rps"],
+                    "strategy_metric_w2": [
+                        ("round-robin", "rwpt", 1.0),
+                        ("adapter-aware", "rwpt", 3.0),
+                        ("adapter-aware", "token_count", 3.0),
+                        ("adapter-aware", "queue_length", 0.20),
+                    ],
+                    "num_adapters": [100],
+                    "duration": [180],
+                },
+                "config_count": 4,
+            }
         if suite_name == "dp-realtrace-w2-search":
             return {
                 "name": suite_name,
                 "parameters": {
                     "routing_strategy": ["adapter-aware"],
                     "workload_name": ["azure-http-top100-6rps"],
-                    "routing_w2": [3.0],
+                    "routing_w2": [1.0, 2.0, 3.0, 4.0],
                     "num_adapters": [100],
                     "duration": [180],
                     "load_metric": ["rwpt"],
                 },
-                "config_count": 1,
+                "config_count": 4,
             }
         
         suite = cls.SUITES.get(suite_name)
         if suite is None:
             available = ", ".join(
                 list(cls.SUITES.keys())
-                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-w2-search"]
+                + ["alpha-robustness", "alpha-robustness-sla", "dp-realtrace-comparison", "dp-realtrace-comparison-2rps", "dp-realtrace-load-metric-comparison", "dp-realtrace-8rps-load-metric-comparison", "dp-realtrace-w2-search"]
             )
             raise ValueError(
                 f"Unknown suite: {suite_name}. Available suites: {available}"
@@ -659,6 +763,35 @@ class ExperimentSuite:
             yield ExperimentConfig(**{**defaults, **params})
 
     @classmethod
+    def get_realtrace_8rps_load_metric_comparison_configs(cls, **defaults):
+        trace_file = (
+            "real_workload/outputs/"
+            "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+        )
+        strategy_metric_w2 = [
+            ("round-robin", "rwpt", 1.0),
+            ("adapter-aware", "rwpt", 3.0),
+            ("adapter-aware", "token_count", 3.0),
+            ("adapter-aware", "queue_length", 0.20),
+        ]
+
+        for strategy, load_metric, w2 in strategy_metric_w2:
+            params = {
+                "routing_strategy": strategy,
+                "alpha": 0.1,
+                "num_adapters": 100,
+                "req_rate": 8.0,
+                "duration": 180,
+                "workload_type": "trace",
+                "trace_file": trace_file,
+                "workload_name": "azure-http-top100-8rps",
+                "routing_w1": 1.0,
+                "routing_w2": w2,
+                "load_metric": load_metric,
+            }
+            yield ExperimentConfig(**{**defaults, **params})
+
+    @classmethod
     def get_realtrace_w2_search_configs(cls, **defaults):
         traces = [
             (
@@ -667,7 +800,7 @@ class ExperimentSuite:
                 "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
             ),
         ]
-        w2_values = [3.0]
+        w2_values = [1.0, 2.0, 3.0, 4.0]
 
         for workload_name, req_rate, trace_file in traces:
             for w2 in w2_values:

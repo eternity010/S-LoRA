@@ -64,6 +64,18 @@ def _latency_metrics(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _is_reported_state(state: Dict[str, Any]) -> bool:
+    """Exclude explicit startup states while accepting older debug records."""
+    return int(state.get("report_seq", 1)) > 0
+
+
+def _is_token_count_blind(state: Dict[str, Any]) -> bool:
+    return (
+        int(state.get("pending_raw_tokens", 0)) == 0
+        and int(state.get("current_batch_size", 0)) > 0
+    )
+
+
 def _build_summary(
     latency_records: List[Dict[str, Any]],
     routing_records: List[Dict[str, Any]],
@@ -81,6 +93,12 @@ def _build_summary(
     selected_blind_active = 0
     selected_higher_queue_same_min_pressure = 0
     cache_hits = 0
+    worker_state_samples = 0
+    blind_worker_state_samples = 0
+    queue_nonzero_tokens_zero_samples = 0
+    selected_worker_samples = 0
+    selected_blind_records = []
+    selected_non_blind_records = []
 
     for record in joined_records:
         worker_id = str(record["selected_worker"])
@@ -89,6 +107,23 @@ def _build_summary(
         worker_records[worker_id].append(record)
         adapter_counts[record["adapter_name"]] += 1
         cache_hits += bool(selected["has_adapter"])
+
+        for state in workers.values():
+            if not _is_reported_state(state):
+                continue
+            worker_state_samples += 1
+            blind_worker_state_samples += _is_token_count_blind(state)
+            queue_nonzero_tokens_zero_samples += (
+                int(state.get("pending_raw_tokens", 0)) == 0
+                and int(state.get("queue_length", 0)) > 0
+            )
+
+        if _is_reported_state(selected):
+            selected_worker_samples += 1
+            if _is_token_count_blind(selected):
+                selected_blind_records.append(record)
+            else:
+                selected_non_blind_records.append(record)
 
         healthy_states = [
             state for state in workers.values()
@@ -140,6 +175,27 @@ def _build_summary(
             "selected_higher_queue_at_same_min_pressure": (
                 selected_higher_queue_same_min_pressure
             ),
+        },
+        "token_count_blind_spot": {
+            "worker_state_samples": worker_state_samples,
+            "blind_worker_state_samples": blind_worker_state_samples,
+            "blind_worker_state_ratio": (
+                blind_worker_state_samples / worker_state_samples
+                if worker_state_samples else 0.0
+            ),
+            "queue_nonzero_tokens_zero_samples": queue_nonzero_tokens_zero_samples,
+            "queue_nonzero_tokens_zero_ratio": (
+                queue_nonzero_tokens_zero_samples / worker_state_samples
+                if worker_state_samples else 0.0
+            ),
+            "selected_worker_samples": selected_worker_samples,
+            "selected_blind_samples": len(selected_blind_records),
+            "selected_blind_ratio": (
+                len(selected_blind_records) / selected_worker_samples
+                if selected_worker_samples else 0.0
+            ),
+            "selected_blind_latency": _latency_metrics(selected_blind_records),
+            "selected_non_blind_latency": _latency_metrics(selected_non_blind_records),
         },
         "slow_ttft": {
             "threshold": slow_threshold,
