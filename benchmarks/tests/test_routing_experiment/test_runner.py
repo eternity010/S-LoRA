@@ -19,6 +19,7 @@ from trace import Request
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.dp_manager import DataParallelRouterManager
 from slora.server.router.worker_state import RoutingConfig, WorkerState
+from slora.server.router.worker_state_cache import WorkerStateCache
 
 
 class TestExperimentRunnerConfigId:
@@ -490,3 +491,81 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
 
     def _boom(self, *_args, **_kwargs):
         raise AssertionError("optimistic update should not be called in round-robin mode")
+
+
+class TestRoundRobinCacheObservation:
+    @staticmethod
+    async def _async_noop(_request):
+        return None
+
+    def _make_manager(self, cached_adapters=None):
+        manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
+        manager.routing_strategy = "round-robin"
+        manager.router = SimpleNamespace(select_worker=lambda: 0)
+        manager.request_senders = [SimpleNamespace(send_json=self._async_noop)]
+        manager.worker_state_cache = WorkerStateCache(num_workers=1)
+        manager.worker_state_cache.update(0, WorkerState(
+            worker_id=0,
+            cached_adapters=set(cached_adapters or []),
+            report_seq=1,
+        ))
+        manager.stats = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "worker_request_counts": [0],
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "start_time": 1.0,
+        }
+        return manager
+
+    def _route(self, manager, adapter_dir="/adapters/a"):
+        import asyncio
+
+        asyncio.run(manager.route_request({
+            "request_id": "req-cache-observation",
+            "adapter_dir": adapter_dir,
+            "prompt_ids": [1, 2, 3],
+            "sampling_params": {},
+        }))
+
+    def test_route_request_records_round_robin_cache_hit(self):
+        manager = self._make_manager(cached_adapters={"/adapters/a"})
+
+        self._route(manager)
+
+        assert manager.stats["cache_hits"] == 1
+        assert manager.stats["cache_misses"] == 0
+
+    def test_route_request_records_round_robin_cache_miss(self):
+        manager = self._make_manager(cached_adapters={"/adapters/b"})
+
+        self._route(manager)
+
+        assert manager.stats["cache_hits"] == 0
+        assert manager.stats["cache_misses"] == 1
+
+    def test_cache_reset_clears_router_side_observation(self):
+        manager = self._make_manager(cached_adapters={"/adapters/a"})
+
+        manager._clear_cached_adapter_observations()
+
+        assert not manager.worker_state_cache.get(0).has_adapter("/adapters/a")
+
+    def test_round_robin_cache_metrics_are_written_to_stats(self, tmp_path):
+        manager = self._make_manager()
+        manager.num_workers = 1
+        manager.gpu_ids = [0]
+        manager.stats["total_requests"] = 3
+        manager.stats["successful_requests"] = 3
+        manager.stats["cache_hits"] = 2
+        manager.stats["cache_misses"] = 1
+
+        stats_file = tmp_path / "routing_stats.json"
+        manager._write_stats_file(str(stats_file))
+        saved = json.loads(stats_file.read_text())
+
+        assert saved["cache_hits"] == 2
+        assert saved["cache_misses"] == 1
+        assert abs(saved["cache_hit_rate"] - (2 / 3)) < 1e-12

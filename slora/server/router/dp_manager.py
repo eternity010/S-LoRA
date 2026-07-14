@@ -134,15 +134,14 @@ class DataParallelRouterManager:
                 self.router.set_adapter_ranks(adapter_ranks)
                 print(f"[DataParallelRouterManager] Loaded {len(adapter_ranks)} adapter ranks for rank-aware routing")
         
-        # Worker 状态缓存（用于 adapter-aware 路由）
-        self.worker_state_cache: Optional[WorkerStateCache] = None
-        if self.routing_strategy == 'adapter-aware':
-            routing_config = self._get_routing_config()
-            self.worker_state_cache = WorkerStateCache(
-                num_workers=self.num_workers,
-                heartbeat_interval_ms=routing_config.heartbeat_interval_ms,
-                heartbeat_timeout_ms=routing_config.heartbeat_timeout_ms
-            )
+        # All strategies observe Worker state so cache metrics share one definition.
+        # Round-robin never consults this state when selecting a Worker.
+        routing_config = self._get_routing_config()
+        self.worker_state_cache = WorkerStateCache(
+            num_workers=self.num_workers,
+            heartbeat_interval_ms=routing_config.heartbeat_interval_ms,
+            heartbeat_timeout_ms=routing_config.heartbeat_timeout_ms
+        )
         
         # ZMQ 通信（将在 _setup_zmq 中初始化）
         self.context = None
@@ -158,6 +157,8 @@ class DataParallelRouterManager:
             'successful_requests': 0,
             'failed_requests': 0,
             'worker_request_counts': [0] * self.num_workers,  # 每个 Worker 的请求计数
+            'cache_hits': 0,
+            'cache_misses': 0,
             'start_time': None,  # 将在 run() 中设置
         }
         
@@ -865,9 +866,8 @@ class DataParallelRouterManager:
             print(f"[DataParallelRouterManager] ZMQ PUSH socket bound to port {port} "
                   f"(sending to Worker {i}, timeout=30s, HWM=unlimited)")
         
-        # 设置状态接收 socket（仅 adapter-aware 模式）
-        if self.routing_strategy == 'adapter-aware':
-            self._setup_state_receiver()
+        # All strategies receive state reports for comparable cache metrics.
+        self._setup_state_receiver()
         
         print(f"[DataParallelRouterManager] ZMQ communication setup complete: "
               f"{len(self.request_senders)} worker sockets created with timeout=30s")
@@ -958,6 +958,32 @@ class DataParallelRouterManager:
         proc.start()
         return proc
     
+    def _observe_worker_cache(self, worker_id: int, adapter_dir: str) -> bool:
+        """Observe cache residency without influencing Worker selection."""
+        state_cache = getattr(self, 'worker_state_cache', None)
+        if not state_cache:
+            return False
+
+        state = state_cache.get(worker_id)
+        return state.has_adapter(adapter_dir) if state is not None else False
+
+    def _record_round_robin_cache_observation(self, cache_hit: bool) -> None:
+        """Record cache residency for a successfully dispatched RR request."""
+        key = 'cache_hits' if cache_hit else 'cache_misses'
+        self.stats[key] = self.stats.get(key, 0) + 1
+
+    def _clear_cached_adapter_observations(self) -> None:
+        """Reflect a confirmed Worker cache reset in Router-side snapshots."""
+        state_cache = getattr(self, 'worker_state_cache', None)
+        if state_cache:
+            for worker_id, state in state_cache.get_all().items():
+                state.cached_adapters.clear()
+                state_cache.update(worker_id, state)
+
+        if isinstance(self.router, AdapterAwareRouter):
+            for state in self.router.worker_states.values():
+                state.cached_adapters.clear()
+
     async def route_request(self, request: dict) -> None:
         """
         路由请求到 Worker
@@ -1004,6 +1030,10 @@ class DataParallelRouterManager:
                 else:
                     # 使用 Round Robin Router 选择 Worker
                     worker_id = self.router.select_worker()
+
+                cache_hit = False
+                if self.routing_strategy == 'round-robin':
+                    cache_hit = self._observe_worker_cache(worker_id, adapter_dir)
                 
                 # DEBUG 模式：打印路由日志
                 if os.environ.get('DEBUG', '0') == '1':
@@ -1027,6 +1057,8 @@ class DataParallelRouterManager:
                 # 乐观更新 Router 端的 Worker 状态，缓解状态上报窗口带来的低估
                 if self.routing_strategy == 'adapter-aware':
                     self._optimistically_update_worker_load(worker_id, request)
+                else:
+                    self._record_round_robin_cache_observation(cache_hit)
                 
                 # 更新统计信息（Requirement 8.2）
                 self.stats['total_requests'] += 1
@@ -1154,6 +1186,9 @@ class DataParallelRouterManager:
                     'error': 'Worker cache reset acknowledgement failed',
                 }
             
+            # Reset Router-side observations immediately after all Worker ACKs.
+            self._clear_cached_adapter_observations()
+
             # 重置路由器的 adapter 索引
             if hasattr(self.router, 'adapter_to_workers'):
                 self.router.adapter_to_workers.clear()
@@ -1194,6 +1229,8 @@ class DataParallelRouterManager:
         self.stats['successful_requests'] = 0
         self.stats['failed_requests'] = 0
         self.stats['worker_request_counts'] = [0] * self.num_workers
+        self.stats['cache_hits'] = 0
+        self.stats['cache_misses'] = 0
         self.stats['start_time'] = time.time()
 
         if hasattr(self.router, 'reset_stats'):
@@ -1319,7 +1356,7 @@ class DataParallelRouterManager:
                 elapsed_time = 0
                 throughput = 0
             
-            # 计算缓存命中率（仅 adapter-aware 模式）
+            # Calculate cache metrics at the Router dispatch observation point.
             cache_hit_rate = 0.0
             cache_hits = 0
             cache_misses = 0
@@ -1328,6 +1365,12 @@ class DataParallelRouterManager:
                 cache_hit_rate = router_stats.get('cache_hit_rate', 0.0)
                 cache_hits = router_stats.get('cache_hits', 0)
                 cache_misses = router_stats.get('cache_misses', 0)
+            elif self.routing_strategy == 'round-robin':
+                cache_hits = self.stats.get('cache_hits', 0)
+                cache_misses = self.stats.get('cache_misses', 0)
+                observed = cache_hits + cache_misses
+                if observed > 0:
+                    cache_hit_rate = cache_hits / observed
             
             stats_data = {
                 'routing_strategy': self.routing_strategy,
@@ -1620,9 +1663,9 @@ class DataParallelRouterManager:
         stats_task = asyncio.create_task(self._print_statistics())
         print(f"[DataParallelRouterManager] Statistics reporting task started")
         
-        # 启动状态接收处理任务（仅 adapter-aware 模式）
+        # Receive Worker states for routing and strategy-independent cache metrics.
         state_receiver_task = None
-        if self.routing_strategy == 'adapter-aware' and self.state_receiver:
+        if self.state_receiver:
             state_receiver_task = asyncio.create_task(self._process_worker_states())
             print(f"[DataParallelRouterManager] Worker state receiver task started")
         
