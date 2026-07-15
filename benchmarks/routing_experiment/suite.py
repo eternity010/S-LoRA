@@ -168,6 +168,26 @@ class ExperimentSuite:
             "routing_w2": [3.0],
             "load_metric": ["token_count"],
         },
+        "dp-realtrace-token-count-8rps-repeat2": {
+            # Repeat the calibrated 8 rps token_count point twice on one server.
+            # Distinct workload names keep checkpoint identities independent.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-token-count-run1",
+                "azure-http-top100-8rps-token-count-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["token_count"],
+        },
         "dp-realtrace-queue-length-8rps-standalone": {
             # Fresh-server 8 rps validation without debug I/O or server reuse.
             "routing_strategy": ["adapter-aware"],
@@ -184,6 +204,26 @@ class ExperimentSuite:
             "routing_w2": [0.20],
             "load_metric": ["queue_length"],
         },
+        "dp-realtrace-queue-length-8rps-repeat2": {
+            # Repeat the calibrated 8 rps QL point twice on one server.
+            # Distinct workload names keep checkpoint identities independent.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-queue-length-run1",
+                "azure-http-top100-8rps-queue-length-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.20],
+            "load_metric": ["queue_length"],
+        },
         "dp-realtrace-rwpt-8rps-no-decay-standalone": {
             # Isolate removal of RWPT cache-affinity decay on a fresh server.
             "routing_strategy": ["adapter-aware"],
@@ -196,6 +236,26 @@ class ExperimentSuite:
                 "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
             ],
             "workload_name": ["azure-http-top100-8rps-rwpt-no-decay-standalone"],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-rwpt-8rps-repeat2": {
+            # Repeat the selected 8 rps RWPT point twice on one server.
+            # Cache affinity is fixed; the removed decay mechanism is not active.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-rwpt-run1",
+                "azure-http-top100-8rps-rwpt-run2",
+            ],
             "routing_w1": [1.0],
             "routing_w2": [3.0],
             "load_metric": ["rwpt"],
@@ -217,6 +277,41 @@ class ExperimentSuite:
                 "azure-http-top100-8rps-roundrobin-run2",
             ],
         },
+        "dp-realtrace-roundrobin-4rps-repeat2": {
+            # Run 1 uses a fresh server; run 2 follows confirmed cache reset.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [4.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-4rps-roundrobin-run1",
+                "azure-http-top100-4rps-roundrobin-run2",
+            ],
+        },
+        "dp-realtrace-rwpt-4rps-repeat2": {
+            # Run 1 uses a fresh server; run 2 follows confirmed cache reset.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [4.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-4rps-rwpt-run1",
+                "azure-http-top100-4rps-rwpt-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
+        },
         "dp-realtrace-roundrobin-6rps": {
             # 真实 trace 下的 round-robin 单点基线
             # 用于和 dp-realtrace-w2-search 的 6 rps RWPT 结果做同环境对比
@@ -232,6 +327,41 @@ class ExperimentSuite:
             "workload_name": [
                 "azure-http-top100-6rps",
             ],
+        },
+        "dp-realtrace-roundrobin-6rps-repeat2": {
+            # Run 1 uses a fresh server; run 2 follows confirmed cache reset.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-roundrobin-run1",
+                "azure-http-top100-6rps-roundrobin-run2",
+            ],
+        },
+        "dp-realtrace-rwpt-6rps-repeat2": {
+            # Run 1 uses a fresh server; run 2 follows confirmed cache reset.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-rwpt-run1",
+                "azure-http-top100-6rps-rwpt-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [3.0],
+            "load_metric": ["rwpt"],
         },
         "dp-realtrace-rwpt-4rps-debug": {
             # 单点诊断：复现真实 trace 4 rps 下的 RWPT 路由偏斜。

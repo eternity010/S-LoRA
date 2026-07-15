@@ -204,7 +204,7 @@ class TestExperimentSuite:
             assert config.workload_name == "azure-http-top100-2rps"
             assert config.req_rate == 2.0
             assert config.duration == 180
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.trace_file == (
                 "real_workload/outputs/"
                 "azure_llm_http_top100_2rps_180s_capped2048_512_v1.jsonl"
@@ -251,7 +251,7 @@ class TestExperimentSuite:
             assert config.workload_name == "azure-http-top100-6rps"
             assert config.req_rate == 6.0
             assert config.duration == 180
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.load_metric == "queue_length"
             assert config.trace_file == (
                 "real_workload/outputs/"
@@ -279,7 +279,7 @@ class TestExperimentSuite:
             assert config.workload_name == "azure-http-top100-6rps"
             assert config.req_rate == 6.0
             assert config.duration == 180
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.load_metric == "token_count"
             assert config.trace_file == (
                 "real_workload/outputs/"
@@ -309,7 +309,7 @@ class TestExperimentSuite:
             assert config.workload_name == "azure-http-top100-6rps"
             assert config.req_rate == 6.0
             assert config.duration == 180
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.trace_file == (
                 "real_workload/outputs/"
                 "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
@@ -346,7 +346,7 @@ class TestExperimentSuite:
             assert config.req_rate == 8.0
             assert config.duration == 180
             assert config.num_adapters == 100
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.trace_file.endswith(
                 "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
             )
@@ -367,7 +367,7 @@ class TestExperimentSuite:
         assert config.routing_w2 == 3.0
         assert config.req_rate == 6.0
         assert config.duration == 60
-        assert config.gpu_ids == "0,1,2"
+        assert config.gpu_ids == "1,2,3"
         assert config.trace_file.endswith(
             "azure_llm_http_top100_6rps_60s_capped2048_512_debug.jsonl"
         )
@@ -385,9 +385,41 @@ class TestExperimentSuite:
         assert config.routing_w2 == 3.0
         assert config.req_rate == 8.0
         assert config.duration == 180
-        assert config.gpu_ids == "0,1,2"
+        assert config.gpu_ids == "1,2,3"
         assert config.trace_file.endswith(
             "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+        )
+
+    def test_dp_realtrace_token_count_8rps_repeat2_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-token-count-8rps-repeat2"
+        ))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            "azure-http-top100-8rps-token-count-run1",
+            "azure-http-top100-8rps-token-count-run2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "token_count"
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 3.0
+            assert config.workload_type == "trace"
+            assert config.req_rate == 8.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        assert ExperimentRunner._get_server_config_key(None, configs[0]) == (
+            ExperimentRunner._get_server_config_key(None, configs[1])
         )
 
     def test_dp_realtrace_queue_length_8rps_standalone_suite(self):
@@ -404,9 +436,41 @@ class TestExperimentSuite:
         assert config.req_rate == 8.0
         assert config.duration == 180
         assert config.num_adapters == 100
-        assert config.gpu_ids == "0,1,2"
+        assert config.gpu_ids == "1,2,3"
         assert config.trace_file.endswith(
             "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+        )
+
+    def test_dp_realtrace_queue_length_8rps_repeat2_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-queue-length-8rps-repeat2"
+        ))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            "azure-http-top100-8rps-queue-length-run1",
+            "azure-http-top100-8rps-queue-length-run2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "queue_length"
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 0.20
+            assert config.workload_type == "trace"
+            assert config.req_rate == 8.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        assert ExperimentRunner._get_server_config_key(None, configs[0]) == (
+            ExperimentRunner._get_server_config_key(None, configs[1])
         )
 
     def test_dp_realtrace_rwpt_8rps_no_decay_standalone_suite(self):
@@ -422,9 +486,41 @@ class TestExperimentSuite:
         assert config.routing_w2 == 3.0
         assert config.req_rate == 8.0
         assert config.duration == 180
-        assert config.gpu_ids == "0,1,2"
+        assert config.gpu_ids == "1,2,3"
         assert config.trace_file.endswith(
             "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+        )
+
+    def test_dp_realtrace_rwpt_8rps_repeat2_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-rwpt-8rps-repeat2"
+        ))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            "azure-http-top100-8rps-rwpt-run1",
+            "azure-http-top100-8rps-rwpt-run2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "rwpt"
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 3.0
+            assert config.workload_type == "trace"
+            assert config.req_rate == 8.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        assert ExperimentRunner._get_server_config_key(None, configs[0]) == (
+            ExperimentRunner._get_server_config_key(None, configs[1])
         )
 
     def test_dp_realtrace_roundrobin_8rps_repeat2_suite(self):
@@ -444,10 +540,122 @@ class TestExperimentSuite:
             assert config.req_rate == 8.0
             assert config.duration == 180
             assert config.num_adapters == 100
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
             assert config.trace_file.endswith(
                 "azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl"
             )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert runner._get_server_config_key(configs[0]) == (
+            runner._get_server_config_key(configs[1])
+        )
+
+    def test_dp_realtrace_roundrobin_4rps_repeat2_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-roundrobin-4rps-repeat2"
+        ))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            "azure-http-top100-4rps-roundrobin-run1",
+            "azure-http-top100-4rps-roundrobin-run2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "round-robin"
+            assert config.workload_type == "trace"
+            assert config.req_rate == 4.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert runner._get_server_config_key(configs[0]) == (
+            runner._get_server_config_key(configs[1])
+        )
+
+    def test_dp_realtrace_rwpt_4rps_repeat2_suite(self):
+        configs = list(ExperimentSuite.get_configs(
+            "dp-realtrace-rwpt-4rps-repeat2"
+        ))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            "azure-http-top100-4rps-rwpt-run1",
+            "azure-http-top100-4rps-rwpt-run2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "rwpt"
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 3.0
+            assert config.workload_type == "trace"
+            assert config.req_rate == 4.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert runner._get_server_config_key(configs[0]) == (
+            runner._get_server_config_key(configs[1])
+        )
+
+    @pytest.mark.parametrize(
+        ("suite_name", "strategy", "workload_prefix"),
+        [
+            (
+                "dp-realtrace-roundrobin-6rps-repeat2",
+                "round-robin",
+                "azure-http-top100-6rps-roundrobin-run",
+            ),
+            (
+                "dp-realtrace-rwpt-6rps-repeat2",
+                "adapter-aware",
+                "azure-http-top100-6rps-rwpt-run",
+            ),
+        ],
+    )
+    def test_dp_realtrace_6rps_repeat2_suites(
+        self, suite_name, strategy, workload_prefix
+    ):
+        configs = list(ExperimentSuite.get_configs(suite_name))
+
+        assert len(configs) == 2
+        assert [config.workload_name for config in configs] == [
+            f"{workload_prefix}1",
+            f"{workload_prefix}2",
+        ]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == strategy
+            assert config.workload_type == "trace"
+            assert config.req_rate == 6.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl"
+            )
+            if strategy == "adapter-aware":
+                assert config.load_metric == "rwpt"
+                assert config.routing_w1 == 1.0
+                assert config.routing_w2 == 3.0
 
         assert ExperimentRunner._make_config_id(configs[0]) != (
             ExperimentRunner._make_config_id(configs[1])
@@ -488,7 +696,7 @@ class TestExperimentSuite:
             assert config.req_rate == 6.0
             assert config.duration == 180
             assert config.workload_name == "azure-http-top100-6rps"
-            assert config.gpu_ids == "0,1,2"
+            assert config.gpu_ids == "1,2,3"
 
         info = ExperimentSuite.get_suite_info(suite_name)
         assert info["config_count"] == 6
