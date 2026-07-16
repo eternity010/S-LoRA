@@ -699,6 +699,34 @@ class TestExperimentSuite:
             runner._get_server_config_key(configs[1])
         )
 
+    @pytest.mark.parametrize("rate", [6.0, 8.0, 10.0])
+    def test_dp_realtrace_token_count_active_repeat2_suites(self, rate):
+        suite_name = f"dp-realtrace-token-count-active-{int(rate)}rps-repeat2"
+        configs = list(ExperimentSuite.get_configs(suite_name))
+
+        assert len(configs) == 2
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "token_count_active"
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 0.4
+            assert config.workload_type == "trace"
+            assert config.req_rate == rate
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert "token-count-active-w2-0p4" in config.workload_name
+            assert f"_{int(rate)}rps_" in config.trace_file
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert runner._get_server_config_key(configs[0]) == (
+            runner._get_server_config_key(configs[1])
+        )
+
     def test_dp_realtrace_w2_search_suite(self):
         configs = list(ExperimentSuite.get_configs("dp-realtrace-w2-search"))
 

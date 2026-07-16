@@ -452,6 +452,63 @@ class ExperimentSuite:
             "routing_w2": [0.4],
             "load_metric": ["rwpt_active"],
         },
+        "dp-realtrace-token-count-active-6rps-repeat2": {
+            # Active-request token-count ablation using the RWPT Active weight.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-token-count-active-w2-0p4-run1",
+                "azure-http-top100-6rps-token-count-active-w2-0p4-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count_active"],
+        },
+        "dp-realtrace-token-count-active-8rps-repeat2": {
+            # High-load active-request token-count ablation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-token-count-active-w2-0p4-run1",
+                "azure-http-top100-8rps-token-count-active-w2-0p4-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count_active"],
+        },
+        "dp-realtrace-token-count-active-10rps-repeat2": {
+            # Overload-point active-request token-count validation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [10.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_10rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-10rps-token-count-active-w2-0p4-run1",
+                "azure-http-top100-10rps-token-count-active-w2-0p4-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count_active"],
+        },
         "dp-realtrace-rwpt-active-8rps-repeat2": {
             # Validate active-request RWPT at the high-load endpoint.
             "routing_strategy": ["adapter-aware"],
