@@ -98,6 +98,57 @@ class ExperimentSuite:
             "routing_w2": [3.0, 3.5, 4.0, 4.5, 5.0, 6.0],
             "load_metric": ["rwpt"],
         },
+        "dp-realtrace-rwpt-active-w2-search-6rps": {
+            # Calibrate active-request RWPT at the medium-load operating point.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-6rps-rwpt-active-w2-search"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.5, 1.0, 1.5, 2.0],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-rwpt-active-w2-low-search-6rps": {
+            # Refine active-request RWPT below the current w2=0.5 candidate.
+            # Descending order gives w2=0.4 the fresh-server control point.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-rwpt-active-w2-low-search",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4, 0.3, 0.2, 0.1],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-rwpt-active-w2-1-fresh-6rps": {
+            # Fresh-server control for the w2 search ordering effect.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-6rps-rwpt-active-w2-1-fresh"],
+            "routing_w1": [1.0],
+            "routing_w2": [1.0],
+            "load_metric": ["rwpt_active"],
+        },
         "dp-realtrace-queue-length-w2-search": {
             # Calibrate queue_length on the same 6 rps real trace used for RWPT.
             # Queue length is not capacity-normalized, so its w2 scale is smaller.
@@ -312,6 +363,25 @@ class ExperimentSuite:
             "routing_w2": [3.0],
             "load_metric": ["rwpt"],
         },
+        "dp-realtrace-rwpt-active-4rps-repeat2": {
+            # Validate active-request RWPT at the low-load endpoint.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [4.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_4rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-4rps-rwpt-active-w2-0p4-run1",
+                "azure-http-top100-4rps-rwpt-active-w2-0p4-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
         "dp-realtrace-roundrobin-6rps": {
             # 真实 trace 下的 round-robin 单点基线
             # 用于和 dp-realtrace-w2-search 的 6 rps RWPT 结果做同环境对比
@@ -362,6 +432,25 @@ class ExperimentSuite:
             "routing_w1": [1.0],
             "routing_w2": [3.0],
             "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-rwpt-active-8rps-repeat2": {
+            # Validate active-request RWPT at the high-load endpoint.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-rwpt-active-w2-0p4-run1",
+                "azure-http-top100-8rps-rwpt-active-w2-0p4-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
         },
         "dp-realtrace-rwpt-4rps-debug": {
             # 单点诊断：复现真实 trace 4 rps 下的 RWPT 路由偏斜。
