@@ -439,7 +439,7 @@ class DataParallelRouterManager:
         if prompt_len <= 0:
             return
 
-        if routing_config.load_metric == 'token_count':
+        if routing_config.load_metric in ('token_count', 'token_count_active'):
             state.pending_raw_tokens += prompt_len
             state.optimistic_raw_tokens += prompt_len
             return
@@ -483,6 +483,11 @@ class DataParallelRouterManager:
                 load_pressure = state.queue_length
             elif load_metric == 'token_count':
                 load_pressure = state.pending_raw_tokens / capacity if capacity > 0 else 0.0
+            elif load_metric == 'token_count_active':
+                load_pressure = (
+                    (state.pending_raw_tokens + state.current_batch_prompt_tokens) / capacity
+                    if capacity > 0 else 0.0
+                )
             elif load_metric == 'rwpt_active':
                 load_pressure = (
                     (state.pending_prefill_tokens + state.active_rwpt_tokens) / capacity

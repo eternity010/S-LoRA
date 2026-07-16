@@ -135,6 +135,9 @@ class WorkerStateCache:
                 pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
                 pending_raw_tokens=message.get('pending_raw_tokens', 0),
                 active_rwpt_tokens=message.get('active_rwpt_tokens', 0),
+                current_batch_prompt_tokens=message.get(
+                    'current_batch_prompt_tokens', 0
+                ),
                 active_decode_seqs=message.get('active_decode_seqs', 0),
                 pool_used_ratio=message.get('pool_used_ratio', 0.0),
             )

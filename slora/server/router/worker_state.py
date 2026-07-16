@@ -47,6 +47,7 @@ class WorkerState:
     pending_prefill_tokens: int = 0    # 等待队列中 prompt token 总数（rank 加权）
     pending_raw_tokens: int = 0        # 等待队列中 prompt token 总数（不含 rank 加权）
     active_rwpt_tokens: int = 0        # 当前 batch 中请求的 prompt token 总数（rank 加权）
+    current_batch_prompt_tokens: int = 0  # 当前 batch 中请求的 prompt token 总数（不含 rank 加权）
     active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
     pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
     # State-report diagnostics. These fields do not participate in scoring.
@@ -55,7 +56,6 @@ class WorkerState:
     router_received_time: float = 0.0
     waiting_request_count: int = 0
     current_batch_size: int = 0
-    current_batch_prompt_tokens: int = 0
     optimistic_request_count: int = 0
     optimistic_raw_tokens: int = 0
     optimistic_prefill_tokens: int = 0
@@ -309,10 +309,16 @@ class RoutingConfig:
     max_total_token_num: int = 6000    # KV Cache capacity in tokens (from --max_total_token_num)
     batch_max_tokens: int = 1000       # 单次 prefill 批次最大 token 数，RWPT 归一化分母
     # Load metric ablation
-    load_metric: str = 'rwpt'          # 负载度量: queue_length | token_count | rwpt | rwpt_active
+    load_metric: str = 'rwpt'          # 负载度量: queue_length | token_count[_active] | rwpt[_active]
     
     # 有效的 load_metric 取值
-    VALID_LOAD_METRICS = ('queue_length', 'token_count', 'rwpt', 'rwpt_active')
+    VALID_LOAD_METRICS = (
+        'queue_length',
+        'token_count',
+        'token_count_active',
+        'rwpt',
+        'rwpt_active',
+    )
     
     def __post_init__(self):
         """验证配置参数"""

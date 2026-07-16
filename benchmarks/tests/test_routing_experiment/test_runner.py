@@ -427,6 +427,23 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         assert state.optimistic_request_count == 1
         assert state.optimistic_raw_tokens == 120
 
+    def test_optimistic_update_increments_waiting_only_for_token_count_active(self):
+        manager = self._make_adapter_aware_manager()
+        manager.router.config.load_metric = "token_count_active"
+
+        manager._optimistically_update_worker_load(
+            0,
+            {
+                "adapter_dir": "/adapters/a",
+                "prompt_ids": list(range(120)),
+            },
+        )
+
+        state = manager.router.worker_states[0]
+        assert state.pending_raw_tokens == 120
+        assert state.current_batch_prompt_tokens == 0
+        assert state.optimistic_raw_tokens == 120
+
     def test_optimistic_update_does_not_increment_raw_tokens_for_queue_length(self):
         manager = self._make_adapter_aware_manager()
         manager.router.config.load_metric = "queue_length"

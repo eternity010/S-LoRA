@@ -202,6 +202,7 @@ class AdapterAwareRouter:
         Load_i 根据 load_metric 选择：
         - queue_length: queue_length（无归一化）
         - token_count: pending_raw_tokens（等待队列中的原始 prefill token 数）
+        - token_count_active: pending_raw_tokens + current_batch_prompt_tokens
         - rwpt: pending_prefill_tokens（等待队列中 rank 加权的 input token 数）
         - rwpt_active: pending_prefill_tokens + active_rwpt_tokens
 
@@ -238,6 +239,17 @@ class AdapterAwareRouter:
             load_value = self.config.w2 * load_pressure
             logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
                         f"load_pressure={load_pressure:.4f}")
+
+        elif metric == 'token_count_active':
+            raw = state.pending_raw_tokens + state.current_batch_prompt_tokens
+            load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
+            load_value = self.config.w2 * load_pressure
+            logger.debug(
+                f"Worker {worker_id} active-aware token_count: raw={raw}, "
+                f"waiting={state.pending_raw_tokens}, "
+                f"active={state.current_batch_prompt_tokens}, "
+                f"load_pressure={load_pressure:.4f}"
+            )
 
         elif metric == 'rwpt_active':
             rwpt = state.pending_prefill_tokens + state.active_rwpt_tokens

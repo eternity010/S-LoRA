@@ -977,7 +977,7 @@ class ExperimentRunner:
             w1: 缓存亲和性权重 (可选)
             w2: 负载惩罚权重 (可选)
             w3: Rank 不匹配惩罚权重 (可选)
-            load_metric: 负载度量类型 (可选, queue_length/token_count/rwpt)
+            load_metric: 负载度量类型（可选，queue_length/token_count/token_count_active/rwpt/rwpt_active）
             reset_stats: 是否重置统计信息 (默认 True)
 
         Returns:

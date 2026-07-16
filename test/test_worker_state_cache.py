@@ -89,6 +89,7 @@ class TestWorkerStateCacheUpdate:
             'queue_length': 3,
             'gpu_memory_free': 1024,
             'active_rwpt_tokens': 2048,
+            'current_batch_prompt_tokens': 1536,
             'timestamp': time.time()
         }
         cache.update_from_message(message)
@@ -98,6 +99,7 @@ class TestWorkerStateCacheUpdate:
         assert state.cached_adapters == {'/adapter_a', '/adapter_b'}
         assert state.gpu_memory_free == 1024
         assert state.active_rwpt_tokens == 2048
+        assert state.current_batch_prompt_tokens == 1536
     
     def test_update_from_invalid_message(self):
         """测试从无效消息更新（应忽略）"""

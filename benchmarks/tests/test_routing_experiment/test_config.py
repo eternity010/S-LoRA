@@ -56,6 +56,22 @@ class TestExperimentConfigValidation:
         index = args.index("--load-metric")
         assert args[index + 1] == "rwpt_active"
 
+    def test_token_count_active_is_forwarded_to_server(self):
+        config = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            load_metric="token_count_active",
+        )
+
+        config.validate()
+        args = config.to_server_args()
+
+        index = args.index("--load-metric")
+        assert args[index + 1] == "token_count_active"
+
     def test_valid_trace_workload_config(self):
         """Test valid trace workload configuration"""
         config = ExperimentConfig(

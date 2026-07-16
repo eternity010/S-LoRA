@@ -627,9 +627,10 @@ def main():
     parser.add_argument("--decode-cost-alpha", type=float, default=None,
                         help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     parser.add_argument("--load-metric", type=str, default="rwpt",
-                        choices=["queue_length", "token_count", "rwpt", "rwpt_active"],
+                        choices=["queue_length", "token_count", "token_count_active", "rwpt", "rwpt_active"],
                         help="负载度量类型: queue_length (仅队列长度), "
-                             "token_count (token 级无 rank 加权), rwpt (完整 RWPT, 默认)")
+                             "token_count (waiting token), token_count_active (waiting + active token), "
+                             "rwpt (rank 加权 waiting token, 默认), rwpt_active (rank 加权 waiting + active token)")
 
     # 热门 Adapter 主动复制相关参数
     parser.add_argument("--enable-replication", action="store_true",
