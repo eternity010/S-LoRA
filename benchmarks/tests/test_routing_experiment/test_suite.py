@@ -669,6 +669,7 @@ class TestExperimentSuite:
         ("suite_name", "rate"),
         [
             ("dp-realtrace-rwpt-active-4rps-repeat2", 4.0),
+            ("dp-realtrace-rwpt-active-6rps-repeat2", 6.0),
             ("dp-realtrace-rwpt-active-8rps-repeat2", 8.0),
         ],
     )
