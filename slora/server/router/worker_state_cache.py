@@ -131,7 +131,12 @@ class WorkerStateCache:
                 # Use default values (0.0, 0, 0) for backward compatibility with old Workers
                 avg_rank=message.get('avg_rank', 0.0),
                 min_rank=message.get('min_rank', 0),
-                max_rank=message.get('max_rank', 0)
+                max_rank=message.get('max_rank', 0),
+                pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
+                pending_raw_tokens=message.get('pending_raw_tokens', 0),
+                active_rwpt_tokens=message.get('active_rwpt_tokens', 0),
+                active_decode_seqs=message.get('active_decode_seqs', 0),
+                pool_used_ratio=message.get('pool_used_ratio', 0.0),
             )
             
             self.update(worker_id, state)

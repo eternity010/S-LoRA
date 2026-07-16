@@ -79,6 +79,7 @@ class TestStateGetter:
                 'queue_length': 10,
                 'gpu_memory_free': 1000000,
                 'pending_raw_tokens': 1234,
+                'active_rwpt_tokens': 4321,
                 'waiting_request_count': 3,
                 'current_batch_size': 4,
                 'current_batch_prompt_tokens': 567,
@@ -92,6 +93,7 @@ class TestStateGetter:
         assert state.queue_length == 10
         assert state.gpu_memory_free == 1000000
         assert state.pending_raw_tokens == 1234
+        assert state.active_rwpt_tokens == 4321
         assert state.waiting_request_count == 3
         assert state.current_batch_size == 4
         assert state.current_batch_prompt_tokens == 567
@@ -149,6 +151,7 @@ class TestStateMessage:
             queue_length=5,
             gpu_memory_free=2000000,
             pending_raw_tokens=900,
+            active_rwpt_tokens=1200,
             waiting_request_count=2,
             current_batch_size=3,
             current_batch_prompt_tokens=700,
@@ -161,6 +164,7 @@ class TestStateMessage:
         assert set(message['cached_adapters']) == {'adapter1', 'adapter2'}
         assert message['queue_length'] == 5
         assert message['pending_raw_tokens'] == 900
+        assert message['active_rwpt_tokens'] == 1200
         assert message['waiting_request_count'] == 2
         assert message['current_batch_size'] == 3
         assert message['current_batch_prompt_tokens'] == 700

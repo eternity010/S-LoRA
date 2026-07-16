@@ -177,6 +177,42 @@ class TestFixedCacheAffinity:
         # Fixed cache affinity: 1.0 - (1.0 * 2000 / 1000).
         assert score == pytest.approx(-1.0)
 
+    def test_rwpt_active_counts_active_request_tokens(self):
+        config = RoutingConfig(
+            w1=1.0,
+            w2=1.0,
+            batch_max_tokens=1000,
+            load_metric="rwpt_active",
+        )
+        router = AdapterAwareRouter(num_workers=1, config=config)
+        adapter_dir = "/path/to/adapter_a"
+        router.update_worker_state(0, WorkerState(
+            worker_id=0,
+            cached_adapters={adapter_dir},
+            pending_prefill_tokens=400,
+            active_rwpt_tokens=600,
+        ))
+
+        assert router.calculate_score(0, adapter_dir) == pytest.approx(0.0)
+
+    def test_rwpt_keeps_prefill_only_semantics(self):
+        config = RoutingConfig(
+            w1=1.0,
+            w2=1.0,
+            batch_max_tokens=1000,
+            load_metric="rwpt",
+        )
+        router = AdapterAwareRouter(num_workers=1, config=config)
+        adapter_dir = "/path/to/adapter_a"
+        router.update_worker_state(0, WorkerState(
+            worker_id=0,
+            cached_adapters={adapter_dir},
+            pending_prefill_tokens=400,
+            active_rwpt_tokens=600,
+        ))
+
+        assert router.calculate_score(0, adapter_dir) == pytest.approx(0.6)
+
 
 class TestWorkerSelection:
     """Test suite for worker selection logic - Requirements 2.3, 2.4"""

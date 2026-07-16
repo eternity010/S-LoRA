@@ -183,6 +183,7 @@ class GPUWorker:
             - min_rank: 当前批次的最小 rank
             - max_rank: 当前批次的最大 rank
             - pending_prefill_tokens: Rank 加权后的等待 token 总数 Σ(len_j·(1+γ·r_j))
+            - active_rwpt_tokens: 当前 batch 请求的 rank 加权 input token 总数
             - active_decode_seqs: 当前 batch 中 decode 序列数
             - pool_used_ratio: 内存池使用率 (0.0-1.0)
             - profiled_alpha: 运行时测量的 decode/prefill 时间比
@@ -256,15 +257,21 @@ class GPUWorker:
         # Requirements: 2.2, 2.4
         active_decode_seqs = 0
         current_batch_prompt_tokens = 0
+        active_rwpt_tokens = 0
         try:
             if self.current_batch and self.current_batch.reqs:
                 active_decode_seqs = len(self.current_batch.reqs)
-                current_batch_prompt_tokens = sum(
-                    len(req.prompt_ids) for req in self.current_batch.reqs
-                )
+                gamma = 2.0 / (3.0 * self._hidden_dim)
+                for req in self.current_batch.reqs:
+                    input_len = len(req.prompt_ids)
+                    rank = self.lora_ranks.get(req.adapter_dir, 0)
+                    current_batch_prompt_tokens += input_len
+                    active_rwpt_tokens += input_len * (1.0 + gamma * rank)
+                active_rwpt_tokens = int(active_rwpt_tokens)
         except Exception:
             active_decode_seqs = 0
             current_batch_prompt_tokens = 0
+            active_rwpt_tokens = 0
 
         # 采集 pool_used_ratio：内存池使用率
         # Requirements: 2.3, 2.4
@@ -285,6 +292,7 @@ class GPUWorker:
             'max_rank': max_rank,
             'pending_prefill_tokens': pending_prefill_tokens,
             'pending_raw_tokens': pending_raw_tokens,
+            'active_rwpt_tokens': active_rwpt_tokens,
             'active_decode_seqs': active_decode_seqs,
             'waiting_request_count': waiting_request_count,
             'current_batch_size': current_batch_size,

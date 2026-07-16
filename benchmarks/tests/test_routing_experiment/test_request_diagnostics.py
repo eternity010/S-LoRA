@@ -18,7 +18,7 @@ def _write_jsonl(path, records):
 
 
 def _worker_state(selected=False, load=0.0, queue=0, decode=0, prefill=0,
-                  current_batch=0, cached=False, report_seq=1):
+                  active_rwpt=0, current_batch=0, cached=False, report_seq=1):
     return {
         "selected": selected,
         "score": 1.0 if selected else 0.0,
@@ -28,6 +28,7 @@ def _worker_state(selected=False, load=0.0, queue=0, decode=0, prefill=0,
         "queue_length": queue,
         "pending_prefill_tokens": prefill,
         "pending_raw_tokens": prefill,
+        "active_rwpt_tokens": active_rwpt,
         "active_decode_seqs": decode,
         "current_batch_size": current_batch,
         "report_seq": report_seq,

@@ -41,7 +41,7 @@ class ExperimentConfig:
     max_lora_ratio: float = 0.2  # Max LoRA memory ratio (0-1)
     
     # Load metric ablation
-    load_metric: str = "rwpt"  # 'queue_length' | 'token_count' | 'rwpt'
+    load_metric: str = "rwpt"  # queue_length | token_count | rwpt | rwpt_active
     
     # Hot adapter replication
     enable_replication: bool = False  # 是否启用主动复制
@@ -87,7 +87,9 @@ class ExperimentConfig:
         if not 0.0 < self.max_lora_ratio < 1.0:
             raise ValueError(f"max_lora_ratio must be in (0, 1), got {self.max_lora_ratio}")
         
-        if self.load_metric not in ("queue_length", "token_count", "rwpt"):
+        if self.load_metric not in (
+            "queue_length", "token_count", "rwpt", "rwpt_active"
+        ):
             raise ValueError(f"Invalid load_metric: {self.load_metric}")
         
         if self.replication_congestion_threshold <= 0:

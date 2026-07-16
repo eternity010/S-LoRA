@@ -184,6 +184,7 @@ class WorkerStateReporter:
                     # RWPT fields
                     pending_prefill_tokens=state_dict.get('pending_prefill_tokens', 0),
                     pending_raw_tokens=state_dict.get('pending_raw_tokens', 0),
+                    active_rwpt_tokens=state_dict.get('active_rwpt_tokens', 0),
                     active_decode_seqs=state_dict.get('active_decode_seqs', 0),
                     pool_used_ratio=state_dict.get('pool_used_ratio', 0.0),
                     waiting_request_count=state_dict.get('waiting_request_count', 0),
@@ -209,6 +210,7 @@ class WorkerStateReporter:
             max_rank=0,
             pending_prefill_tokens=0,
             pending_raw_tokens=0,
+            active_rwpt_tokens=0,
             active_decode_seqs=0,
             pool_used_ratio=0.0,
         )
@@ -243,6 +245,7 @@ class WorkerStateReporter:
             # RWPT fields
             'pending_prefill_tokens': state.pending_prefill_tokens,
             'pending_raw_tokens': state.pending_raw_tokens,
+            'active_rwpt_tokens': state.active_rwpt_tokens,
             'active_decode_seqs': state.active_decode_seqs,
             'pool_used_ratio': state.pool_used_ratio,
             'waiting_request_count': state.waiting_request_count,

@@ -114,7 +114,8 @@ class AdapterAwareRouter:
     Implements the scoring function:
     Score_i(r) = w1 · I(adapter ∈ Cache_i) - w2 · RWPT_i/Capacity_i - w3 · RankMismatch_i
     
-    RWPT_i = pending_prefill_tokens + α · active_decode_seqs
+    RWPT_i = pending_prefill_tokens
+    RWPTActive_i = pending_prefill_tokens + active_rwpt_tokens
     
     当 Worker 未上报 RWPT 字段时，回退到 QueueLen 逻辑保证向后兼容。
     
@@ -201,7 +202,8 @@ class AdapterAwareRouter:
         Load_i 根据 load_metric 选择：
         - queue_length: queue_length（无归一化）
         - token_count: pending_raw_tokens（等待队列中的原始 prefill token 数）
-        - rwpt: pending_prefill_tokens（rank 加权的 prefill token 数）
+        - rwpt: pending_prefill_tokens（等待队列中 rank 加权的 input token 数）
+        - rwpt_active: pending_prefill_tokens + active_rwpt_tokens
 
         当 Worker 未上报 token 字段时（pending_*_tokens == 0 且 queue_length > 0），
         回退到 queue_length 逻辑，保证向后兼容。
@@ -235,6 +237,15 @@ class AdapterAwareRouter:
             load_pressure = raw / self._capacity if self._capacity > 0 else 0.0
             load_value = self.config.w2 * load_pressure
             logger.debug(f"Worker {worker_id} token_count: raw={raw}, "
+                        f"load_pressure={load_pressure:.4f}")
+
+        elif metric == 'rwpt_active':
+            rwpt = state.pending_prefill_tokens + state.active_rwpt_tokens
+            load_pressure = rwpt / self._capacity if self._capacity > 0 else 0.0
+            load_value = self.config.w2 * load_pressure
+            logger.debug(f"Worker {worker_id} active-aware RWPT: rwpt={rwpt}, "
+                        f"waiting={state.pending_prefill_tokens}, "
+                        f"active={state.active_rwpt_tokens}, "
                         f"load_pressure={load_pressure:.4f}")
 
         else:  # 'rwpt' (默认)

@@ -46,6 +46,7 @@ class WorkerState:
     # RWPT (Rank-Calibrated Workload) fields
     pending_prefill_tokens: int = 0    # 等待队列中 prompt token 总数（rank 加权）
     pending_raw_tokens: int = 0        # 等待队列中 prompt token 总数（不含 rank 加权）
+    active_rwpt_tokens: int = 0        # 当前 batch 中请求的 prompt token 总数（rank 加权）
     active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
     pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
     # State-report diagnostics. These fields do not participate in scoring.
@@ -83,6 +84,7 @@ class WorkerState:
             'max_rank': self.max_rank,
             'pending_prefill_tokens': self.pending_prefill_tokens,
             'pending_raw_tokens': self.pending_raw_tokens,
+            'active_rwpt_tokens': self.active_rwpt_tokens,
             'active_decode_seqs': self.active_decode_seqs,
             'pool_used_ratio': self.pool_used_ratio,
             'report_seq': self.report_seq,
@@ -112,6 +114,7 @@ class WorkerState:
             max_rank=data.get('max_rank', 0),
             pending_prefill_tokens=data.get('pending_prefill_tokens', 0),
             pending_raw_tokens=data.get('pending_raw_tokens', 0),
+            active_rwpt_tokens=data.get('active_rwpt_tokens', 0),
             active_decode_seqs=data.get('active_decode_seqs', 0),
             pool_used_ratio=data.get('pool_used_ratio', 0.0),
             report_seq=data.get('report_seq', 0),
@@ -306,10 +309,10 @@ class RoutingConfig:
     max_total_token_num: int = 6000    # KV Cache capacity in tokens (from --max_total_token_num)
     batch_max_tokens: int = 1000       # 单次 prefill 批次最大 token 数，RWPT 归一化分母
     # Load metric ablation
-    load_metric: str = 'rwpt'          # 负载度量类型: 'queue_length' | 'token_count' | 'rwpt'
+    load_metric: str = 'rwpt'          # 负载度量: queue_length | token_count | rwpt | rwpt_active
     
     # 有效的 load_metric 取值
-    VALID_LOAD_METRICS = ('queue_length', 'token_count', 'rwpt')
+    VALID_LOAD_METRICS = ('queue_length', 'token_count', 'rwpt', 'rwpt_active')
     
     def __post_init__(self):
         """验证配置参数"""

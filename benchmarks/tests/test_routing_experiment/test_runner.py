@@ -375,6 +375,23 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         assert state.queue_length == 1
         assert state.pending_prefill_tokens == expected
 
+    def test_optimistic_update_increments_waiting_only_for_rwpt_active(self):
+        manager = self._make_adapter_aware_manager()
+        manager.router.config.load_metric = "rwpt_active"
+
+        manager._optimistically_update_worker_load(
+            0,
+            {
+                "adapter_dir": "/adapters/a",
+                "prompt_ids": list(range(120)),
+            },
+        )
+
+        state = manager.router.worker_states[0]
+        expected = int(120 * (1.0 + (2.0 / (3.0 * 4096)) * 64))
+        assert state.pending_prefill_tokens == expected
+        assert state.active_rwpt_tokens == 0
+
     def test_optimistic_update_uses_default_rank_for_unknown_adapter(self):
         manager = self._make_adapter_aware_manager()
 

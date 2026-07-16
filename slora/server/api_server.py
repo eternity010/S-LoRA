@@ -39,6 +39,7 @@ from .sampling_params import SamplingParams
 from .httpserver.manager import HttpServerManager
 from .detokenization.manager import start_detokenization_process
 from .router.manager import start_router_process
+from .router.worker_state import RoutingConfig
 
 from slora.utils.net_utils import alloc_can_use_network_port
 from slora.common.configs.config import setting
@@ -172,7 +173,7 @@ async def update_routing_config(request: Request):
     
     # 验证 load_metric 参数
     if "load_metric" in request_dict:
-        valid_metrics = ("queue_length", "token_count", "rwpt")
+        valid_metrics = RoutingConfig.VALID_LOAD_METRICS
         if request_dict["load_metric"] not in valid_metrics:
             return JSONResponse({
                 "error": "Invalid load_metric value",
@@ -626,7 +627,7 @@ def main():
     parser.add_argument("--decode-cost-alpha", type=float, default=None,
                         help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     parser.add_argument("--load-metric", type=str, default="rwpt",
-                        choices=["queue_length", "token_count", "rwpt"],
+                        choices=["queue_length", "token_count", "rwpt", "rwpt_active"],
                         help="负载度量类型: queue_length (仅队列长度), "
                              "token_count (token 级无 rank 加权), rwpt (完整 RWPT, 默认)")
 

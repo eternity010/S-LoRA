@@ -158,6 +158,7 @@ class TestWorkerState:
         assert state.avg_rank == 0.0
         assert state.min_rank == 0
         assert state.max_rank == 0
+        assert state.active_rwpt_tokens == 0
     
     def test_initialization_with_values(self):
         """测试带参数初始化"""
@@ -275,6 +276,14 @@ class TestWorkerState:
         assert state.avg_rank == 0.0
         assert state.min_rank == 0
         assert state.max_rank == 0
+        assert state.active_rwpt_tokens == 0
+
+    def test_active_rwpt_tokens_round_trip(self):
+        state = WorkerState(worker_id=0, active_rwpt_tokens=1234)
+
+        restored = WorkerState.from_dict(state.to_dict())
+
+        assert restored.active_rwpt_tokens == 1234
 
 
 class TestRoutingStats:

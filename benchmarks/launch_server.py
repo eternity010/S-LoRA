@@ -47,7 +47,7 @@ if __name__ == "__main__":
     parser.add_argument("--routing-w3", type=float, default=0.0,
                         help="Rank 不匹配惩罚权重，用于 rank 感知路由 (默认: 0.0，禁用)")
     parser.add_argument("--load-metric", type=str, default="rwpt",
-                        choices=["queue_length", "token_count", "rwpt"],
+                        choices=["queue_length", "token_count", "rwpt", "rwpt_active"],
                         help="负载度量类型 (默认: rwpt)")
     parser.add_argument("--default-lora-rank", type=int, default=16,
                         help="未知 adapter 的默认 LoRA rank (默认: 16)")

@@ -7,6 +7,29 @@ import pytest
 from slora.server.router.gpu_worker import GPUWorker
 
 
+def test_worker_state_reports_rank_weighted_active_prompt_tokens():
+    worker = GPUWorker.__new__(GPUWorker)
+    worker.adapter_cache = {}
+    worker.req_queue = SimpleNamespace(waiting_req_list=[])
+    worker.current_batch = SimpleNamespace(reqs=[
+        SimpleNamespace(prompt_ids=list(range(100)), adapter_dir="adapter-a"),
+        SimpleNamespace(prompt_ids=list(range(200)), adapter_dir="adapter-b"),
+    ])
+    worker.lora_ranks = {"adapter-a": 16, "adapter-b": 64}
+    worker._hidden_dim = 4096
+    worker.model_rpc = None
+    worker._profiled_alpha = 0.1
+    worker._compute_top_k_rwpt_adapters = lambda: []
+
+    state = worker._get_state_for_reporter()
+
+    gamma = 2.0 / (3.0 * 4096)
+    expected = int(100 * (1.0 + gamma * 16) + 200 * (1.0 + gamma * 64))
+    assert state["active_rwpt_tokens"] == expected
+    assert state["current_batch_prompt_tokens"] == 300
+    assert state["active_decode_seqs"] == 2
+
+
 @pytest.mark.asyncio
 async def test_cooperative_checkpoint_reports_due_state_and_yields():
     worker = GPUWorker.__new__(GPUWorker)

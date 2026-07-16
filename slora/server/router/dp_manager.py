@@ -444,7 +444,7 @@ class DataParallelRouterManager:
             state.optimistic_raw_tokens += prompt_len
             return
 
-        if routing_config.load_metric != 'rwpt':
+        if routing_config.load_metric not in ('rwpt', 'rwpt_active'):
             return
 
         adapter_dir = request.get('adapter_dir')
@@ -483,6 +483,11 @@ class DataParallelRouterManager:
                 load_pressure = state.queue_length
             elif load_metric == 'token_count':
                 load_pressure = state.pending_raw_tokens / capacity if capacity > 0 else 0.0
+            elif load_metric == 'rwpt_active':
+                load_pressure = (
+                    (state.pending_prefill_tokens + state.active_rwpt_tokens) / capacity
+                    if capacity > 0 else 0.0
+                )
             else:
                 load_pressure = state.pending_prefill_tokens / capacity if capacity > 0 else 0.0
 
@@ -504,6 +509,7 @@ class DataParallelRouterManager:
                 'queue_length': state.queue_length,
                 'pending_prefill_tokens': state.pending_prefill_tokens,
                 'pending_raw_tokens': state.pending_raw_tokens,
+                'active_rwpt_tokens': state.active_rwpt_tokens,
                 'active_decode_seqs': state.active_decode_seqs,
                 'waiting_request_count': state.waiting_request_count,
                 'current_batch_size': state.current_batch_size,
@@ -1789,6 +1795,7 @@ class DataParallelRouterManager:
                     # RWPT fields
                     pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
                     pending_raw_tokens=message.get('pending_raw_tokens', 0),
+                    active_rwpt_tokens=message.get('active_rwpt_tokens', 0),
                     active_decode_seqs=message.get('active_decode_seqs', 0),
                     pool_used_ratio=message.get('pool_used_ratio', 0.0),
                     report_seq=message.get('report_seq', 0),
