@@ -1,44 +1,49 @@
 # Manual Experiment Registry Notes
 
-`manual_experiment_registry.csv` 是人工确认后的实验结果台账。它不是自动扫描产物，原则是每次实验结束后只追加“确认可用”的记录。
+`manual_experiment_registry.csv` 是人工复核后的逐轮实验台账。它保存原始运行级指标和 `results.jsonl` 路径；面向论文阅读的均值结果位于同目录下的两个 summary CSV。
 
-## 当前已恢复的数据
+## 当前范围
 
-当前只登记人工复核过的 realtrace 4/6/8rps 数据：
+- 只登记状态上报修复后的 real trace 结果。
+- 当前主线算法为 `rwpt_active, w2=0.4`。
+- `rwpt, w2=3.0` 保留为 prefill-only 历史消融。
+- Synthetic workload 暂不纳入当前整理结果。
+- 4/6/8 RPS 的 RR 和 RWPT Active 主线均各有两轮有效记录。
+- 6/8 RPS 的 TC Active 均各有两轮有效记录。
+- 8 RPS 的 QL、waiting-only TC 和原 RWPT 各有两轮有效消融记录。
 
-- `dp-realtrace-rwpt-4rps-debug`
-  - 记录两轮 debug 中延迟与尾延迟更优的一轮。
+## 汇总关系
 
-- `dp-realtrace-roundrobin-6rps`
-  - round-robin 基线 1 条。
-- `dp-realtrace-w2-search`
-  - adapter-aware + rwpt，已完成两轮搜索：
-    - 粗搜：w2 = 1.0, 1.2, 1.5, 2.0, 3.0；
-    - 细搜：w2 = 2.5, 3.0, 3.5。
-  - 当前真实 trace 主线选择 `w2 = 3.0`。
-- `dp-realtrace-comparison`
-  - 记录已人工确认的 8rps round-robin 对照结果。
+- `main_realtrace_rate_summary.csv`
+  - 使用 RR 与 RWPT Active 在 4/6/8 RPS 下的两轮算术平均。
+  - 正向的 `*_improvement_vs_rr_pct` 表示 RWPT Active 优于 RR。
+- `load_metric_ablation_8rps.csv`
+  - 使用每种 load metric 的两轮算术平均。
+  - 用于比较 QL、waiting-only TC、TC Active、prefill-only RWPT 和最终 RWPT Active。
+- `active_metric_comparison_6rps.csv`
+  - 比较 RR、prefill-only RWPT、TC Active 和最终 RWPT Active。
+  - 6 RPS 尚无修复后的 QL 重跑，因此不称为完整 load-metric 消融。
 
-没有恢复旧的 baseline 导出、rate scaling 导出图、旧 JSON/CSV 汇总文件。
+## 台账规则
 
-## 使用原则
-
-- 原始 `results.jsonl` 不移动、不删除，CSV 只保存人工确认后的索引和关键指标。
-- 如果同一配置重复跑多次，可以新增多行，用不同 `record_id` / `run_label` 区分。
-- 如果某条结果后来发现不可靠，不删除该行，把 `status` 改为 `excluded`，并在 `notes` 写原因。
-- `include_in_paper` 可用值建议：
-  - `candidate`: 候选可用结果；
-  - `yes`: 已决定进入论文图表；
-  - `no`: 不用于论文；
-  - `debug`: 仅调试参考。
-- `status` 可用值建议：
-  - `usable`: 已检查且可用于观察；
+- 原始 `results.jsonl` 不移动、不删除，CSV 通过 `source_file` 建立索引。
+- 同一配置重复运行时新增记录，用不同 `record_id` 和 `run_label` 区分。
+- 发现结果不可靠时不删除，将 `status` 改为 `excluded` 或 `suspect` 并在 `notes` 说明。
+- `include_in_paper` 建议值：
+  - `candidate`: 论文候选数据；
+  - `yes`: 已决定进入论文；
+  - `no`: 不进入论文；
+  - `supporting`: 校准或辅助结果；
+  - `debug`: 仅用于诊断。
+- `status` 建议值：
+  - `usable`: 已复核可用；
   - `excluded`: 明确排除；
-  - `suspect`: 有疑点，暂不下结论；
-  - `failed`: 失败实验记录。
+  - `suspect`: 有疑点；
+  - `failed`: 实验失败。
 
-## 注意事项
+## 指标注意事项
 
-- round-robin 路径当前没有真实 cache hit 统计，`cache_hit_rate=0` 不能解释为真实缓存命中率为 0。
-- 当前表里没有使用 `p95_first_token_latency`，因为近期结果中该字段为 `0.0`，明显不可信。
-- `source_file` 指向原始 `results.jsonl`，后续复核时以原始文件为证据。
+- `cache_hit_rate` 使用 `0..1` 比例，而不是百分数。
+- 8 RPS 的两轮 RR 运行早于 round-robin cache observation 修复，台账中的零值代表未收集。汇总表将其留空，不能解释为实际命中率为 0%。
+- 当前不使用 `p95_first_token_latency`，近期原始结果中该字段固定为 `0.0`，不可信。
+- `source_file` 和 `timestamp` 共同定位原始运行，复核时以原始 JSONL 为准。

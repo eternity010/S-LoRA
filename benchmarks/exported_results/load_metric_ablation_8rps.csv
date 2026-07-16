@@ -1,0 +1,7 @@
+method,routing_strategy,load_metric,w2,runs,throughput,strip_throughput,avg_latency_s,avg_ttft_s,p50_latency_s,p90_latency_s,p50_ttft_s,p90_ttft_s,cache_hit_rate,notes
+round_robin,round-robin,none,,2,6.975491,6.865835,10.422637,6.721787,8.270436,20.242052,5.644629,16.769569,,cache statistics unavailable for these two runs
+queue_length,adapter-aware,queue_length,0.2,2,6.884544,6.767060,10.231052,6.364750,8.983344,18.426120,6.082184,13.151882,0.790625,calibrated load-metric baseline
+token_count_waiting,adapter-aware,token_count,3.0,2,6.908022,6.792291,10.247068,6.351525,9.118867,17.826518,6.278731,12.833125,0.735069,waiting-only historical ablation
+rwpt_prefill,adapter-aware,rwpt,3.0,2,6.971161,6.860889,9.214096,5.414444,8.142200,15.962625,5.162200,10.475164,0.742708,prefill-only historical ablation
+token_count_active,adapter-aware,token_count_active,0.4,2,6.990352,6.881919,9.104202,5.214671,8.097412,15.411720,5.133687,10.315364,0.793750,active request tokens without rank weighting
+rwpt_active,adapter-aware,rwpt_active,0.4,2,7.015143,6.908932,8.763221,4.916763,7.780559,14.954324,4.563091,9.551170,0.801042,selected final metric

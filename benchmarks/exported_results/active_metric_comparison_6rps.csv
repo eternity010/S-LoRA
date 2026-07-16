@@ -1,0 +1,5 @@
+method,routing_strategy,load_metric,w2,runs,throughput,strip_throughput,avg_latency_s,avg_ttft_s,p50_latency_s,p90_latency_s,p50_ttft_s,p90_ttft_s,cache_hit_rate,notes
+round_robin,round-robin,none,,2,5.545586,5.493579,3.640663,0.555180,2.034545,7.411049,0.323449,0.815292,0.689352,cache observation enabled
+rwpt_prefill,adapter-aware,rwpt,3.0,2,5.591292,5.544088,3.535694,0.489234,2.051585,6.421247,0.368538,0.818304,0.759259,prefill-only historical ablation
+token_count_active,adapter-aware,token_count_active,0.4,2,5.622343,5.578453,3.374616,0.482818,2.066642,6.349887,0.383779,0.854337,0.779167,active request tokens without rank weighting
+rwpt_active,adapter-aware,rwpt_active,0.4,2,5.578768,5.530239,3.314279,0.471674,2.004355,6.077030,0.362058,0.807256,0.779167,selected final metric
