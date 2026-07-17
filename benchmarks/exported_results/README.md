@@ -6,6 +6,7 @@
 
 | 想看什么 | 文件 |
 |---|---|
+| 小论文四张核心实验图的逐轮输入数据 | `figure_data/` |
 | RR 与最终 RWPT Active 在 4/6/8 RPS 下的主结果 | `main_realtrace_rate_summary.csv` |
 | 6 RPS 下 RR、原 RWPT、TC Active 与 RWPT Active 对比 | `active_metric_comparison_6rps.csv` |
 | 8 RPS 下 RR、QL、TC、原 RWPT 和 RWPT Active 的消融 | `load_metric_ablation_8rps.csv` |
@@ -39,3 +40,9 @@
 - 原始 `results.jsonl` 不移动；通过台账的 `source_file` 回溯。
 - 原 `rwpt` 标记为 `rwpt_prefill`，作为 prefill-only 消融，不再代表最终算法。
 - `cache_hit_rate` 使用 `0..1` 比例；`*_pct` 是百分比；`*_pp` 是百分点。
+
+## 论文图数据
+
+`figure_data/` 下的四个 CSV 每行对应一次实际运行，保留 fresh/reuse 两个原始点，
+分别用于压力曲线、负载指标对比、active-request 消融和 rank 映射消融。它们由
+`build_figure_data.py` 从人工复核台账生成，不需要再手工复制均值。

@@ -11,6 +11,7 @@
 - 4/6/8 RPS 的 RR 和 RWPT Active 主线均各有两轮有效记录。
 - 6/8 RPS 的 TC Active 均各有两轮有效记录。
 - 8 RPS 的 QL、waiting-only TC 和原 RWPT 各有两轮有效消融记录。
+- 8 RPS rank-swapped 下的 TC Active 和 RWPT Active 均各有两轮有效记录。
 
 ## 汇总关系
 
@@ -23,6 +24,9 @@
 - `active_metric_comparison_6rps.csv`
   - 比较 RR、prefill-only RWPT、TC Active 和最终 RWPT Active。
   - 6 RPS 尚无修复后的 QL 重跑，因此不称为完整 load-metric 消融。
+- `figure_data/`
+  - 保存小论文四张核心实验图的逐轮输入数据。
+  - 由 `build_figure_data.py` 从本台账按明确 suite 名生成。
 
 ## 台账规则
 
