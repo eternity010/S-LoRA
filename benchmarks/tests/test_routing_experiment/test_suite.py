@@ -727,6 +727,46 @@ class TestExperimentSuite:
             runner._get_server_config_key(configs[1])
         )
 
+    @pytest.mark.parametrize(
+        ("suite_name", "load_metric"),
+        [
+            (
+                "dp-realtrace-token-count-active-8rps-rank-swapped-repeat2",
+                "token_count_active",
+            ),
+            (
+                "dp-realtrace-rwpt-active-8rps-rank-swapped-repeat2",
+                "rwpt_active",
+            ),
+        ],
+    )
+    def test_dp_realtrace_rank_swapped_repeat2_suites(self, suite_name, load_metric):
+        configs = list(ExperimentSuite.get_configs(suite_name))
+
+        assert len(configs) == 2
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == load_metric
+            assert config.routing_w1 == 1.0
+            assert config.routing_w2 == 0.4
+            assert config.req_rate == 8.0
+            assert config.duration == 180
+            assert config.num_adapters == 100
+            assert config.gpu_ids == "1,2,3"
+            assert "rank-swapped" in config.workload_name
+            assert config.trace_file.endswith(
+                "azure_llm_http_top100_8rps_180s_capped2048_512_rank_swapped_v1.jsonl"
+            )
+
+        assert ExperimentRunner._make_config_id(configs[0]) != (
+            ExperimentRunner._make_config_id(configs[1])
+        )
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert runner._get_server_config_key(configs[0]) == (
+            runner._get_server_config_key(configs[1])
+        )
+
     def test_dp_realtrace_w2_search_suite(self):
         configs = list(ExperimentSuite.get_configs("dp-realtrace-w2-search"))
 

@@ -509,6 +509,44 @@ class ExperimentSuite:
             "routing_w2": [0.4],
             "load_metric": ["token_count_active"],
         },
+        "dp-realtrace-token-count-active-8rps-rank-swapped-repeat2": {
+            # Rank ablation: preserve the trace but map the hottest adapters to rank 64.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_rank_swapped_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-rank-swapped-token-count-active-run1",
+                "azure-http-top100-8rps-rank-swapped-token-count-active-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count_active"],
+        },
+        "dp-realtrace-rwpt-active-8rps-rank-swapped-repeat2": {
+            # Same rank-swapped trace as token-count-active for a controlled ablation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_rank_swapped_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-8rps-rank-swapped-rwpt-active-run1",
+                "azure-http-top100-8rps-rank-swapped-rwpt-active-run2",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
         "dp-realtrace-rwpt-active-8rps-repeat2": {
             # Validate active-request RWPT at the high-load endpoint.
             "routing_strategy": ["adapter-aware"],

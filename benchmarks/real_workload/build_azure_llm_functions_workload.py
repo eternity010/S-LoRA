@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 try:
@@ -55,6 +56,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-context-tokens", type=int, default=None)
     parser.add_argument("--max-generated-tokens", type=int, default=None)
     parser.add_argument(
+        "--swap-adjacent-adapter-ids",
+        action="store_true",
+        help="Swap adapter ids in adjacent pairs (0<->1, 2<->3, ...).",
+    )
+    parser.add_argument(
         "--summary-output",
         type=Path,
         default=None,
@@ -83,6 +89,8 @@ def main() -> None:
 
     adapter_counts = load_selected_adapter_counts(args.functions_summary)
     requests = assign_weighted_adapters(sampled_rows, adapter_counts=adapter_counts)
+    if args.swap_adjacent_adapter_ids:
+        requests = swap_adjacent_adapter_ids(requests, adapter_count=len(adapter_counts))
     write_jsonl(requests, args.output)
 
     summary = summarize_requests(requests, duration_sec=args.duration)
@@ -96,6 +104,9 @@ def main() -> None:
             "source_rows_in_window": len(rows),
             "adapter_source": "azure_functions_http_top100_truncated",
             "adapter_count": len(adapter_counts),
+            "adapter_id_mapping": (
+                "adjacent_pair_swap" if args.swap_adjacent_adapter_ids else "identity"
+            ),
         }
     )
 
@@ -120,6 +131,22 @@ def load_selected_adapter_counts(summary_path: Path) -> list[int]:
 
     sorted_counts = sorted(selected_counts, key=lambda item: int(item["adapter_id"]))
     return [int(item["invocations"]) for item in sorted_counts]
+
+
+def swap_adjacent_adapter_ids(requests, adapter_count: int):
+    if adapter_count <= 0 or adapter_count % 2 != 0:
+        raise ValueError(
+            f"adapter_count must be a positive even number, got {adapter_count}"
+        )
+
+    remapped = []
+    for request in requests:
+        if request.adapter_id < 0 or request.adapter_id >= adapter_count:
+            raise ValueError(
+                f"adapter_id {request.adapter_id} is out of range for {adapter_count} adapters"
+            )
+        remapped.append(replace(request, adapter_id=request.adapter_id ^ 1))
+    return remapped
 
 
 if __name__ == "__main__":

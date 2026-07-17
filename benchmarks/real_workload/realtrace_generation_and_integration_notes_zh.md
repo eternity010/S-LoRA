@@ -51,6 +51,28 @@
 - `180s` 表示实验窗口长度。
 - `capped2048_512` 表示输入/输出长度使用了上限约束，避免超出模型限制。
 
+## Rank 映射消融
+
+8rps rank-swapped trace 保留原始 trace 的请求时间、输入/输出长度和 adapter 热度，
+只将相邻 adapter ID 交换：`0 <-> 1`, `2 <-> 3`, ...。在当前 adapter
+加载顺序下，偶数 ID 对应 rank 16，奇数 ID 对应 rank 64，因此该映射将热门
+adapter 从低 rank 侧翻转到高 rank 侧。
+
+```bash
+python real_workload/build_azure_llm_functions_workload.py \
+  --llm-trace /home/hzheng/datasets/azure_public/llm2024/AzureLLMInferenceTrace_conv_1week.csv \
+  --functions-summary real_workload/outputs/functions_d01_selected_http_top100_adapter_popularity.summary.json \
+  --output real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_rank_swapped_v1.jsonl \
+  --duration 180 \
+  --target-rate 8 \
+  --max-context-tokens 2048 \
+  --max-generated-tokens 512 \
+  --swap-adjacent-adapter-ids \
+  --summary-output real_workload/outputs/azure_llm_http_top100_8rps_180s_capped2048_512_rank_swapped_v1.summary.json
+```
+
+原始映射中 rank 64 占 input tokens 的 `26.39%`；交换后为 `73.61%`。
+
 ## 3. 接入实验框架
 
 ### 3.1 Benchmark 侧支持 trace workload
