@@ -52,6 +52,8 @@ class ExperimentRunner:
         self.model_dir = model_dir
         self.adapter_dir = adapter_dir
         self.debug = debug
+        self._local_http = requests.Session()
+        self._local_http.trust_env = False
         
         self.server_process: Optional[subprocess.Popen] = None
         self.server_log = None
@@ -597,7 +599,7 @@ class ExperimentRunner:
             
             # Try to connect to health endpoint
             try:
-                resp = requests.get(f"{self.server_host}/health", timeout=5)
+                resp = self._local_http.get(f"{self.server_host}/health", timeout=5)
                 if resp.status_code == 200:
                     # Server is ready! (model is guaranteed to be loaded)
                     self._log(f"server ready in {elapsed:.1f}s")
@@ -941,7 +943,9 @@ class ExperimentRunner:
 
         while True:
             try:
-                resp = requests.get(f"{self.server_host}/routing_stats", timeout=10)
+                resp = self._local_http.get(
+                    f"{self.server_host}/routing_stats", timeout=10
+                )
                 if resp.status_code == 200:
                     latest_stats = resp.json()
                     total_requests = latest_stats.get("total_requests", 0)
@@ -1004,7 +1008,7 @@ class ExperimentRunner:
         self._log(f"_update_routing_config: {data}")
 
         try:
-            resp = requests.post(
+            resp = self._local_http.post(
                 f"{self.server_host}/update_routing_config",
                 json=data,
                 timeout=10
@@ -1037,7 +1041,9 @@ class ExperimentRunner:
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                resp = requests.get(f"{self.server_host}/routing_stats", timeout=5)
+                resp = self._local_http.get(
+                    f"{self.server_host}/routing_stats", timeout=5
+                )
                 if resp.status_code == 200:
                     stats = resp.json()
                     actual = stats.get("routing_config", {})
@@ -1069,7 +1075,7 @@ class ExperimentRunner:
         reset_id = uuid.uuid4().hex
         
         try:
-            resp = requests.post(
+            resp = self._local_http.post(
                 f"{self.server_host}/reset_adapter_cache",
                 json={"reset_id": reset_id, "wait_seconds": 20.0},
                 timeout=30  # 给足够的时间让所有 Worker 完成

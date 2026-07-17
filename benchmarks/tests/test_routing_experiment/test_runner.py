@@ -98,6 +98,11 @@ class TestExperimentRunnerConfigId:
 
 
 class TestExperimentRunnerRuntimeCleanup:
+    def test_local_http_session_ignores_environment_proxies(self):
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+
+        assert runner._local_http.trust_env is False
+
     def test_cleanup_runtime_state_files_removes_stale_files(self):
         runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
 
@@ -170,7 +175,8 @@ class TestExperimentRunnerRuntimeCleanup:
             ),
         ])
         monkeypatch.setattr(
-            "routing_experiment.runner.requests.get",
+            runner._local_http,
+            "get",
             lambda *_args, **_kwargs: next(responses),
         )
         monkeypatch.setattr("routing_experiment.runner.time.sleep", lambda _seconds: None)
@@ -203,7 +209,8 @@ class TestExperimentRunnerRuntimeCleanup:
             ),
         ])
         monkeypatch.setattr(
-            "routing_experiment.runner.requests.get",
+            runner._local_http,
+            "get",
             lambda *_args, **_kwargs: next(responses),
         )
         monkeypatch.setattr("routing_experiment.runner.time.sleep", lambda _seconds: None)
@@ -230,14 +237,15 @@ class TestExperimentRunnerRuntimeCleanup:
                 },
             )
 
-        monkeypatch.setattr("routing_experiment.runner.requests.post", post)
+        monkeypatch.setattr(runner._local_http, "post", post)
 
         assert runner._reset_adapter_cache()
 
     def test_reset_adapter_cache_rejects_stale_completion_id(self, monkeypatch):
         runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
         monkeypatch.setattr(
-            "routing_experiment.runner.requests.post",
+            runner._local_http,
+            "post",
             lambda *_args, **_kwargs: SimpleNamespace(
                 status_code=200,
                 json=lambda: {
