@@ -452,6 +452,228 @@ class ExperimentSuite:
             "routing_w2": [0.4],
             "load_metric": ["rwpt_active"],
         },
+        "dp-realtrace-roundrobin-6rps-modelctx2048": {
+            # Cross-system baseline trace: actual dummy prompt + output fits 2048.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-6rps-modelctx2048-roundrobin"],
+        },
+        "dp-realtrace-rwpt-active-6rps-modelctx2048": {
+            # Cross-system baseline trace using the selected final routing metric.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-6rps-modelctx2048-rwpt-active"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-roundrobin-8rps-modelctx2048": {
+            # Higher-pressure cross-system trace with a fresh round-robin server.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-8rps-modelctx2048-roundrobin"],
+        },
+        "dp-realtrace-rwpt-active-8rps-modelctx2048": {
+            # Higher-pressure cross-system trace using the selected RWPT Active metric.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [8.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_8rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-8rps-modelctx2048-rwpt-active"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-roundrobin-9rps-modelctx2048": {
+            # Locate the pressure crossover between the 8 and 10 RPS traces.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-9rps-modelctx2048-roundrobin"],
+        },
+        "dp-realtrace-rwpt-9rps-modelctx2048": {
+            # Waiting-only RWPT control for the active-request ablation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-9rps-modelctx2048-rwpt"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt"],
+        },
+        "dp-realtrace-rwpt-active-9rps-modelctx2048": {
+            # RWPT Active at the intermediate 9 RPS pressure point.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-9rps-modelctx2048-rwpt-active"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-token-count-9rps-modelctx2048": {
+            # Waiting-only Token Count control for the active-request ablation.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-9rps-modelctx2048-token-count",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count"],
+        },
+        "dp-realtrace-token-count-active-9rps-modelctx2048": {
+            # Token Count Active ablation at the selected 9 RPS pressure point.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-9rps-modelctx2048-token-count-active",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["token_count_active"],
+        },
+        "dp-realtrace-queue-length-9rps-modelctx2048": {
+            # Queue Length ablation at the selected 9 RPS pressure point.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-9rps-modelctx2048-queue-length",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.2],
+            "load_metric": ["queue_length"],
+        },
+        "dp-realtrace-roundrobin-10rps-modelctx2048": {
+            # Overload-point cross-system trace with round-robin routing.
+            "routing_strategy": ["round-robin"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [10.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_10rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-10rps-modelctx2048-roundrobin"],
+        },
+        "dp-realtrace-rwpt-active-10rps-modelctx2048": {
+            # Overload-point cross-system trace using RWPT Active.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [10.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_10rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": ["azure-http-top100-10rps-modelctx2048-rwpt-active"],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-rwpt-active-6rps-modelctx2048-w2-0p5": {
+            # Recalibrate RWPT Active after enforcing the 2048-token model context.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-modelctx2048-rwpt-active-w2-0p5",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.5],
+            "load_metric": ["rwpt_active"],
+        },
+        "dp-realtrace-rwpt-active-6rps-modelctx2048-w2-coarse-search": {
+            # Probe stronger load penalties on the cross-system 2048-token trace.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [6.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_6rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-6rps-modelctx2048-rwpt-active-w2-coarse-search",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.6, 0.8, 1.0],
+            "load_metric": ["rwpt_active"],
+        },
         "dp-realtrace-token-count-active-6rps-repeat2": {
             # Active-request token-count ablation using the RWPT Active weight.
             "routing_strategy": ["adapter-aware"],

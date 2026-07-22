@@ -56,6 +56,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-context-tokens", type=int, default=None)
     parser.add_argument("--max-generated-tokens", type=int, default=None)
     parser.add_argument(
+        "--max-total-tokens",
+        type=int,
+        default=None,
+        help="Skip rows where context + generated tokens exceed this value.",
+    )
+    parser.add_argument(
         "--swap-adjacent-adapter-ids",
         action="store_true",
         help="Swap adapter ids in adjacent pairs (0<->1, 2<->3, ...).",
@@ -81,6 +87,7 @@ def main() -> None:
         max_context_tokens=args.max_context_tokens,
         max_generated_tokens=args.max_generated_tokens,
     )
+    rows = filter_rows_by_total_tokens(rows, args.max_total_tokens)
     sampled_rows = sample_requests_per_second(
         rows,
         target_rate=args.target_rate,
@@ -102,6 +109,7 @@ def main() -> None:
             "start_offset_sec": args.start_offset_sec,
             "target_rate": args.target_rate,
             "source_rows_in_window": len(rows),
+            "max_total_tokens": args.max_total_tokens,
             "adapter_source": "azure_functions_http_top100_truncated",
             "adapter_count": len(adapter_counts),
             "adapter_id_mapping": (
@@ -147,6 +155,17 @@ def swap_adjacent_adapter_ids(requests, adapter_count: int):
             )
         remapped.append(replace(request, adapter_id=request.adapter_id ^ 1))
     return remapped
+
+
+def filter_rows_by_total_tokens(rows, max_total_tokens: int | None):
+    if max_total_tokens is None:
+        return list(rows)
+    if max_total_tokens <= 0:
+        raise ValueError(f"max_total_tokens must be positive, got {max_total_tokens}")
+    return [
+        row for row in rows
+        if int(row["input_len"]) + int(row["output_len"]) <= max_total_tokens
+    ]
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ import pytest
 
 from real_workload.azure_trace import AzureTraceRequest
 from real_workload.build_azure_llm_functions_workload import (
+    filter_rows_by_total_tokens,
     load_selected_adapter_counts,
     swap_adjacent_adapter_ids,
 )
@@ -60,3 +61,18 @@ def test_swap_adjacent_adapter_ids_preserves_request_shape():
 def test_swap_adjacent_adapter_ids_requires_even_adapter_count():
     with pytest.raises(ValueError, match="positive even"):
         swap_adjacent_adapter_ids([], adapter_count=3)
+
+
+def test_filter_rows_by_total_tokens_preserves_valid_rows():
+    rows = [
+        {"input_len": 1800, "output_len": 200},
+        {"input_len": 1900, "output_len": 200},
+    ]
+
+    assert filter_rows_by_total_tokens(rows, 2048) == [rows[0]]
+    assert filter_rows_by_total_tokens(rows, None) == rows
+
+
+def test_filter_rows_by_total_tokens_rejects_nonpositive_limit():
+    with pytest.raises(ValueError, match="must be positive"):
+        filter_rows_by_total_tokens([], 0)

@@ -699,6 +699,122 @@ class TestExperimentSuite:
             runner._get_server_config_key(configs[1])
         )
 
+    @pytest.mark.parametrize(
+        ("suite_name", "strategy", "load_metric", "rate"),
+        [
+            (
+                "dp-realtrace-roundrobin-6rps-modelctx2048",
+                "round-robin",
+                "rwpt",
+                6.0,
+            ),
+            (
+                "dp-realtrace-rwpt-active-6rps-modelctx2048",
+                "adapter-aware",
+                "rwpt_active",
+                6.0,
+            ),
+            (
+                "dp-realtrace-roundrobin-8rps-modelctx2048",
+                "round-robin",
+                "rwpt",
+                8.0,
+            ),
+            (
+                "dp-realtrace-rwpt-active-8rps-modelctx2048",
+                "adapter-aware",
+                "rwpt_active",
+                8.0,
+            ),
+            (
+                "dp-realtrace-roundrobin-9rps-modelctx2048",
+                "round-robin",
+                "rwpt",
+                9.0,
+            ),
+            (
+                "dp-realtrace-rwpt-active-9rps-modelctx2048",
+                "adapter-aware",
+                "rwpt_active",
+                9.0,
+            ),
+            (
+                "dp-realtrace-roundrobin-10rps-modelctx2048",
+                "round-robin",
+                "rwpt",
+                10.0,
+            ),
+            (
+                "dp-realtrace-rwpt-active-10rps-modelctx2048",
+                "adapter-aware",
+                "rwpt_active",
+                10.0,
+            ),
+        ],
+    )
+    def test_dp_realtrace_modelctx2048_cross_system_suites(
+        self, suite_name, strategy, load_metric, rate
+    ):
+        configs = list(ExperimentSuite.get_configs(suite_name))
+
+        assert len(configs) == 1
+        config = configs[0]
+        config.validate()
+        assert config.routing_strategy == strategy
+        assert config.load_metric == load_metric
+        assert config.req_rate == rate
+        assert config.duration == 180
+        assert config.num_adapters == 100
+        assert config.gpu_ids == "1,2,3"
+        assert config.trace_file.endswith(
+            f"azure_llm_http_top100_{int(rate)}rps_180s_modelctx2048_v1.jsonl"
+        )
+        if strategy == "adapter-aware":
+            assert config.routing_w2 == 0.4
+
+    def test_dp_realtrace_modelctx2048_rwpt_active_w2_0p5_suite(self):
+        configs = list(
+            ExperimentSuite.get_configs(
+                "dp-realtrace-rwpt-active-6rps-modelctx2048-w2-0p5"
+            )
+        )
+
+        assert len(configs) == 1
+        config = configs[0]
+        config.validate()
+        assert config.routing_strategy == "adapter-aware"
+        assert config.load_metric == "rwpt_active"
+        assert config.routing_w2 == 0.5
+        assert config.req_rate == 6.0
+        assert config.duration == 180
+        assert config.gpu_ids == "1,2,3"
+        assert "modelctx2048" in config.trace_file
+        assert "w2-0p5" in config.workload_name
+
+    def test_dp_realtrace_modelctx2048_rwpt_active_w2_coarse_search_suite(self):
+        configs = list(
+            ExperimentSuite.get_configs(
+                "dp-realtrace-rwpt-active-6rps-modelctx2048-w2-coarse-search"
+            )
+        )
+
+        assert len(configs) == 3
+        assert [config.routing_w2 for config in configs] == [0.6, 0.8, 1.0]
+        for config in configs:
+            config.validate()
+            assert config.routing_strategy == "adapter-aware"
+            assert config.load_metric == "rwpt_active"
+            assert config.routing_w1 == 1.0
+            assert config.req_rate == 6.0
+            assert config.duration == 180
+            assert config.gpu_ids == "1,2,3"
+            assert "modelctx2048" in config.trace_file
+            assert "w2-coarse-search" in config.workload_name
+
+        assert len({ExperimentRunner._make_config_id(c) for c in configs}) == 3
+        runner = ExperimentRunner(output_dir="unused", benchmarks_dir=".")
+        assert len({runner._get_server_config_key(c) for c in configs}) == 1
+
     @pytest.mark.parametrize("rate", [6.0, 8.0, 10.0])
     def test_dp_realtrace_token_count_active_repeat2_suites(self, rate):
         suite_name = f"dp-realtrace-token-count-active-{int(rate)}rps-repeat2"
