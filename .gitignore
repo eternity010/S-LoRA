@@ -35,8 +35,11 @@ benchmarks/exported_results/*.csv
 !benchmarks/exported_results/main_realtrace_rate_summary.csv
 !benchmarks/exported_results/load_metric_ablation_8rps.csv
 !benchmarks/exported_results/active_metric_comparison_6rps.csv
+!benchmarks/exported_results/modelctx2048_external_baseline_runs.csv
+!benchmarks/exported_results/modelctx2048_external_baseline_summary.csv
 benchmarks/exported_results/*.json
 benchmarks/exported_results/*.jsonl
+benchmarks/exported_results/figures/
 
 # Preprocessed real-workload trace artifacts
 benchmarks/real_workload/outputs/

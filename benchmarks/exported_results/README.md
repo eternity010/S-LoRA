@@ -10,6 +10,8 @@
 | RR 与最终 RWPT Active 在 4/6/8 RPS 下的主结果 | `main_realtrace_rate_summary.csv` |
 | 6 RPS 下 RR、原 RWPT、TC Active 与 RWPT Active 对比 | `active_metric_comparison_6rps.csv` |
 | 8 RPS 下 RR、QL、TC、原 RWPT 和 RWPT Active 的消融 | `load_metric_ablation_8rps.csv` |
+| modelctx2048 下 vLLM 与 RankFlow 的逐轮外部基线数据 | `modelctx2048_external_baseline_runs.csv` |
+| modelctx2048 下按系统、策略和 RPS 聚合的结果 | `modelctx2048_external_baseline_summary.csv` |
 | 每一轮实验的完整指标和原始结果路径 | `manual_experiment_registry.csv` |
 | 台账字段、状态和使用规则 | `manual_experiment_registry_notes.md` |
 
@@ -46,3 +48,8 @@
 `figure_data/` 下的四个 CSV 每行对应一次实际运行，保留 fresh/reuse 两个原始点，
 分别用于压力曲线、负载指标对比、active-request 消融和 rank 映射消融。它们由
 `build_figure_data.py` 从人工复核台账生成，不需要再手工复制均值。
+
+`build_modelctx2048_baseline_data.py` 独立整理跨系统结果。当前包含 vLLM
+0.4.0 与 vLLM 0.6.3、原生 S-LoRA 三实例的 6/8 RPS 结果，以及 RankFlow
+RR/RWPT Active 的 6 RPS 两轮和 8/9/10 RPS 单轮。该表与旧
+`capped2048_512` 主实验分开，避免混用不同 trace 约束。
