@@ -18,6 +18,7 @@ from routing_experiment.runner import ExperimentRunner
 from trace import Request
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.dp_manager import DataParallelRouterManager
+from slora.server.router.rwpt import rank_weighted_prompt_tokens
 from slora.server.router.worker_state import RoutingConfig, WorkerState
 from slora.server.router.worker_state_cache import WorkerStateCache
 
@@ -40,6 +41,28 @@ class TestExperimentRunnerConfigId:
         )
 
         assert ExperimentRunner._make_config_id(config_a) != ExperimentRunner._make_config_id(config_b)
+
+    def test_profiled_rank_beta_changes_server_and_experiment_identity(self):
+        config_a = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            profiled_rank_beta=0.00845,
+        )
+        config_b = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            profiled_rank_beta=0.01,
+        )
+
+        runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
+        assert runner._get_server_config_key(config_a) != runner._get_server_config_key(config_b)
+        assert runner._make_config_id(config_a) != runner._make_config_id(config_b)
 
     def test_config_id_distinguishes_synthetic_and_trace_workloads(self):
         synthetic = ExperimentConfig(
@@ -359,6 +382,7 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
             config=RoutingConfig(
                 strategy="adapter-aware",
                 load_metric="rwpt",
+                profiled_rank_beta=0.00845,
                 hidden_dim=4096,
                 default_lora_rank=16,
             ),
@@ -379,7 +403,7 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         )
 
         state = manager.router.worker_states[0]
-        expected = int(120 * (1.0 + (2.0 / (3.0 * 4096)) * 64))
+        expected = rank_weighted_prompt_tokens(120, 64, 0.00845)
         assert state.queue_length == 1
         assert state.pending_prefill_tokens == expected
 
@@ -396,7 +420,7 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         )
 
         state = manager.router.worker_states[0]
-        expected = int(120 * (1.0 + (2.0 / (3.0 * 4096)) * 64))
+        expected = rank_weighted_prompt_tokens(120, 64, 0.00845)
         assert state.pending_prefill_tokens == expected
         assert state.active_rwpt_tokens == 0
 
@@ -412,7 +436,7 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         )
 
         state = manager.router.worker_states[0]
-        expected = int(80 * (1.0 + (2.0 / (3.0 * 4096)) * 16))
+        expected = rank_weighted_prompt_tokens(80, 16, 0.00845)
         assert state.queue_length == 1
         assert state.pending_prefill_tokens == expected
 

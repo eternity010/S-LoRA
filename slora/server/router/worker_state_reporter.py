@@ -254,9 +254,11 @@ class WorkerStateReporter:
             # Hot adapter replication: top-K RWPT contributors
             'top_k_rwpt_adapters': [list(t) for t in state.top_k_rwpt_adapters],
         }
-        # profiled_alpha: 静态值，缓存后每次消息都带上（dp_manager 只取首次）
+        # 静态 profiling 元数据缓存后随每次心跳发送，便于诊断和版本核对。
         if hasattr(self, '_cached_profiled_alpha'):
             msg['profiled_alpha'] = self._cached_profiled_alpha
+            if hasattr(self, '_cached_profiled_rank_beta'):
+                msg['profiled_rank_beta'] = self._cached_profiled_rank_beta
             if hasattr(self, '_cached_hidden_dim'):
                 msg['hidden_dim'] = self._cached_hidden_dim
         elif self._state_getter:
@@ -266,6 +268,10 @@ class WorkerStateReporter:
                 if alpha is not None:
                     self._cached_profiled_alpha = alpha
                     msg['profiled_alpha'] = alpha
+                rank_beta = raw.get('profiled_rank_beta')
+                if rank_beta is not None:
+                    self._cached_profiled_rank_beta = rank_beta
+                    msg['profiled_rank_beta'] = rank_beta
                 hidden_dim = raw.get('hidden_dim')
                 if hidden_dim is not None:
                     self._cached_hidden_dim = hidden_dim

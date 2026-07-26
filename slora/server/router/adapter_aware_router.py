@@ -126,7 +126,7 @@ class AdapterAwareRouter:
         adapter_to_workers: Adapter 到 Worker 的倒排索引
         adapter_ranks: Adapter 到 rank 的映射（用于 Rank-Aware Routing）
         stats: 路由统计信息
-        _gamma: γ = 2/(3·d)，LoRA 对 Q/K/V/O 四投影的 FLOPs 增比推导
+        profiled_rank_beta: 离线 profiling 得到的 LoRA rank 成本系数
         _capacity: 归一化容量（KV Cache token 容量）
         _decode_cost_alpha: Decode 序列负载折算系数 α
     
@@ -178,8 +178,6 @@ class AdapterAwareRouter:
         self._stats_log_interval = 10.0  # 每 10 秒输出一次统计
         
         # RWPT parameters (Requirements: 4.2)
-        # γ = 2/(3d): LoRA 对 Q/K/V/O 四投影各加 4dr FLOPs，共 16dr / 24d² = 2r/(3d)
-        self._gamma = 2.0 / (3.0 * self.config.hidden_dim)
         # RWPT 归一化分母：用 batch_max_tokens（单次 prefill 批次容量）而非 max_total_token_num（KV Cache 总槽位）
         # 物理意义：RWPT/batch_max_tokens ≈ "排队批次数"（Expected Batches to Process）
         self._capacity = self.config.batch_max_tokens
@@ -190,7 +188,7 @@ class AdapterAwareRouter:
         logger.info(f"AdapterAwareRouter initialized with {num_workers} workers, "
                    f"strategy={self.config.strategy}, w1={self.config.w1}, w2={self.config.w2}, "
                    f"w3={self.config.w3}, load_metric={self.config.load_metric}, "
-                   f"gamma={self._gamma:.6f}, "
+                   f"profiled_rank_beta={self.config.profiled_rank_beta:.6f}, "
                    f"capacity(batch_max_tokens)={self._capacity}, decode_cost_alpha={alpha_status}")
     
     def calculate_score(self, worker_id: int, adapter_dir: str) -> float:

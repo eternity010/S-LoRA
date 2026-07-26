@@ -24,6 +24,10 @@ from slora.models.peft.lora_adapter import get_lora_config
 from slora.server.router.model_infer.model_rpc import start_model_process, ModelRpcClient
 from slora.server.input_params import InputParams
 from slora.server.router.worker_state_reporter import WorkerStateReporter
+from slora.server.router.rwpt import (
+    DEFAULT_PROFILED_RANK_BETA,
+    rank_weighted_prompt_tokens,
+)
 
 
 class GPUWorker:
@@ -88,6 +92,11 @@ class GPUWorker:
         
         # Profiled decode cost alpha（运行时测量或手动指定）
         self._profiled_alpha: float = 0.1  # 默认回退值
+
+        # Offline-profiled LoRA rank cost used by every RWPT code path.
+        self._profiled_rank_beta: float = getattr(
+            self.args, 'profiled_rank_beta', DEFAULT_PROFILED_RANK_BETA
+        )
         
         # 模型 hidden_dim（从 model config 自动检测，回退到 args 或默认 4096）
         self._hidden_dim: int = getattr(self.args, 'hidden_dim', None) or 4096
@@ -182,7 +191,7 @@ class GPUWorker:
             - avg_rank: 当前批次的平均 rank
             - min_rank: 当前批次的最小 rank
             - max_rank: 当前批次的最大 rank
-            - pending_prefill_tokens: Rank 加权后的等待 token 总数 Σ(len_j·(1+γ·r_j))
+            - pending_prefill_tokens: Rank 加权后的等待 token 总数 Σ(len_j·(1+β·r_j))
             - active_rwpt_tokens: 当前 batch 请求的 rank 加权 input token 总数
             - active_decode_seqs: 当前 batch 中 decode 序列数
             - pool_used_ratio: 内存池使用率 (0.0-1.0)
@@ -230,9 +239,7 @@ class GPUWorker:
                 max_rank = max(ranks)
         
         # 采集 pending_prefill_tokens（Rank 加权）和 pending_raw_tokens（原始值）：
-        # RWPT 公式要求 Σ(input_len_j · (1 + γ·r_j))，其中 γ = 2/(3·d)
-        # 推导：LoRA 对 Q/K/V/O 四个投影各加 4dr FLOPs，共 16dr；Base 每层 24d²
-        #       增比 = 16dr/24d² = 2r/(3d)，提取 r 后 γ = 2/(3d)
+        # RWPT 公式为 Σ(input_len_j · (1 + β·r_j))，β 由离线 profiling 得到。
         # Worker 端完成加权，上报的是加权后的值，Router 端直接使用
         # pending_raw_tokens = Σ(input_len)，不含 rank 加权，用于 token_count 消融变体
         # Requirements: 2.1, 2.4
@@ -240,14 +247,13 @@ class GPUWorker:
         pending_raw_tokens = 0
         try:
             if self.req_queue and self.req_queue.waiting_req_list:
-                gamma = 2.0 / (3.0 * self._hidden_dim)
                 for req in self.req_queue.waiting_req_list:
                     input_len = len(req.prompt_ids)
                     rank = self.lora_ranks.get(req.adapter_dir, 0)
-                    # base adapter (rank=0) 时 factor=1.0，无额外开销
-                    pending_prefill_tokens += input_len * (1.0 + gamma * rank)
+                    pending_prefill_tokens += rank_weighted_prompt_tokens(
+                        input_len, rank, self._profiled_rank_beta
+                    )
                     pending_raw_tokens += input_len
-            pending_prefill_tokens = int(pending_prefill_tokens)
             pending_raw_tokens = int(pending_raw_tokens)
         except Exception:
             pending_prefill_tokens = 0
@@ -261,13 +267,13 @@ class GPUWorker:
         try:
             if self.current_batch and self.current_batch.reqs:
                 active_decode_seqs = len(self.current_batch.reqs)
-                gamma = 2.0 / (3.0 * self._hidden_dim)
                 for req in self.current_batch.reqs:
                     input_len = len(req.prompt_ids)
                     rank = self.lora_ranks.get(req.adapter_dir, 0)
                     current_batch_prompt_tokens += input_len
-                    active_rwpt_tokens += input_len * (1.0 + gamma * rank)
-                active_rwpt_tokens = int(active_rwpt_tokens)
+                    active_rwpt_tokens += rank_weighted_prompt_tokens(
+                        input_len, rank, self._profiled_rank_beta
+                    )
         except Exception:
             active_decode_seqs = 0
             current_batch_prompt_tokens = 0
@@ -299,6 +305,7 @@ class GPUWorker:
             'current_batch_prompt_tokens': current_batch_prompt_tokens,
             'pool_used_ratio': pool_used_ratio,
             'profiled_alpha': self._profiled_alpha,
+            'profiled_rank_beta': self._profiled_rank_beta,
             'hidden_dim': self._hidden_dim,
             'top_k_rwpt_adapters': self._compute_top_k_rwpt_adapters(),
         }
@@ -308,8 +315,8 @@ class GPUWorker:
         计算等待队列中 RWPT 贡献 top-K 的 adapter
 
         遍历 waiting_req_list，按 adapter 聚合 RWPT 贡献：
-            contribution(adapter) = Σ input_len_j × (1 + γ × rank_j)
-        其中 γ = 2/(3×hidden_dim)。使用 heapq.nlargest 取 top-K，O(n + k·log(n))。
+            contribution(adapter) = Σ input_len_j × (1 + β × rank_j)
+        其中 β 由离线 profiling 得到。使用 heapq.nlargest 取 top-K，O(n + k·log(n))。
 
         Args:
             k: 返回的 top-K 数量，默认 5
@@ -322,14 +329,14 @@ class GPUWorker:
         if not self.req_queue or not self.req_queue.waiting_req_list:
             return []
 
-        gamma = 2.0 / (3.0 * self._hidden_dim)
-
         # 按 adapter 聚合 RWPT 贡献
         adapter_contrib: Dict[str, float] = {}
         for req in self.req_queue.waiting_req_list:
             input_len = len(req.prompt_ids)
             rank = self.lora_ranks.get(req.adapter_dir, 0)
-            contrib = input_len * (1.0 + gamma * rank)
+            contrib = rank_weighted_prompt_tokens(
+                input_len, rank, self._profiled_rank_beta
+            )
             adapter_contrib[req.adapter_dir] = adapter_contrib.get(req.adapter_dir, 0.0) + contrib
 
         # heapq.nlargest: O(n + k·log(n))，比全排序更优
@@ -872,6 +879,10 @@ class GPUWorker:
             print(f"[Worker {self.worker_id}]   Model directory: {self.args.model_dir}")
             print(f"[Worker {self.worker_id}]   Max total tokens: {self.args.max_total_token_num}")
             print(f"[Worker {self.worker_id}]   Batch max tokens: {self.args.batch_max_tokens}")
+            print(
+                f"[Worker {self.worker_id}]   Profiled rank beta: "
+                f"{self._profiled_rank_beta}"
+            )
             print(f"[Worker {self.worker_id}]   Running max requests: {self.args.running_max_req_size}")
             print(f"[Worker {self.worker_id}]   Dummy mode: {getattr(self.args, 'dummy', False)}")
             print(f"[Worker {self.worker_id}]   LoRA enabled: {not getattr(self.args, 'no_lora', False)}")

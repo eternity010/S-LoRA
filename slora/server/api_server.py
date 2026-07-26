@@ -622,8 +622,10 @@ def main():
                         help="Hot adapter request rate threshold in req/s (default: 1e9, effectively disabled)")
     
     # RWPT (Rank-Weighted Pending Tokens) 相关参数
+    parser.add_argument("--profiled-rank-beta", type=float, default=0.00845,
+                        help="离线 profiling 得到的 LoRA rank 成本系数 (默认: 0.00845)")
     parser.add_argument("--hidden-dim", type=int, default=None,
-                        help="模型隐藏层维度，用于计算 LoRA rank 加权系数 γ=2/(3·d) (默认: 从模型 config.json 自动检测，检测失败时回退 4096)")
+                        help="模型隐藏层维度，仅保留用于模型元数据和向后兼容")
     parser.add_argument("--decode-cost-alpha", type=float, default=None,
                         help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     parser.add_argument("--load-metric", type=str, default="rwpt",

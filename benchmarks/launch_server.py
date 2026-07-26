@@ -57,8 +57,10 @@ if __name__ == "__main__":
                         help="热点 Adapter 请求率阈值，单位 req/s (默认: 10.0)")
     
     # RWPT (Rank-Weighted Pending Tokens) 相关参数
+    parser.add_argument("--profiled-rank-beta", type=float, default=0.00845,
+                        help="离线 profiling 得到的 LoRA rank 成本系数 (默认: 0.00845)")
     parser.add_argument("--hidden-dim", type=int, default=None,
-                        help="模型隐藏层维度，用于计算 LoRA rank 加权系数 γ=2/(3·d) (默认: 从模型 config.json 自动检测，检测失败时回退 4096)")
+                        help="模型隐藏层维度，仅保留用于模型元数据和向后兼容")
     parser.add_argument("--decode-cost-alpha", type=float, default=None,
                         help="Decode 序列负载折算系数 (默认: None, 由 Worker 运行时 profiling 自动测量)")
     
@@ -162,6 +164,7 @@ if __name__ == "__main__":
             cmd += f" --hot-adapter-threshold {args.hot_adapter_threshold}"
         
         # 添加 RWPT 参数
+        cmd += f" --profiled-rank-beta {args.profiled_rank_beta}"
         if args.hidden_dim is not None:
             cmd += f" --hidden-dim {args.hidden_dim}"
         if args.decode_cost_alpha is not None:

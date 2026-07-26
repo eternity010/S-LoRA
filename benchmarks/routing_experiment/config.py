@@ -42,6 +42,7 @@ class ExperimentConfig:
     
     # Load metric ablation
     load_metric: str = "rwpt"  # queue_length | token_count[_active] | rwpt[_active]
+    profiled_rank_beta: float = 0.00845  # Offline-profiled rank-cost coefficient
     
     # Hot adapter replication
     enable_replication: bool = False  # 是否启用主动复制
@@ -91,6 +92,11 @@ class ExperimentConfig:
             "queue_length", "token_count", "token_count_active", "rwpt", "rwpt_active"
         ):
             raise ValueError(f"Invalid load_metric: {self.load_metric}")
+
+        if self.profiled_rank_beta < 0:
+            raise ValueError(
+                f"profiled_rank_beta must be non-negative, got {self.profiled_rank_beta}"
+            )
         
         if self.replication_congestion_threshold <= 0:
             raise ValueError(
@@ -108,6 +114,7 @@ class ExperimentConfig:
             "--num-token", str(self.num_token),
             "--routing-strategy", self.routing_strategy,
             "--max-lora-ratio", str(self.max_lora_ratio),
+            "--profiled-rank-beta", str(self.profiled_rank_beta),
         ]
         
         if self.routing_strategy == "adapter-aware":

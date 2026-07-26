@@ -157,7 +157,8 @@ class ExperimentRunner:
             f"workers{config.num_workers}_"
             f"gpus{config.gpu_ids}_"
             f"adapters{config.num_adapters}_"
-            f"tokens{config.num_token}"
+            f"tokens{config.num_token}_"
+            f"rankbeta{config.profiled_rank_beta}"
         )
     
     @staticmethod
@@ -174,6 +175,7 @@ class ExperimentRunner:
             f"_dur{config.duration}"
             f"_workload{workload_id}"
             f"_w1{config.routing_w1}_w2{config.routing_w2}"
+            f"_rankbeta{config.profiled_rank_beta}"
             f"_lm{config.load_metric}"
             f"_repl{int(config.enable_replication)}"
         )

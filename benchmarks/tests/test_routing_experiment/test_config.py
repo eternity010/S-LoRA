@@ -72,6 +72,34 @@ class TestExperimentConfigValidation:
         index = args.index("--load-metric")
         assert args[index + 1] == "token_count_active"
 
+    def test_profiled_rank_beta_is_forwarded_to_server(self):
+        config = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            profiled_rank_beta=0.00845,
+        )
+
+        args = config.to_server_args()
+
+        index = args.index("--profiled-rank-beta")
+        assert args[index + 1] == "0.00845"
+
+    def test_negative_profiled_rank_beta_is_invalid(self):
+        config = ExperimentConfig(
+            routing_strategy="adapter-aware",
+            num_adapters=100,
+            alpha=0.1,
+            req_rate=6.0,
+            duration=180,
+            profiled_rank_beta=-0.1,
+        )
+
+        with pytest.raises(ValueError, match="profiled_rank_beta"):
+            config.validate()
+
     def test_valid_trace_workload_config(self):
         """Test valid trace workload configuration"""
         config = ExperimentConfig(

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Set, Dict, Optional, List, Tuple
 import time
 
+from slora.server.router.rwpt import DEFAULT_PROFILED_RANK_BETA
+
 
 @dataclass
 class WorkerState:
@@ -304,7 +306,8 @@ class RoutingConfig:
     max_queue_length: int = 100
     hot_adapter_threshold: float = 1e9
     # RWPT (Rank-Calibrated Workload) parameters
-    hidden_dim: int = 4096             # 模型隐藏层维度，用于计算 γ
+    profiled_rank_beta: float = DEFAULT_PROFILED_RANK_BETA
+    hidden_dim: int = 4096             # Retained for model metadata/backward compatibility
     decode_cost_alpha: float = None     # Decode 序列负载折算系数（None 时由 Worker profiling 自动测量）
     max_total_token_num: int = 6000    # KV Cache capacity in tokens (from --max_total_token_num)
     batch_max_tokens: int = 1000       # 单次 prefill 批次最大 token 数，RWPT 归一化分母
@@ -342,6 +345,10 @@ class RoutingConfig:
             raise ValueError(f"max_queue_length must be positive, got {self.max_queue_length}")
         if self.hot_adapter_threshold <= 0:
             raise ValueError(f"hot_adapter_threshold must be positive, got {self.hot_adapter_threshold}")
+        if self.profiled_rank_beta < 0:
+            raise ValueError(
+                f"profiled_rank_beta must be non-negative, got {self.profiled_rank_beta}"
+            )
         if self.hidden_dim <= 0:
             raise ValueError(f"hidden_dim must be positive, got {self.hidden_dim}")
         if self.decode_cost_alpha is not None and self.decode_cost_alpha < 0:
@@ -376,6 +383,7 @@ class RoutingConfig:
             'heartbeat_timeout_ms': self.heartbeat_timeout_ms,
             'max_queue_length': self.max_queue_length,
             'hot_adapter_threshold': self.hot_adapter_threshold,
+            'profiled_rank_beta': self.profiled_rank_beta,
             'hidden_dim': self.hidden_dim,
             'decode_cost_alpha': self.decode_cost_alpha,
             'max_total_token_num': self.max_total_token_num,
@@ -397,6 +405,9 @@ class RoutingConfig:
             heartbeat_timeout_ms=data.get('heartbeat_timeout_ms', 300),
             max_queue_length=data.get('max_queue_length', 100),
             hot_adapter_threshold=data.get('hot_adapter_threshold', 1e9),
+            profiled_rank_beta=data.get(
+                'profiled_rank_beta', DEFAULT_PROFILED_RANK_BETA
+            ),
             hidden_dim=data.get('hidden_dim', 4096),
             decode_cost_alpha=data.get('decode_cost_alpha', None),
             max_total_token_num=data.get('max_total_token_num', 6000),

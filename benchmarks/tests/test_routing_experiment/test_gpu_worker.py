@@ -80,6 +80,7 @@ def test_process_requests_returns_prefill_finished_response():
     worker.actual_adapter_memory_usage = {}
     worker.args = SimpleNamespace(eos_id=2, no_lora=True)
     worker.model_rpc = DummyModelRpc()
+    worker.state_reporter = None
 
     responses = asyncio.run(worker._process_requests())
 
@@ -112,6 +113,7 @@ def test_process_requests_returns_error_response_for_failed_new_batch():
     worker.actual_adapter_memory_usage = {}
     worker.args = SimpleNamespace(eos_id=2, no_lora=True)
     worker.model_rpc = DummyModelRpc(fail_prefill=True)
+    worker.state_reporter = None
 
     responses = asyncio.run(worker._process_requests())
 
@@ -168,3 +170,35 @@ def test_finish_eviction_preserves_existing_current_batch_adapters():
     assert worker.model_rpc.eviction_calls
     preserve_dirs = worker.model_rpc.eviction_calls[0]["preserve_dirs"]
     assert preserve_dirs == {"/adapters/new", "/adapters/active"}
+
+
+def test_reporter_state_uses_profiled_rank_cost_for_waiting_active_and_top_k():
+    waiting = SimpleNamespace(
+        adapter_dir="/adapters/rank16",
+        prompt_ids=list(range(100)),
+    )
+    active = SimpleNamespace(
+        adapter_dir="/adapters/rank64",
+        prompt_ids=list(range(100)),
+    )
+
+    worker = GPUWorker.__new__(GPUWorker)
+    worker.worker_id = 0
+    worker.req_queue = SimpleNamespace(waiting_req_list=[waiting])
+    worker.current_batch = SimpleNamespace(reqs=[active])
+    worker.lora_ranks = {
+        "/adapters/rank16": 16,
+        "/adapters/rank64": 64,
+    }
+    worker.adapter_cache = {}
+    worker.model_rpc = None
+    worker._profiled_alpha = 0.0
+    worker._profiled_rank_beta = 0.00845
+    worker._hidden_dim = 4096
+
+    state = worker._get_state_for_reporter()
+
+    assert state["pending_prefill_tokens"] == 113
+    assert state["active_rwpt_tokens"] == 154
+    assert state["top_k_rwpt_adapters"] == [("/adapters/rank16", 113.0)]
+    assert state["profiled_rank_beta"] == 0.00845

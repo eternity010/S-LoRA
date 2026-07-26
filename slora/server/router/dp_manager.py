@@ -30,6 +30,10 @@ from typing import Any, Dict, List, Optional, Union
 from slora.server.router.round_robin_router import RoundRobinRouter
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.worker_state import WorkerState, RoutingConfig
+from slora.server.router.rwpt import (
+    DEFAULT_PROFILED_RANK_BETA,
+    rank_weighted_prompt_tokens,
+)
 from slora.server.router.worker_state_cache import WorkerStateCache
 from slora.server.router.replica_manager import ReplicaManager
 from slora.server.io_struct import AbortReq, Req, ReqDetokenizationState
@@ -329,6 +333,9 @@ class DataParallelRouterManager:
             hot_adapter_threshold=getattr(self.args, 'hot_adapter_threshold', 1e9),
             max_total_token_num=getattr(self.args, 'max_total_token_num', 6000),
             batch_max_tokens=getattr(self.args, 'batch_max_tokens', 1000),
+            profiled_rank_beta=getattr(
+                self.args, 'profiled_rank_beta', DEFAULT_PROFILED_RANK_BETA
+            ),
             hidden_dim=getattr(self.args, 'hidden_dim', None) or 4096,  # Worker 会通过心跳自动更新
             decode_cost_alpha=getattr(self.args, 'decode_cost_alpha', None),
             load_metric=getattr(self.args, 'load_metric', 'rwpt'),
@@ -451,13 +458,13 @@ class DataParallelRouterManager:
         if not adapter_dir:
             return
 
-        hidden_size = getattr(routing_config, 'hidden_dim', None) or 4096
-        gamma = 2.0 / (3.0 * hidden_size)
         default_rank = getattr(routing_config, 'default_lora_rank', 16)
         adapter_ranks = getattr(self.router, 'adapter_ranks', {})
         rank = adapter_ranks.get(adapter_dir, default_rank)
 
-        estimated_prefill = int(prompt_len * (1.0 + gamma * rank))
+        estimated_prefill = rank_weighted_prompt_tokens(
+            prompt_len, rank, routing_config.profiled_rank_beta
+        )
         state.pending_prefill_tokens += estimated_prefill
         state.optimistic_prefill_tokens += estimated_prefill
 
@@ -553,6 +560,10 @@ class DataParallelRouterManager:
             'routing_w1': getattr(routing_config, 'w1', None) if routing_config else None,
             'routing_w2': getattr(routing_config, 'w2', None) if routing_config else None,
             'routing_w3': getattr(routing_config, 'w3', None) if routing_config else None,
+            'profiled_rank_beta': (
+                getattr(routing_config, 'profiled_rank_beta', None)
+                if routing_config else None
+            ),
             'capacity': capacity,
             'workers': worker_debug,
         }
@@ -592,7 +603,8 @@ class DataParallelRouterManager:
             alpha_status = "auto-profiled" if routing_config.decode_cost_alpha is None else f"{routing_config.decode_cost_alpha}"
             print(f"[DataParallelRouterManager] Created AdapterAwareRouter with config: "
                   f"w1={routing_config.w1}, w2={routing_config.w2}, "
-                  f"w3={routing_config.w3}, hidden_dim={routing_config.hidden_dim}, "
+                  f"w3={routing_config.w3}, "
+                  f"profiled_rank_beta={routing_config.profiled_rank_beta}, "
                   f"decode_cost_alpha={alpha_status}, "
                   f"max_queue={routing_config.max_queue_length}")
             return router
@@ -1836,19 +1848,17 @@ class DataParallelRouterManager:
                             logger.info(f"Router decode_cost_alpha updated to {median_alpha} "
                                        f"(median of {len(alphas)} workers)")
                 
-                # 缓存 hidden_dim（一次性，首次收到后不再更新）
+                # 缓存 hidden_dim 仅用于模型元数据；RWPT 使用固定 profiled_rank_beta。
                 hidden_dim = message.get('hidden_dim')
                 if hidden_dim is not None:
                     if not hasattr(self, '_worker_hidden_dim'):
                         self._worker_hidden_dim = None
                     if self._worker_hidden_dim is None:
                         self._worker_hidden_dim = hidden_dim
-                        if isinstance(self.router, AdapterAwareRouter):
-                            self.router.config.hidden_dim = hidden_dim
-                            self.router._gamma = 2.0 / (3.0 * hidden_dim)
-                            logger.info(f"Router hidden_dim updated to {hidden_dim} "
-                                       f"(auto-detected from Worker {worker_id}), "
-                                       f"gamma={self.router._gamma:.6f}")
+                        logger.info(
+                            f"Worker hidden_dim detected as {hidden_dim} "
+                            f"from Worker {worker_id} (metadata only)"
+                        )
                 
                 # 更新路由器状态
                 if isinstance(self.router, AdapterAwareRouter):
