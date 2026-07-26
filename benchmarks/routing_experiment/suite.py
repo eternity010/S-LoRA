@@ -555,6 +555,25 @@ class ExperimentSuite:
             "routing_w2": [0.4],
             "load_metric": ["rwpt_active"],
         },
+        "dp-realtrace-rwpt-active-9rps-w2-search-profiled": {
+            # 新 rank profiling 系数下，在 9 RPS 压力点搜索 RWPT-Active 的 w2。
+            # 每个 w2 只运行一轮，便于快速确定后续正式实验的配置。
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [100],
+            "req_rate": [9.0],
+            "duration": [180],
+            "workload_type": ["trace"],
+            "trace_file": [
+                "real_workload/outputs/azure_llm_http_top100_9rps_180s_modelctx2048_v1.jsonl",
+            ],
+            "workload_name": [
+                "azure-http-top100-9rps-modelctx2048-rwpt-active-profiled",
+            ],
+            "routing_w1": [1.0],
+            "routing_w2": [0.2, 0.3, 0.4, 0.5],
+            "load_metric": ["rwpt_active"],
+        },
         "dp-realtrace-token-count-9rps-modelctx2048": {
             # Waiting-only Token Count control for the active-request ablation.
             "routing_strategy": ["adapter-aware"],
