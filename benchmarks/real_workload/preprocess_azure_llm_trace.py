@@ -4,7 +4,7 @@ Preprocess Azure LLM inference traces into compact S-LoRA benchmark traces.
 
 Example:
     python benchmarks/real_workload/preprocess_azure_llm_trace.py \
-      --input /home/hzheng/datasets/azure_public/llm2024/AzureLLMInferenceTrace_conv_1week.csv \
+      --input /path/to/AzureLLMInferenceTrace_conv_1week.csv \
       --output benchmarks/real_workload/outputs/conv_8rps_180s.jsonl \
       --start-offset-sec 0 \
       --duration 180 \
