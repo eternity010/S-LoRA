@@ -1,12 +1,25 @@
 from collections import namedtuple
 import itertools
+import os
+
+
+# 复现实验时通过环境变量提供本地模型和 LoRA adapter 路径，避免绑定开发机目录。
+_MODEL_ROOT = os.environ.get("SLORA_MODEL_ROOT", "/path/to/models")
+_REAL_MODEL = os.environ.get("SLORA_REAL_MODEL", f"{_MODEL_ROOT}/llama-7b")
+_REAL_ADAPTER_DIRS = os.environ.get(
+    "SLORA_REAL_ADAPTER_DIRS",
+    os.pathsep.join([
+        f"{_MODEL_ROOT}/alpaca-lora-7b",
+        f"{_MODEL_ROOT}/bactrian-x-llama-7b-lora",
+    ]),
+).split(os.pathsep)
 
 BASE_MODEL = {
-        "S1": "/home/hzheng/models/llama-7b",  # 修改为本地路径
-        "S2": "/home/hzheng/models/llama-7b",  # 修改为本地路径
+        "S1": f"{_MODEL_ROOT}/llama-7b",
+        "S2": f"{_MODEL_ROOT}/llama-7b",
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
-        "Real": "/home/hzheng/models/llama-7b",
+        "Real": _REAL_MODEL,
 }
 
 LORA_DIR = {
@@ -16,7 +29,7 @@ LORA_DIR = {
         "S3": ["dummy-lora-13b-rank-16"],
         "S4": ["dummy-lora-13b-rank-64",
                "dummy-lora-13b-rank-32", "dummy-lora-13b-rank-16",],
-        "Real": ["/home/hzheng/models/alpaca-lora-7b", "/home/hzheng/models/bactrian-x-llama-7b-lora"],
+        "Real": _REAL_ADAPTER_DIRS,
 }
 
 BenchmarkConfig = namedtuple(
@@ -390,4 +403,3 @@ def to_tuple(config):
     ret = (config["num_adapters"], config["alpha"], config["req_rate"],
            config["cv"], config["duration"], tuple(config["input_range"]), tuple(config["output_range"]))
     return ret, keys
-

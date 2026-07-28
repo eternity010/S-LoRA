@@ -22,11 +22,16 @@ from transformers import AutoTokenizer
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="/home/hzheng/models/llama-7b")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="本地基础模型目录或 Hugging Face 模型标识",
+    )
     parser.add_argument(
         "--adapter-root",
         type=Path,
-        default=Path("/home/hzheng/models/rankflow-rank-profile"),
+        required=True,
+        help="由 prepare_rank_adapters.py 生成的 rank adapter 根目录",
     )
     parser.add_argument("--ranks", type=int, nargs="+", default=[8, 16, 32, 64])
     parser.add_argument(

@@ -17,12 +17,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-adapter",
         type=Path,
-        default=Path("/home/hzheng/models/bactrian-x-llama-7b-lora"),
+        required=True,
+        help="用于生成不同 rank checkpoint 的源 LoRA adapter 目录",
     )
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("/home/hzheng/models/rankflow-rank-profile"),
+        default=Path("rankflow-rank-profile"),
+        help="生成 rank adapter checkpoint 的输出目录",
     )
     parser.add_argument("--ranks", type=int, nargs="+", default=[8, 16, 32, 64])
     return parser.parse_args()
