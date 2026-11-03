@@ -492,12 +492,14 @@ class DataParallelRouterManager:
                 load_pressure = state.pending_raw_tokens / capacity if capacity > 0 else 0.0
             elif load_metric == 'token_count_active':
                 load_pressure = (
-                    (state.pending_raw_tokens + state.current_batch_prompt_tokens) / capacity
+                    (state.pending_raw_tokens + state.prefilling_raw_tokens
+                     + state.current_batch_prompt_tokens) / capacity
                     if capacity > 0 else 0.0
                 )
             elif load_metric == 'rwpt_active':
                 load_pressure = (
-                    (state.pending_prefill_tokens + state.active_rwpt_tokens) / capacity
+                    (state.pending_prefill_tokens + state.prefilling_rwpt_tokens
+                     + state.active_rwpt_tokens) / capacity
                     if capacity > 0 else 0.0
                 )
             else:
@@ -521,6 +523,9 @@ class DataParallelRouterManager:
                 'queue_length': state.queue_length,
                 'pending_prefill_tokens': state.pending_prefill_tokens,
                 'pending_raw_tokens': state.pending_raw_tokens,
+                'prefilling_request_count': state.prefilling_request_count,
+                'prefilling_raw_tokens': state.prefilling_raw_tokens,
+                'prefilling_rwpt_tokens': state.prefilling_rwpt_tokens,
                 'active_rwpt_tokens': state.active_rwpt_tokens,
                 'active_decode_seqs': state.active_decode_seqs,
                 'waiting_request_count': state.waiting_request_count,
@@ -1812,6 +1817,9 @@ class DataParallelRouterManager:
                     # RWPT fields
                     pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
                     pending_raw_tokens=message.get('pending_raw_tokens', 0),
+                    prefilling_request_count=message.get('prefilling_request_count', 0),
+                    prefilling_raw_tokens=message.get('prefilling_raw_tokens', 0),
+                    prefilling_rwpt_tokens=message.get('prefilling_rwpt_tokens', 0),
                     active_rwpt_tokens=message.get('active_rwpt_tokens', 0),
                     active_decode_seqs=message.get('active_decode_seqs', 0),
                     pool_used_ratio=message.get('pool_used_ratio', 0.0),

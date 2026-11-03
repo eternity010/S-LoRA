@@ -75,6 +75,7 @@ class GPUWorker:
         # 请求队列管理（复用 ReqQueue）
         self.req_queue = None  # 将在 _setup_request_queue() 中初始化
         self.current_batch = None
+        self.prefilling_batch = None
         
         # ZMQ 通信相关（待后续任务实现）
         self.context = None
@@ -186,12 +187,15 @@ class GPUWorker:
         Returns:
             包含以下字段的字典：
             - cached_adapters: 已缓存的 Adapter 目录集合
-            - queue_length: 当前队列长度
+            - queue_length: 等待、加载/prefill 和当前执行批次的请求总数
             - gpu_memory_free: 可用 GPU 显存（bytes）
             - avg_rank: 当前批次的平均 rank
             - min_rank: 当前批次的最小 rank
             - max_rank: 当前批次的最大 rank
             - pending_prefill_tokens: Rank 加权后的等待 token 总数 Σ(len_j·(1+β·r_j))
+            - prefilling_request_count: 已准入、尚未合并到执行批次的未完成请求数
+            - prefilling_raw_tokens: 已准入、正在加载或 prefill 的原始 input tokens
+            - prefilling_rwpt_tokens: 已准入、正在加载或 prefill 的 rank 加权 input tokens
             - active_rwpt_tokens: 当前 batch 请求的 rank 加权 input token 总数
             - active_decode_seqs: 当前 batch 中 decode 序列数
             - pool_used_ratio: 内存池使用率 (0.0-1.0)
@@ -209,7 +213,22 @@ class GPUWorker:
             waiting_request_count = len(self.req_queue.waiting_req_list)
         if self.current_batch:
             current_batch_size = len(self.current_batch.reqs)
-        queue_length = waiting_request_count + current_batch_size
+        prefilling_batch = getattr(self, 'prefilling_batch', None)
+        prefilling_reqs = (
+            [req for req in prefilling_batch.reqs if not req.has_generate_finished]
+            if prefilling_batch is not None else []
+        )
+        prefilling_request_count = len(prefilling_reqs)
+        prefilling_raw_tokens = sum(len(req.prompt_ids) for req in prefilling_reqs)
+        prefilling_rwpt_tokens = sum(
+            rank_weighted_prompt_tokens(
+                len(req.prompt_ids),
+                self.lora_ranks.get(req.adapter_dir, 0),
+                self._profiled_rank_beta,
+            )
+            for req in prefilling_reqs
+        )
+        queue_length = waiting_request_count + prefilling_request_count + current_batch_size
         
         # 获取可用 GPU 显存
         gpu_memory_free = 0
@@ -298,6 +317,9 @@ class GPUWorker:
             'max_rank': max_rank,
             'pending_prefill_tokens': pending_prefill_tokens,
             'pending_raw_tokens': pending_raw_tokens,
+            'prefilling_request_count': prefilling_request_count,
+            'prefilling_raw_tokens': prefilling_raw_tokens,
+            'prefilling_rwpt_tokens': prefilling_rwpt_tokens,
             'active_rwpt_tokens': active_rwpt_tokens,
             'active_decode_seqs': active_decode_seqs,
             'waiting_request_count': waiting_request_count,
@@ -1275,6 +1297,8 @@ class GPUWorker:
                 self.lora_ranks,
                 actual_adapter_size=self.actual_adapter_memory_usage
             )
+            # Register admitted work before any load/prefill await can report state.
+            self.prefilling_batch = new_batch
             
             if new_batch is not None:
                 try:
@@ -1328,6 +1352,7 @@ class GPUWorker:
                 except Exception as e:
                     print(f"[Worker {self.worker_id}] New batch failed, generating error responses: {e}")
                     responses.extend(self._make_error_responses(new_batch, str(e)))
+                    self.prefilling_batch = None
                     try:
                         if self.model_rpc:
                             await self.model_rpc.remove_batch(new_batch.batch_id)
@@ -1346,6 +1371,8 @@ class GPUWorker:
                         await self.model_rpc.merge_batch(self.current_batch.batch_id, new_batch.batch_id)
                         await self._cooperative_checkpoint()
                         self.current_batch.merge(new_batch)
+                # Transfer ownership without yielding between merge and clearing.
+                self.prefilling_batch = None
             
             # 执行推理
             if self.current_batch is not None and len(self.current_batch.reqs) > 0:
@@ -1439,6 +1466,9 @@ class GPUWorker:
                 return self._make_error_responses(new_batch, str(e))
 
             return []
+
+        finally:
+            self.prefilling_batch = None
 
     def _make_error_responses(self, batch: Batch, error_msg: str) -> List[dict]:
         if batch is None:

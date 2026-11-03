@@ -134,6 +134,9 @@ class WorkerStateCache:
                 max_rank=message.get('max_rank', 0),
                 pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
                 pending_raw_tokens=message.get('pending_raw_tokens', 0),
+                prefilling_request_count=message.get('prefilling_request_count', 0),
+                prefilling_raw_tokens=message.get('prefilling_raw_tokens', 0),
+                prefilling_rwpt_tokens=message.get('prefilling_rwpt_tokens', 0),
                 active_rwpt_tokens=message.get('active_rwpt_tokens', 0),
                 current_batch_prompt_tokens=message.get(
                     'current_batch_prompt_tokens', 0

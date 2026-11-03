@@ -63,6 +63,10 @@ class WorkerState:
     optimistic_prefill_tokens: int = 0
     # Hot adapter replication: top-K RWPT contributors
     top_k_rwpt_adapters: List[Tuple[str, float]] = field(default_factory=list)  # [(adapter_dir, rwpt_contribution), ...]
+    # Admitted requests not yet merged into the current execution batch.
+    prefilling_request_count: int = 0
+    prefilling_raw_tokens: int = 0
+    prefilling_rwpt_tokens: int = 0
     
     def has_adapter(self, adapter_dir: str) -> bool:
         """检查是否缓存了指定的 Adapter"""
@@ -86,6 +90,9 @@ class WorkerState:
             'max_rank': self.max_rank,
             'pending_prefill_tokens': self.pending_prefill_tokens,
             'pending_raw_tokens': self.pending_raw_tokens,
+            'prefilling_request_count': self.prefilling_request_count,
+            'prefilling_raw_tokens': self.prefilling_raw_tokens,
+            'prefilling_rwpt_tokens': self.prefilling_rwpt_tokens,
             'active_rwpt_tokens': self.active_rwpt_tokens,
             'active_decode_seqs': self.active_decode_seqs,
             'pool_used_ratio': self.pool_used_ratio,
@@ -116,6 +123,9 @@ class WorkerState:
             max_rank=data.get('max_rank', 0),
             pending_prefill_tokens=data.get('pending_prefill_tokens', 0),
             pending_raw_tokens=data.get('pending_raw_tokens', 0),
+            prefilling_request_count=data.get('prefilling_request_count', 0),
+            prefilling_raw_tokens=data.get('prefilling_raw_tokens', 0),
+            prefilling_rwpt_tokens=data.get('prefilling_rwpt_tokens', 0),
             active_rwpt_tokens=data.get('active_rwpt_tokens', 0),
             active_decode_seqs=data.get('active_decode_seqs', 0),
             pool_used_ratio=data.get('pool_used_ratio', 0.0),
