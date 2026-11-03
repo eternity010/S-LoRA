@@ -68,7 +68,10 @@ def run_experiments(args):
         benchmarks_dir=args.benchmarks_dir,
         model_dir=args.model_dir,
         adapter_dir=args.adapter_dir,
-        debug=args.debug
+        debug=args.debug,
+        gpu_ids=args.gpu_ids,
+        num_workers=args.num_workers,
+        validation_log=args.validation_log,
     )
     
     runner.run_suite(args.suite, resume=args.resume)
@@ -281,6 +284,14 @@ def main():
         action='store_true',
         help='Enable debug logs and request-level routing diagnostics'
     )
+    parser.add_argument(
+        '--validation-log', action='store_true',
+        help='Record worker lifecycle and admission evidence (not for performance runs)'
+    )
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help='Print effective suite configs without starting a runner or using GPUs'
+    )
     
     # Output configuration
     parser.add_argument(
@@ -315,14 +326,14 @@ def main():
     parser.add_argument(
         '--gpu-ids',
         type=str,
-        default='0,1,2',
-        help='GPU IDs for data parallel mode (default: 0,1,2)'
+        default=None,
+        help='Override suite GPU IDs; infer worker count if not specified'
     )
     parser.add_argument(
         '--num-workers',
         type=int,
-        default=3,
-        help='Number of workers for data parallel mode (default: 3)'
+        default=None,
+        help='Override suite worker count (must match the number of GPU IDs)'
     )
     parser.add_argument(
         '--benchmarks-dir',
@@ -344,6 +355,12 @@ def main():
     )
     
     args = parser.parse_args()
+    if args.dry_run:
+        import json
+        from dataclasses import asdict
+        configs = ExperimentRunner.resolve_suite_configs(args.suite, args.gpu_ids, args.num_workers)
+        print(json.dumps([asdict(config) for config in configs], indent=2))
+        return
     
     # Handle different modes
     if args.list_suites:
@@ -361,6 +378,10 @@ def main():
     # Default: run experiments, then analyze and generate charts
     try:
         start_ts = run_experiments(args)
+        if all(config.workload_type == 'validation'
+               for config in ExperimentRunner.resolve_suite_configs(args.suite, args.gpu_ids, args.num_workers)):
+            print('GPU correctness validation finished; excluded from performance analysis.')
+            return
         
         # Auto-analyze if experiments completed (current run only)
         print("\n" + "=" * 70)

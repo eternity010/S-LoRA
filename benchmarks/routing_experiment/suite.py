@@ -13,6 +13,22 @@ class ExperimentSuite:
     
     # Predefined experiment suites
     SUITES: Dict[str, Dict[str, List[Any]]] = {
+        "dp-gpu-fix-validation": {
+            # One startup; each phase drains before the next, retaining residency.
+            "routing_strategy": ["adapter-aware"],
+            "alpha": [0.1],
+            "num_adapters": [10],
+            "req_rate": [1.0],
+            "duration": [120],
+            "workload_type": ["validation"],
+            "workload_name": ["gpu-fix-validation-not-performance"],
+            "gpu_ids": ["0,1"],
+            "num_workers": [2],
+            "num_token": [4096],
+            "routing_w1": [1.0],
+            "routing_w2": [0.4],
+            "load_metric": ["rwpt_active"],
+        },
         "rwpt-w2-search": {
             # RWPT 专用 w2 甜点搜索（移除 decode 项后）
             # load-metric-w2-sweep 结果显示 rwpt 在 w2=0.8 时最优（5.21/20.5s）

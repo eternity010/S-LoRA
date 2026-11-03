@@ -74,6 +74,7 @@ def test_process_requests_returns_prefill_finished_response():
 
     worker = GPUWorker.__new__(GPUWorker)
     worker.worker_id = 0
+    worker._adapter_memory_lock = None
     worker.req_queue = DummyReqQueue(batch)
     worker.current_batch = None
     worker.lora_ranks = {}
@@ -107,6 +108,7 @@ def test_process_requests_returns_error_response_for_failed_new_batch():
 
     worker = GPUWorker.__new__(GPUWorker)
     worker.worker_id = 0
+    worker._adapter_memory_lock = None
     worker.req_queue = DummyReqQueue(batch)
     worker.current_batch = None
     worker.lora_ranks = {}
@@ -149,6 +151,7 @@ def test_finish_eviction_preserves_existing_current_batch_adapters():
 
     worker = GPUWorker.__new__(GPUWorker)
     worker.worker_id = 0
+    worker._adapter_memory_lock = None
     worker.req_queue = EmptyReqQueue()
     worker.current_batch = active_batch
     worker.args = SimpleNamespace(
@@ -176,10 +179,12 @@ def test_reporter_state_uses_profiled_rank_cost_for_waiting_active_and_top_k():
     waiting = SimpleNamespace(
         adapter_dir="/adapters/rank16",
         prompt_ids=list(range(100)),
+        input_len=100,
     )
     active = SimpleNamespace(
         adapter_dir="/adapters/rank64",
         prompt_ids=list(range(100)),
+        input_len=100,
     )
 
     worker = GPUWorker.__new__(GPUWorker)

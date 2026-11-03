@@ -10,6 +10,8 @@ import signal
 import sys
 import os
 import uuid
+import fcntl
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -23,6 +25,7 @@ from .result import ExperimentResult, ExperimentRecord
 
 class ExperimentRunner:
     """Experiment runner for automated execution"""
+    RUNTIME_LOCK_FILE = '/tmp/slora_routing_experiment.lock'
     
     def __init__(self,
                  output_dir: str = "routing_comparison_results",
@@ -31,7 +34,10 @@ class ExperimentRunner:
                  benchmarks_dir: str = ".",
                  model_dir: str = None,
                  adapter_dir: str = None,
-                 debug: bool = False):
+                 debug: bool = False,
+                 gpu_ids: Optional[str] = None,
+                 num_workers: Optional[int] = None,
+                 validation_log: bool = False):
         """
         Initialize experiment runner.
         
@@ -52,6 +58,12 @@ class ExperimentRunner:
         self.model_dir = model_dir
         self.adapter_dir = adapter_dir
         self.debug = debug
+        self.gpu_ids_override = gpu_ids
+        self.num_workers_override = num_workers
+        self.validation_log = validation_log
+        self._validation_enabled = validation_log
+        self._server_pgid = None
+        self._runtime_lock = None
         self._local_http = requests.Session()
         self._local_http.trust_env = False
         
@@ -159,6 +171,8 @@ class ExperimentRunner:
             f"adapters{config.num_adapters}_"
             f"tokens{config.num_token}_"
             f"rankbeta{config.profiled_rank_beta}"
+            + ('_validation' if getattr(self, 'validation_log', False)
+               or config.workload_type == 'validation' else '')
         )
     
     @staticmethod
@@ -178,7 +192,23 @@ class ExperimentRunner:
             f"_rankbeta{config.profiled_rank_beta}"
             f"_lm{config.load_metric}"
             f"_repl{int(config.enable_replication)}"
+            f"_gpus{config.gpu_ids}_workers{config.num_workers}_tokens{config.num_token}"
         )
+
+    @staticmethod
+    def resolve_suite_configs(suite_name: str, gpu_ids=None, num_workers=None) -> list:
+        configs = list(ExperimentSuite.get_configs(suite_name))
+        overrides = {}
+        if gpu_ids is not None:
+            ids = [gpu.strip() for gpu in gpu_ids.split(',')]
+            overrides['gpu_ids'] = ','.join(ids)
+            overrides['num_workers'] = len(ids)
+        if num_workers is not None:
+            overrides['num_workers'] = num_workers
+        configs = [replace(config, **overrides) for config in configs]
+        for config in configs:
+            config.validate()
+        return configs
     
     def _needs_server_restart(self, config: ExperimentConfig) -> bool:
         """
@@ -217,7 +247,9 @@ class ExperimentRunner:
             resume: Whether to resume from checkpoint
         """
         self._log(f"run_suite: {suite_name}, resume={resume}")
-        configs = list(ExperimentSuite.get_configs(suite_name))
+        configs = self.resolve_suite_configs(
+            suite_name, self.gpu_ids_override, self.num_workers_override,
+        )
         total = len(configs)
         
         # Build config_id list for all experiments in this suite
@@ -296,8 +328,9 @@ class ExperimentRunner:
                     )
                     
                     # Wait for server to finish processing and cool down
-                    print("  Waiting for server to stabilize (45s)...")
-                    time.sleep(45)
+                    if config.workload_type != 'validation':
+                        print("  Waiting for server to stabilize (45s)...")
+                        time.sleep(45)
                     
                     self._log(f"success: tput={result.throughput:.2f}, lat={result.avg_latency:.3f}")
                     print(f"✓ Success: throughput={result.throughput:.2f} req/s, "
@@ -337,6 +370,8 @@ class ExperimentRunner:
             self._suite_output_dir = None
         
         print(f"Suite completed: {len(completed)}/{total} experiments successful")
+        if len(completed) != total:
+            raise RuntimeError(f'Suite failed: {total - len(completed)} experiments did not complete')
     
     def run_single_experiment(self, config: ExperimentConfig, 
                              start_server: bool = True,
@@ -417,9 +452,18 @@ class ExperimentRunner:
         self._log(f"start_server: {config.routing_strategy}, adapters={config.num_adapters}")
         # Store gpu_ids for reference
         self.gpu_ids = config.gpu_ids
+        self._validation_enabled = self.validation_log or config.workload_type == 'validation'
+        if config.workload_type == 'validation':
+            from .gpu_validation import build_validation_phases
+            base_model, adapters = self._benchmark_assets(config)
+            if not (Path(base_model) / 'config.json').is_file():
+                raise ValueError(f'Base model config not found: {base_model}; set SLORA_MODEL_ROOT')
+            build_validation_phases(config, base_model, adapters)
+        self._acquire_runtime_lock()
+        self._check_gpu_availability(config.gpu_ids)
         
         # Clean up any existing S-LoRA processes (safe, won't kill other programs)
-        print("     Cleaning up any existing S-LoRA processes...")
+        print("     Cleaning up residual processes owned by this runner...")
         self._cleanup_slora_processes(max_wait=30)
 
         # Remove stale stats/config files so the first experiment in a fresh server
@@ -473,15 +517,18 @@ class ExperimentRunner:
 
         env = os.environ.copy()
         env.pop("SLORA_ROUTING_DEBUG_FILE", None)
+        env.pop("SLORA_VALIDATION_DIR", None)
         self._current_diagnostics_dir = None
         self._current_routing_debug_file = None
-        if self.debug:
+        if self.debug or self._validation_enabled:
             server_run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             diagnostics_dir = (
                 target_dir / "diagnostics" / f"server_{server_run_id}"
             ).resolve()
             diagnostics_dir.mkdir(parents=True, exist_ok=False)
             self._current_diagnostics_dir = diagnostics_dir
+            if self._validation_enabled:
+                env["SLORA_VALIDATION_DIR"] = str(diagnostics_dir)
 
             if config.routing_strategy == 'adapter-aware':
                 routing_debug_file = diagnostics_dir / "route_decisions.jsonl"
@@ -498,9 +545,66 @@ class ExperimentRunner:
             env=env,
             start_new_session=True  # Create new process group for clean termination
         )
+        self._server_pgid = self.server_process.pid
         
         # Track current server configuration
         self._current_server_config = self._get_server_config_key(config)
+
+    def _acquire_runtime_lock(self) -> None:
+        # Runtime stats/config files are global even when HTTP ports differ.
+        if self._runtime_lock is not None:
+            return
+        handle = open(self.RUNTIME_LOCK_FILE, 'a')
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            processes = subprocess.run(
+                ['ps', '-eo', 'pid=,pgid=,args='],
+                capture_output=True, text=True, check=True,
+            )
+            for line in processes.stdout.splitlines():
+                fields = line.split(None, 2)
+                if len(fields) != 3:
+                    continue
+                words = fields[2].split()
+                modules = {'slora.server.api_server', 'slora.server.router.dp_manager'}
+                if any(words[i] == '-m' and words[i + 1] in modules
+                       for i in range(len(words) - 1)):
+                    raise RuntimeError(
+                        f'S-LoRA process {fields[0]} is already running; '
+                        'shared runtime files cannot be used concurrently. No process was killed.'
+                    )
+        except Exception:
+            handle.close()
+            raise
+        self._runtime_lock = handle
+
+    @staticmethod
+    def _check_gpu_availability(gpu_ids: str) -> None:
+        devices = subprocess.run(
+            ['nvidia-smi', '--query-gpu=index,uuid', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, check=True,
+        )
+        ids_by_uuid = {}
+        for line in devices.stdout.splitlines():
+            index, gpu_uuid = [part.strip() for part in line.split(',')]
+            ids_by_uuid[gpu_uuid] = index
+        selected = set(gpu_ids.split(','))
+        if not selected <= set(ids_by_uuid.values()):
+            raise RuntimeError(f'Unknown GPU IDs: {sorted(selected - set(ids_by_uuid.values()))}')
+        apps = subprocess.run(
+            ['nvidia-smi', '--query-compute-apps=pid,gpu_uuid', '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, check=True,
+        )
+        occupied = []
+        for line in apps.stdout.splitlines():
+            if not line.strip():
+                continue
+            pid, gpu_uuid = [part.strip() for part in line.split(',')]
+            if ids_by_uuid.get(gpu_uuid) in selected:
+                occupied.append(f'GPU {ids_by_uuid[gpu_uuid]}: PID {pid}')
+        if occupied:
+            raise RuntimeError('Selected GPUs are occupied: ' + '; '.join(occupied)
+                               + '. No process was killed.')
 
     def _cleanup_runtime_state_files(self) -> None:
         """Remove stale runtime files shared through /tmp between experiment runs."""
@@ -626,6 +730,16 @@ class ExperimentRunner:
         
         raise TimeoutError(f"Server failed to start within {timeout}s")
     
+    def _benchmark_assets(self, config):
+        sys.path.insert(0, str(self.benchmarks_dir))
+        from exp_suite import BASE_MODEL, LORA_DIR
+        base_model = BASE_MODEL[self.model_setting]
+        templates = LORA_DIR[self.model_setting]
+        adapters = [adapter + f'-{i}'
+                    for i in range(config.num_adapters // len(templates) + 1)
+                    for adapter in templates][:config.num_adapters]
+        return base_model, [(base_model, adapter) for adapter in adapters]
+
     def _run_benchmark(self, config: ExperimentConfig) -> Dict[str, Any]:
         """
         Run benchmark using run_exp.py logic.
@@ -639,7 +753,6 @@ class ExperimentRunner:
         
         # Import from benchmarks modules
         sys.path.insert(0, str(self.benchmarks_dir))
-        from exp_suite import BASE_MODEL, LORA_DIR
         from trace import generate_requests, load_jsonl_trace_requests
         
         print(f"     Running {config.duration}s benchmark with {config.num_adapters} adapters...")
@@ -648,20 +761,12 @@ class ExperimentRunner:
             print(f"     Workload: {config.workload_name or 'trace'}")
             print(f"     Trace file: {config.trace_file}")
         
-        # Prepare adapter directories
-        base_model = BASE_MODEL[self.model_setting]
-        adapter_dirs_template = LORA_DIR[self.model_setting]
-        
-        # Generate adapter directory list (same logic as run_exp.py)
-        adapter_dirs = []
-        num_iter = config.num_adapters // len(adapter_dirs_template) + 1
-        for i in range(num_iter):
-            for adapter_dir in adapter_dirs_template:
-                adapter_dirs.append(adapter_dir + f"-{i}")
-        adapter_dirs = adapter_dirs[:config.num_adapters]
-        adapter_dirs = [(base_model, adapter_dirs[i]) for i in range(config.num_adapters)]
+        base_model, adapter_dirs = self._benchmark_assets(config)
         
         # Generate requests
+        if config.workload_type == "validation":
+            from .gpu_validation import run_validation_phases
+            return run_validation_phases(self, config, base_model, adapter_dirs)
         if config.workload_type == "trace":
             requests = load_jsonl_trace_requests(
                 trace_file=self._resolve_trace_file(config.trace_file),
@@ -694,7 +799,7 @@ class ExperimentRunner:
         benchmark_end_time = time.time()
         benchmark_time = benchmark_end_time - benchmark_start_time
 
-        if self.debug:
+        if self.debug or self._validation_enabled:
             latency_file = self._save_request_latency_trace(
                 per_req_latency,
                 config,
@@ -1174,11 +1279,12 @@ class ExperimentRunner:
         """Stop server and all child processes by killing the process group"""
         self._log("stop_server called")
         if self.server_process:
-            pid = self.server_process.pid
+            if self._server_pgid is None:
+                raise RuntimeError('Missing server process group ownership; refusing to signal')
             try:
                 # Kill the entire process group (all children spawned by launch_server.py)
                 import os
-                pgid = os.getpgid(pid)
+                pgid = self._server_pgid
                 self._log(f"killing pgid {pgid}")
                 print(f"     Killing process group {pgid}...")
                 os.killpg(pgid, signal.SIGTERM)
@@ -1191,7 +1297,7 @@ class ExperimentRunner:
                 self._log("SIGKILL needed")
                 print("     Process group did not stop gracefully, sending SIGKILL...")
                 try:
-                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                    os.killpg(self._server_pgid, signal.SIGKILL)
                     self.server_process.wait(timeout=5)
                 except Exception:
                     pass
@@ -1216,110 +1322,39 @@ class ExperimentRunner:
             except:
                 pass
         
-        # Clean up any remaining S-LoRA processes (safety net)
-        print("     Verifying all S-LoRA processes are terminated...")
+        print("     Verifying this runner's process group is terminated...")
         self._cleanup_slora_processes(max_wait=30)
+        remaining = self._get_slora_pids()
+        if remaining:
+            raise RuntimeError(f'Owned server processes still running: {sorted(remaining)}')
+        self._server_pgid = None
+        if self._runtime_lock is not None:
+            self._runtime_lock.close()
+            self._runtime_lock = None
     
 
     def _get_slora_pids(self) -> set:
-        """
-        Get PIDs of S-LoRA related processes only.
-        
-        Only matches processes with S-LoRA specific patterns to avoid
-        killing other GPU programs.
-        """
+        """Only processes in the session/group started by this runner are owned."""
+        pgid = self._server_pgid
+        if pgid is None:
+            return set()
+        result = subprocess.run(
+            ['ps', '-eo', 'uid=,pid=,pgid=,stat='],
+            capture_output=True, text=True, check=True,
+        )
         pids = set()
-        
-        # S-LoRA specific process patterns (based on actual module paths)
-        slora_patterns = [
-            'slora\\.server\\.api_server',           # Main API server
-            'slora\\.server\\.router\\.manager',     # Router manager (tensor parallel)
-            'slora\\.server\\.router\\.dp_manager',  # Data parallel router manager
-            'slora\\.server\\.router\\.gpu_worker',  # GPU workers (data parallel)
-            'slora\\.server\\.detokenization',       # Detokenization process
-            'slora\\.mprophet\\.model_rpc',          # Model RPC workers
-            'run_gpu_worker_process',                # GPU worker process function
-        ]
-        
-        for pattern in slora_patterns:
-            try:
-                result = subprocess.run(
-                    ['pgrep', '-f', pattern],
-                    capture_output=True, text=True
-                )
-                if result.stdout.strip():
-                    for line in result.stdout.strip().split('\n'):
-                        if line.strip():
-                            pids.add(line.strip())
-            except Exception:
-                pass
-        
-        # Also find orphaned multiprocessing spawn processes on our GPUs
-        # These are left behind when parent process dies unexpectedly
-        pids.update(self._get_orphan_gpu_processes())
-        
-        return pids
-    
-    def _get_orphan_gpu_processes(self) -> set:
-        """
-        Find orphaned Python multiprocessing spawn processes on our GPUs.
-        
-        These processes have ppid=1 (orphaned) and command contains
-        'multiprocessing.spawn'. Only kills processes on GPUs we're using.
-        """
-        pids = set()
-        gpu_ids = [int(g) for g in self.gpu_ids.split(',')] if hasattr(self, 'gpu_ids') and self.gpu_ids else []
-        
-        if not gpu_ids:
-            return pids
-        
-        try:
-            # Get PIDs on our GPUs
-            result = subprocess.run(
-                ['nvidia-smi', '--query-compute-apps=pid,gpu_bus_id', '--format=csv,noheader,nounits'],
-                capture_output=True, text=True
-            )
-            if result.returncode != 0 or not result.stdout.strip():
-                return pids
-            
-            gpu_pids = set()
-            for line in result.stdout.strip().split('\n'):
-                parts = line.strip().split(',')
-                if len(parts) >= 1:
-                    pid = parts[0].strip()
-                    if pid:
-                        gpu_pids.add(pid)
-            
-            # Check each GPU process
-            for pid in gpu_pids:
-                try:
-                    # Check if it's an orphan (ppid=1) and multiprocessing spawn
-                    result = subprocess.run(
-                        ['ps', '-p', pid, '-o', 'ppid,cmd', '--no-headers'],
-                        capture_output=True, text=True
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        parts = result.stdout.strip().split(None, 1)
-                        if len(parts) >= 2:
-                            ppid = parts[0]
-                            cmd = parts[1]
-                            # Orphan process with multiprocessing spawn
-                            if ppid == '1' and 'multiprocessing.spawn' in cmd:
-                                pids.add(pid)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if (len(fields) == 4 and int(fields[0]) == os.getuid()
+                    and int(fields[2]) == pgid and not fields[3].startswith('Z')
+                    and int(fields[1]) != os.getpid()):
+                pids.add(fields[1])
         return pids
     
 
     def _cleanup_slora_processes(self, max_wait: int = 30) -> None:
         """
-        Clean up S-LoRA processes only (safe, won't kill other GPU programs).
-        
-        Kills only processes matching S-LoRA specific patterns, then waits
-        until they are confirmed terminated.
+        Clean up only the recorded server process group, including its orphans.
         
         Args:
             max_wait: Maximum seconds to wait for processes to terminate

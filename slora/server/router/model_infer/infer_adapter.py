@@ -267,7 +267,8 @@ class InferAdapter:
                 'lora_max_cells': LoRA 空间上限（cells），由 max_lora_ratio 决定,
                 'lora_usage_ratio': LoRA 使用率（0-1），= lora_used / lora_max,
                 'num_adapters': 当前加载的适配器数量,
-                'adapter_cells': 各适配器占用的 cells 列表
+                'adapter_cells': 各适配器占用的 cells 列表,
+                'adapter_cells_by_dir': 同一快照中 adapter 目录到占用 cells 的映射
             }
         """
         # 从 MemoryAllocator 获取基础数据
@@ -282,6 +283,9 @@ class InferAdapter:
         # 获取适配器信息
         num_adapters = len(self.adapter_dirs)
         adapter_cells = self.a_len.cpu().tolist() if num_adapters > 0 else []
+        if len(adapter_cells) != num_adapters:
+            raise RuntimeError("Adapter residency and cell counts are inconsistent")
+        adapter_cells_by_dir = dict(zip(self.adapter_dirs, adapter_cells))
         
         # 计算 LoRA 实际占用
         lora_used_cells = sum(adapter_cells)
@@ -305,7 +309,8 @@ class InferAdapter:
             'lora_max_cells': lora_max_cells,
             'lora_usage_ratio': float(lora_usage_ratio),
             'num_adapters': num_adapters,
-            'adapter_cells': adapter_cells
+            'adapter_cells': adapter_cells,
+            'adapter_cells_by_dir': adapter_cells_by_dir,
         }
 
     def select_eviction_candidates(self, 

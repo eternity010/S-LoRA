@@ -15,16 +15,28 @@ class ReqQueue:
         self.batch_max_tokens = batch_max_tokens
         self.running_max_req_size = running_max_req_size
         self.waiting_req_list: List[Req] = []
+        self.validation_callback = None
         
     def append(self, req):
         self.waiting_req_list.append(req)
         return
     
-    def _init_cache_list(self, current_batch:Batch, lora_ranks, actual_adapter_size=0):
+    def _init_cache_list(self, current_batch:Batch, lora_ranks, actual_adapter_size=0,
+                         resident_adapter_cells=None):
+        # A snapshot covers all resident adapters, including idle cached adapters.
+        self.adapters = set(resident_adapter_cells or {})
+        self.adapter_size = 0
+        self.actual_total_adapter_size = (
+            sum(resident_adapter_cells.values())
+            if resident_adapter_cells is not None else actual_adapter_size
+        )
+        if self.validation_callback is not None:
+            self._validation_resident = resident_adapter_cells
+            self._validation_required = {
+                req.adapter_dir for req in current_batch.reqs
+            } if current_batch is not None else set()
         if current_batch is not None:
             self.cache_len_list = []
-            self.adapters = set()
-            self.adapter_size = 0
             for req in current_batch.reqs:
                 self.cache_len_list.append((req.input_len + len(req.output_ids),
                                            req.max_output_len - len(req.output_ids) - 1))
@@ -33,12 +45,6 @@ class ReqQueue:
                     self.adapters.add(req.adapter_dir)
         else:
             self.cache_len_list = []
-            self.adapters = set()
-            self.adapter_size = 0
-        
-        # 新增：使用实际占用而非预估占用
-        # actual_adapter_size 是显存中所有 adapters 的实际占用
-        self.actual_total_adapter_size = actual_adapter_size
     
     # @calculate_time(show=True, min_cost_ms=0.1)
     def _can_add_new_req(self, req, lora_ranks):
@@ -56,10 +62,31 @@ class ReqQueue:
         
         need_max_token_num = (left_out_len_array * size_array + cum_run_len_array).max()
         
-        # 关键修改：使用实际占用
-        # self.adapter_size 是当前批次新增的 adapter 占用
-        # self.actual_total_adapter_size 是显存中所有 adapters 的实际占用
+        # Resident adapters are counted by the snapshot; reserve only new ones.
         total_adapter_occupation = self.actual_total_adapter_size + self.adapter_size
+        if self.validation_callback is not None:
+            self._validation_required.add(req.adapter_dir)
+            resident = self._validation_resident
+            reserved = {
+                adapter: lora_ranks[adapter] * 4 for adapter in self.adapters
+                if resident is None or adapter not in resident
+            }
+            legacy_cells = sum(lora_ranks[adapter] * 4
+                               for adapter in self._validation_required)
+            self.validation_callback(
+                'admission', request_id=req.request_id, adapter_dir=req.adapter_dir,
+                resident_adapter_cells=resident,
+                required_adapter_ranks={adapter: lora_ranks[adapter]
+                                        for adapter in self._validation_required},
+                resident_cells=self.actual_total_adapter_size,
+                reserved_adapter_cells=reserved, reserved_cells=self.adapter_size,
+                total_cells=self.max_total_tokens, kv_peak=int(need_max_token_num),
+                kv_budget=self.max_total_tokens - total_adapter_occupation,
+                memory_allowed=bool(need_max_token_num < self.max_total_tokens - total_adapter_occupation),
+                concurrency_allowed=len(self.cache_len_list) <= self.running_max_req_size,
+                batch_tokens_allowed=self._validation_batch_input_tokens + req.input_len <= self.batch_max_tokens,
+                legacy_kv_budget=self.max_total_tokens - self.actual_total_adapter_size - legacy_cells,
+            )
         
         if (need_max_token_num < self.max_total_tokens - total_adapter_occupation and
             len(self.cache_len_list) <= self.running_max_req_size):
@@ -72,21 +99,25 @@ class ReqQueue:
                     print(f"  需要空间: {need_max_token_num} cells")
                     print(f"  总空间: {self.max_total_tokens} cells")
                     print(f"  实际 adapter 占用: {self.actual_total_adapter_size} cells")
-                    print(f"  当前批次 adapter: {self.adapter_size} cells")
+                    print(f"  额外 adapter 预留: {self.adapter_size} cells")
                     print(f"  可用空间: {self.max_total_tokens - total_adapter_occupation} cells")
             return False
     
     def update_counter(self, req):
         pass 
 
-    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int], actual_adapter_size=0):
+    def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int],
+                           actual_adapter_size=0, resident_adapter_cells=None):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
         
         # 传递实际占用
-        self._init_cache_list(current_batch, lora_ranks, actual_adapter_size)
+        self._init_cache_list(current_batch, lora_ranks, actual_adapter_size,
+                              resident_adapter_cells)
         can_run_list = []
         new_batch_total_tokens = 0
+        if self.validation_callback is not None:
+            self._validation_batch_input_tokens = 0
         aborted_count = 0
         for req in self.waiting_req_list:
             if req.aborted:
@@ -96,6 +127,8 @@ class ReqQueue:
                 new_batch_total_tokens + req.input_len <= self.batch_max_tokens):
                 can_run_list.append(req)
                 new_batch_total_tokens += req.input_len
+                if self.validation_callback is not None:
+                    self._validation_batch_input_tokens = new_batch_total_tokens
             else:
                 break
 

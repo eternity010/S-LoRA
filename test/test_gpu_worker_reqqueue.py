@@ -7,7 +7,7 @@ GPU Worker ReqQueue Integration Tests
 import pytest
 import argparse
 import asyncio
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 from slora.server.router.gpu_worker import GPUWorker
 from slora.server.io_struct import Req, Batch
@@ -211,6 +211,18 @@ class TestProcessRequests:
         """测试处理带有 LoRA ranks 的请求"""
         worker._setup_request_queue()
         worker.lora_ranks = {'adapter-1': 8, 'adapter-2': 16}
+        worker.resident_adapter_cells = {}
+        worker.model_rpc = Mock()
+        worker.model_rpc.load_adapters = AsyncMock()
+        worker.model_rpc.check_lora_memory = AsyncMock(return_value={
+            'adapter_cells': [32, 64],
+            'adapter_cells_by_dir': {'adapter-1': 32, 'adapter-2': 64},
+        })
+        worker.model_rpc.init_batch = AsyncMock()
+        output = {'req-001': (42, {}), 'req-002': (42, {})}
+        worker.model_rpc.prefill_batch = AsyncMock(return_value=output)
+        worker.model_rpc.decode_batch = AsyncMock(return_value=output)
+        worker.model_rpc.update_adapter_stats = AsyncMock()
         
         # 添加使用不同 adapter 的请求
         req1 = Req(
@@ -227,12 +239,15 @@ class TestProcessRequests:
         )
         worker.req_queue.append(req1)
         worker.req_queue.append(req2)
+        req1.sample_params.stop_sequences = []
+        req2.sample_params.stop_sequences = []
         
         # 处理请求
         responses = await worker._process_requests()
         
         # 应该能处理多个 adapter 的请求
-        assert len(responses) >= 1
+        assert len(responses) == 2
+        assert all(response['success'] for response in responses)
 
 
 class TestRunWithReqQueue:

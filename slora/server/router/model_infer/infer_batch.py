@@ -83,7 +83,8 @@ class InferBatch:
             # request id -> idx in list mapping
             requests_idx_mapping[r['request_id']] = i
 
-            tokenized_input = r['input_id']
+            # Generation extends this buffer; keep the caller's prompt unchanged.
+            tokenized_input = list(r['input_id'])
 
             input_length = len(tokenized_input)
             input_lengths.append(input_length)

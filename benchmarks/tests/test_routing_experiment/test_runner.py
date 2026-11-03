@@ -126,7 +126,7 @@ class TestExperimentRunnerRuntimeCleanup:
 
         assert runner._local_http.trust_env is False
 
-    def test_cleanup_runtime_state_files_removes_stale_files(self):
+    def test_cleanup_runtime_state_files_removes_stale_files(self, monkeypatch):
         runner = ExperimentRunner(output_dir=tempfile.mkdtemp(), benchmarks_dir=".")
 
         runtime_files = [
@@ -139,21 +139,10 @@ class TestExperimentRunnerRuntimeCleanup:
             "/tmp/slora_reset_adapter_cache.result.tmp",
         ]
 
-        created = []
-        try:
-            for path in runtime_files:
-                with open(path, "w") as f:
-                    f.write("stale")
-                created.append(path)
-
-            runner._cleanup_runtime_state_files()
-
-            for path in runtime_files:
-                assert not os.path.exists(path)
-        finally:
-            for path in created:
-                if os.path.exists(path):
-                    os.remove(path)
+        removed = []
+        monkeypatch.setattr('routing_experiment.runner.os.remove', removed.append)
+        runner._cleanup_runtime_state_files()
+        assert removed == runtime_files
 
     def test_config_id_distinguishes_duration(self):
         config_a = ExperimentConfig(

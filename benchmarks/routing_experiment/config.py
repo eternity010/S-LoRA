@@ -19,7 +19,7 @@ class ExperimentConfig:
     req_rate: float  # Request rate (req/s)
     duration: int  # Experiment duration (seconds)
     cv: float = 1.0  # Coefficient of variation
-    workload_type: str = "synthetic"  # "synthetic" | "trace"
+    workload_type: str = "synthetic"  # "synthetic" | "trace" | "validation"
     trace_file: Optional[str] = None
     workload_name: Optional[str] = None
     
@@ -62,7 +62,7 @@ class ExperimentConfig:
         if not 0.1 <= self.alpha <= 1.0:
             raise ValueError(f"Alpha must be in [0.1, 1.0], got {self.alpha}")
 
-        if self.workload_type not in ("synthetic", "trace"):
+        if self.workload_type not in ("synthetic", "trace", "validation"):
             raise ValueError(f"Invalid workload_type: {self.workload_type}")
 
         if self.workload_type == "trace" and not self.trace_file:
@@ -81,6 +81,10 @@ class ExperimentConfig:
         
         if self.num_workers <= 0:
             raise ValueError(f"num_workers must be positive, got {self.num_workers}")
+        gpu_ids = self.gpu_ids.split(',')
+        if (len(gpu_ids) != self.num_workers or len(set(gpu_ids)) != len(gpu_ids)
+                or any(not gpu.isdigit() for gpu in gpu_ids)):
+            raise ValueError("gpu_ids must contain one distinct numeric ID per worker")
         
         if self.num_token <= 0:
             raise ValueError(f"num_token must be positive, got {self.num_token}")

@@ -12,6 +12,7 @@ import zmq
 import zmq.asyncio
 import asyncio
 import heapq
+import time
 from typing import Optional, List, Tuple, Dict
 
 from slora.models.llama.model import LlamaTpPartModel
@@ -24,6 +25,7 @@ from slora.models.peft.lora_adapter import get_lora_config
 from slora.server.router.model_infer.model_rpc import start_model_process, ModelRpcClient
 from slora.server.input_params import InputParams
 from slora.server.router.worker_state_reporter import WorkerStateReporter
+from slora.server.router.validation_log import ValidationLog
 from slora.server.router.rwpt import (
     DEFAULT_PROFILED_RANK_BETA,
     rank_weighted_prompt_tokens,
@@ -61,6 +63,8 @@ class GPUWorker:
         self.worker_id = worker_id
         self.gpu_id = gpu_id
         self.args = args
+        validation_dir = os.environ.get('SLORA_VALIDATION_DIR')
+        self._validation_log = ValidationLog(validation_dir, worker_id) if validation_dir else None
         
         # 模型相关（待后续任务实现）
         self.model = None
@@ -71,6 +75,9 @@ class GPUWorker:
         self.lora_ranks = {}  # adapter_dir -> rank 映射，用于 ReqQueue 显存管理
         self.actual_adapter_size = 0  # 实际 adapter 占用的显存大小（cells）
         self.actual_adapter_memory_usage = 0  # 缓存实际的 adapter 内存占用（单位：cells）
+        self.resident_adapter_cells = None  # None means residency is not yet verified.
+        self._adapter_memory_lock = None
+        self._adapter_memory_retry_at = 0.0
         
         # 请求队列管理（复用 ReqQueue）
         self.req_queue = None  # 将在 _setup_request_queue() 中初始化
@@ -219,10 +226,10 @@ class GPUWorker:
             if prefilling_batch is not None else []
         )
         prefilling_request_count = len(prefilling_reqs)
-        prefilling_raw_tokens = sum(len(req.prompt_ids) for req in prefilling_reqs)
+        prefilling_raw_tokens = sum(req.input_len for req in prefilling_reqs)
         prefilling_rwpt_tokens = sum(
             rank_weighted_prompt_tokens(
-                len(req.prompt_ids),
+                req.input_len,
                 self.lora_ranks.get(req.adapter_dir, 0),
                 self._profiled_rank_beta,
             )
@@ -267,7 +274,7 @@ class GPUWorker:
         try:
             if self.req_queue and self.req_queue.waiting_req_list:
                 for req in self.req_queue.waiting_req_list:
-                    input_len = len(req.prompt_ids)
+                    input_len = req.input_len
                     rank = self.lora_ranks.get(req.adapter_dir, 0)
                     pending_prefill_tokens += rank_weighted_prompt_tokens(
                         input_len, rank, self._profiled_rank_beta
@@ -287,7 +294,7 @@ class GPUWorker:
             if self.current_batch and self.current_batch.reqs:
                 active_decode_seqs = len(self.current_batch.reqs)
                 for req in self.current_batch.reqs:
-                    input_len = len(req.prompt_ids)
+                    input_len = req.input_len
                     rank = self.lora_ranks.get(req.adapter_dir, 0)
                     current_batch_prompt_tokens += input_len
                     active_rwpt_tokens += rank_weighted_prompt_tokens(
@@ -354,7 +361,7 @@ class GPUWorker:
         # 按 adapter 聚合 RWPT 贡献
         adapter_contrib: Dict[str, float] = {}
         for req in self.req_queue.waiting_req_list:
-            input_len = len(req.prompt_ids)
+            input_len = req.input_len
             rank = self.lora_ranks.get(req.adapter_dir, 0)
             contrib = rank_weighted_prompt_tokens(
                 input_len, rank, self._profiled_rank_beta
@@ -398,7 +405,7 @@ class GPUWorker:
             await self.state_reporter.report_if_due()
         await asyncio.sleep(0)
     
-    async def _update_actual_adapter_usage(self) -> None:
+    async def _update_actual_adapter_usage(self) -> bool:
         """
         查询并更新实际的 adapter 内存占用（借鉴 manager.py）
         
@@ -411,17 +418,22 @@ class GPUWorker:
         Note:
             - 借鉴 manager.py 的 _update_actual_adapter_usage() 方法
             - 在 adapter 加载/卸载后调用，更新实际占用
-            - 如果查询失败，保持当前值不变（保守估计）
+            - 查询失败时保留旧数字用于诊断，驻留快照失效，不能用于新准入
         """
+        self.resident_adapter_cells = None
+        self._adapter_memory_retry_at = time.monotonic() + 0.5
         # 检查是否启用了 LoRA
         if getattr(self.args, 'no_lora', False):
             self.actual_adapter_memory_usage = 0
-            return
+            self.actual_adapter_size = 0
+            self.resident_adapter_cells = {}
+            self._adapter_memory_retry_at = 0.0
+            return True
         
         # 检查是否有 model_rpc（需要在模型加载后才能查询）
         if self.model_rpc is None:
             # 模型尚未加载，无法查询
-            return
+            return False
         
         try:
             # 查询 RPC 节点的 LoRA 内存使用情况
@@ -434,16 +446,117 @@ class GPUWorker:
                 
                 # 同步更新 actual_adapter_size（用于 ReqQueue）
                 self.actual_adapter_size = self.actual_adapter_memory_usage
+
+                snapshot = memory_info.get('adapter_cells_by_dir')
+                if snapshot is None:
+                    print(f"[Worker {self.worker_id}] Warning: adapter residency snapshot unavailable")
+                    return False
+                snapshot = dict(snapshot)
+                if (len(snapshot) != len(adapter_cells_list)
+                        or any(not isinstance(cells, int) or cells < 0
+                               for cells in snapshot.values())
+                        or sum(snapshot.values()) != self.actual_adapter_memory_usage):
+                    raise ValueError("Adapter residency snapshot does not match cell usage")
+                # Publish names and usage together, without an intervening await.
+                self.resident_adapter_cells = snapshot
+                self._adapter_memory_retry_at = 0.0
+                self._write_validation_event(
+                    'residency', resident_adapter_cells=snapshot,
+                    resident_cells=self.actual_adapter_memory_usage,
+                )
                 
                 print(f"[Worker {self.worker_id}] Updated actual adapter usage: {self.actual_adapter_memory_usage} cells")
+                return True
             else:
-                # 查询失败，使用保守估计（当前值不变）
                 print(f"[Worker {self.worker_id}] Warning: check_lora_memory() returned None")
         except Exception as e:
-            # 查询出错，使用保守估计
+            # Keep the old number for diagnostics; residency remains invalid.
             print(f"[Worker {self.worker_id}] Warning: Failed to query actual adapter usage: {e}")
+        return False
+
+    def _get_adapter_memory_lock(self):
+        # Python 3.9 binds locks at construction; create it inside the worker loop.
+        if self._adapter_memory_lock is None:
+            self._adapter_memory_lock = asyncio.Lock()
+        return self._adapter_memory_lock
+
+    def _write_validation_event(self, event, **fields):
+        recorder = getattr(self, '_validation_log', None)
+        if recorder is not None:
+            recorder(event, **fields)
+
+    def _validation_request(self, req):
+        rank = self.lora_ranks.get(req.adapter_dir, 0)
+        return dict(request_id=req.request_id, adapter_dir=req.adapter_dir,
+                    input_len=req.input_len, prompt_buffer_len=len(req.prompt_ids), rank=rank,
+                    beta=self._profiled_rank_beta,
+                    rwpt=rank_weighted_prompt_tokens(req.input_len, rank, self._profiled_rank_beta))
+
+    def _write_validation_state(self, stage):
+        if getattr(self, '_validation_log', None) is None:
+            return
+        groups = {
+            'waiting': self.req_queue.waiting_req_list if self.req_queue else [],
+            'prefilling': self.prefilling_batch.reqs if self.prefilling_batch else [],
+            'active': self.current_batch.reqs if self.current_batch else [],
+        }
+        self._write_validation_event(
+            'lifecycle', stage=stage,
+            requests={name: [self._validation_request(req) for req in reqs]
+                      for name, reqs in groups.items()},
+            reported={key: value for key, value in self._get_state_for_reporter().items()
+                      if key in ('queue_length', 'pending_raw_tokens', 'pending_prefill_tokens',
+                                 'prefilling_raw_tokens', 'prefilling_rwpt_tokens',
+                                 'current_batch_prompt_tokens', 'active_rwpt_tokens')},
+        )
+
+    async def _change_adapter_memory(self, operation, *args, **kwargs):
+        """Caller holds the memory lock; refresh even after partial failure."""
+        self.resident_adapter_cells = None
+        try:
+            return await operation(*args, **kwargs)
+        finally:
+            await self._update_actual_adapter_usage()
+
+    async def _evict_adapters(self, **kwargs):
+        async with self._get_adapter_memory_lock():
+            return await self._change_adapter_memory(
+                self.model_rpc.trigger_threshold_eviction, **kwargs
+            )
+
+    async def _prepare_new_batch(self):
+        """Serialize admission, loading and RPC registration against cache changes."""
+        async with self._get_adapter_memory_lock():
+            use_snapshot = not any(getattr(self.args, flag, False) for flag in (
+                'no_lora', 'bmm', 'no_mem_pool',
+            ))
+            if use_snapshot and self.resident_adapter_cells is None:
+                if time.monotonic() >= self._adapter_memory_retry_at:
+                    await self._update_actual_adapter_usage()
+                if self.resident_adapter_cells is None:
+                    return None, None
+
+            batch = self.req_queue.generate_new_batch(
+                self.current_batch, self.lora_ranks,
+                actual_adapter_size=self.actual_adapter_memory_usage,
+                resident_adapter_cells=self.resident_adapter_cells if use_snapshot else None,
+            )
+            self.prefilling_batch = batch
+            if batch is not None:
+                self._write_validation_state('admitted')
+                try:
+                    if not getattr(self.args, 'no_lora', False) and batch.adapter_dirs:
+                        if await self._load_adapters(batch.adapter_dirs) is False:
+                            raise RuntimeError("Adapter loading failed")
+                    self._write_validation_state('adapters_loaded')
+                    await self.model_rpc.init_batch(
+                        batch.batch_id, [req.to_rpc_obj() for req in batch.reqs]
+                    )
+                except Exception as error:
+                    return batch, error
+            return batch, None
     
-    async def _load_adapters(self, adapter_dirs: set) -> None:
+    async def _load_adapters(self, adapter_dirs: set) -> Optional[bool]:
         """
         加载 Adapters（借鉴 manager.py）
         
@@ -457,6 +570,7 @@ class GPUWorker:
             - 3.3: 根据请求中的 adapter_dir 加载对应的 Adapter
         
         Note:
+            - 调度路径由 _prepare_new_batch 持有 adapter 内存锁
             - 借鉴 manager.py 的 adapter 加载逻辑
             - 在批次生成后加载所需的 adapters
             - 加载后更新实际内存占用
@@ -486,7 +600,7 @@ class GPUWorker:
                     print(f"[Worker {self.worker_id}] DEBUG:   - {adapter_name} (rank={rank})")
             
             # 调用 RPC 加载 adapters
-            await self.model_rpc.load_adapters(adapter_dirs)
+            await self._change_adapter_memory(self.model_rpc.load_adapters, adapter_dirs)
             await self._cooperative_checkpoint()
             
             print(f"[Worker {self.worker_id}] Loaded {len(adapter_dirs)} adapters: "
@@ -496,9 +610,6 @@ class GPUWorker:
             for adapter_dir in adapter_dirs:
                 self.adapter_cache[adapter_dir] = True
             
-            # 加载后更新实际占用
-            await self._update_actual_adapter_usage()
-            
             # 触发状态上报（Adapter 加载事件）
             if self.state_reporter:
                 await self.state_reporter.report_now()
@@ -507,10 +618,12 @@ class GPUWorker:
             if os.environ.get('DEBUG', '0') == '1':
                 print(f"[Worker {self.worker_id}] DEBUG: Adapter memory usage: "
                       f"{self.actual_adapter_memory_usage} cells")
+            return True
             
         except Exception as e:
             print(f"[Worker {self.worker_id}] Error loading adapters: {e}")
             # 加载失败不应该终止服务，继续运行
+            return False
     
     async def reset_adapter_cache(self) -> dict:
         """
@@ -528,16 +641,17 @@ class GPUWorker:
         cleared_count = len(self.adapter_cache)
         
         try:
-            # 1. 清空 GPU 上的 adapter 内存
-            if self.model_rpc is not None:
-                await self.model_rpc.clear_all_adapters()
-                print(f"[Worker {self.worker_id}] Cleared {cleared_count} adapters from GPU memory")
-            
-            # 2. 清空本地 adapter_cache 字典
-            self.adapter_cache.clear()
-            
-            # 3. 重置 adapter 内存使用统计
-            self.actual_adapter_memory_usage = 0
+            async with self._get_adapter_memory_lock():
+                if self.current_batch or self.prefilling_batch:
+                    raise RuntimeError("Cannot reset adapters while a batch is in flight")
+                if self.model_rpc is not None:
+                    await self._change_adapter_memory(self.model_rpc.clear_all_adapters)
+                    print(f"[Worker {self.worker_id}] Cleared {cleared_count} adapters from GPU memory")
+                else:
+                    self.actual_adapter_memory_usage = 0
+                    self.actual_adapter_size = 0
+                    self.resident_adapter_cells = {}
+                self.adapter_cache.clear()
             
             # 4. 触发状态上报（cache 已清空）
             if self.state_reporter:
@@ -578,7 +692,10 @@ class GPUWorker:
             if self.model_rpc is None:
                 return {"success": False, "error": "model_rpc not initialized", "worker_id": self.worker_id}
 
-            result = await self.model_rpc.preload_adapter(adapter_dir, protection_sec)
+            async with self._get_adapter_memory_lock():
+                result = await self._change_adapter_memory(
+                    self.model_rpc.preload_adapter, adapter_dir, protection_sec
+                )
             success = result.get("success", False) if isinstance(result, dict) else False
             error = result.get("error") if isinstance(result, dict) else str(result)
 
@@ -1020,6 +1137,8 @@ class GPUWorker:
             batch_max_tokens=self.args.batch_max_tokens,
             running_max_req_size=self.args.running_max_req_size
         )
+        if getattr(self, '_validation_log', None) is not None:
+            self.req_queue.validation_callback = self._write_validation_event
         print(f"[Worker {self.worker_id}] Request queue initialized: "
               f"max_total_tokens={self.args.max_total_token_num}, "
               f"batch_max_tokens={self.args.batch_max_tokens}, "
@@ -1291,28 +1410,18 @@ class GPUWorker:
         try:
             responses = []
 
-            # 使用 ReqQueue 生成新批次
-            new_batch = self.req_queue.generate_new_batch(
-                self.current_batch,
-                self.lora_ranks,
-                actual_adapter_size=self.actual_adapter_memory_usage
-            )
-            # Register admitted work before any load/prefill await can report state.
-            self.prefilling_batch = new_batch
+            new_batch, preparation_error = await self._prepare_new_batch()
             
             if new_batch is not None:
                 try:
-                    # 加载批次所需的 adapters
-                    if not getattr(self.args, 'no_lora', False) and new_batch.adapter_dirs:
-                        await self._load_adapters(new_batch.adapter_dirs)
-
-                    # 先对新批次执行 prefill
-                    reqs_rpc = [req.to_rpc_obj() for req in new_batch.reqs]
-                    await self.model_rpc.init_batch(new_batch.batch_id, reqs_rpc)
+                    if preparation_error is not None:
+                        raise preparation_error
                     await self._cooperative_checkpoint()
 
                     # 执行 prefill，获取第一个 token
+                    self._write_validation_state('before_prefill')
                     req_to_out_token_id = await self.model_rpc.prefill_batch(new_batch.batch_id)
+                    self._write_validation_state('after_prefill')
                     await self._cooperative_checkpoint()
 
                     # 将第一个 token 添加到新批次的请求中
@@ -1373,6 +1482,7 @@ class GPUWorker:
                         self.current_batch.merge(new_batch)
                 # Transfer ownership without yielding between merge and clearing.
                 self.prefilling_batch = None
+                self._write_validation_state('active')
             
             # 执行推理
             if self.current_batch is not None and len(self.current_batch.reqs) > 0:
@@ -1469,10 +1579,15 @@ class GPUWorker:
 
         finally:
             self.prefilling_batch = None
+            if new_batch is not None or self.current_batch is not None or responses:
+                self._write_validation_state('step_end')
 
     def _make_error_responses(self, batch: Batch, error_msg: str) -> List[dict]:
         if batch is None:
             return []
+        for req in batch.reqs:
+            self._write_validation_event('terminal', request_id=req.request_id,
+                                         success=False, error=error_msg)
 
         error_type = error_msg.split(']')[0].strip('[') if '[' in error_msg else 'UNKNOWN'
         return [
@@ -1543,6 +1658,9 @@ class GPUWorker:
             包含主动阈值淘汰机制，与张量并行模式保持一致。
         """
         if has_new_finished_req:
+            for req in batch.reqs:
+                if req.has_generate_finished:
+                    self._write_validation_event('terminal', request_id=req.request_id, success=True)
             # 记录完成的请求使用的适配器（在 filter_finished 之前）
             finished_adapter_dirs = []
             if not getattr(self.args, 'no_lora', False):
@@ -1587,7 +1705,7 @@ class GPUWorker:
                             dynamic_ratio = self._calculate_dynamic_evict_ratio(lora_usage_ratio, threshold)
                             # 统计队列中等待各 adapter 的请求数
                             pending_counts = self._get_pending_adapter_counts()
-                            evict_result = await self.model_rpc.trigger_threshold_eviction(
+                            evict_result = await self._evict_adapters(
                                 preserve_dirs=preserve_adapter_dirs,
                                 threshold=threshold,
                                 evict_ratio=dynamic_ratio,
@@ -1599,7 +1717,6 @@ class GPUWorker:
                                 evicted_adapters = evict_result.get('evicted_adapters', [])
                                 for evicted_dir in evicted_adapters:
                                     self.adapter_cache.pop(evicted_dir, None)
-                                await self._update_actual_adapter_usage()
                                 if self.state_reporter:
                                     await self.state_reporter.report_now()
                 except Exception as e:
@@ -1614,7 +1731,7 @@ class GPUWorker:
                 # 批次清空后更激进地淘汰，不保护任何 adapter
                 if not getattr(self.args, 'no_lora', False) and self.model_rpc is not None:
                     try:
-                        evict_result = await self.model_rpc.trigger_threshold_eviction(
+                        evict_result = await self._evict_adapters(
                             preserve_dirs=preserve_adapter_dirs if self.current_batch is not batch else None,
                             threshold=getattr(self.args, 'evict_idle_threshold', 0.8),
                             evict_ratio=getattr(self.args, 'evict_idle_ratio', 0.7),
@@ -1625,7 +1742,6 @@ class GPUWorker:
                             evicted_adapters = evict_result.get('evicted_adapters', [])
                             for evicted_dir in evicted_adapters:
                                 self.adapter_cache.pop(evicted_dir, None)
-                            await self._update_actual_adapter_usage()
                             if self.state_reporter:
                                 await self.state_reporter.report_now()
                     except Exception as e:
@@ -1723,6 +1839,8 @@ class GPUWorker:
                 # 转换为 Req 对象并存入队列
                 req_obj = self._convert_to_req_object(request)
                 self.req_queue.append(req_obj)
+                if getattr(self, '_validation_log', None) is not None:
+                    self._write_validation_event('received', **self._validation_request(req_obj))
                 
                 # 未来扩展点：这里可以实现优先级判断，将请求存入不同的队列
                 # 例如：
@@ -1788,7 +1906,11 @@ class GPUWorker:
                         print(f"[Worker {self.worker_id}] Send error: {send_error}")
                 
                 # 如果没有待处理的请求，短暂等待
-                if not self.req_queue.waiting_req_list and self.current_batch is None:
+                if self.current_batch is None and (
+                    not self.req_queue.waiting_req_list
+                    or (self.resident_adapter_cells is None
+                        and time.monotonic() < self._adapter_memory_retry_at)
+                ):
                     await asyncio.sleep(0.01)  # 10ms
 
                 await self._cooperative_checkpoint()

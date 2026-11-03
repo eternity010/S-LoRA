@@ -177,6 +177,11 @@ class DataParallelRouterManager:
             self._init_replica_manager()
 
         self._routing_debug_file = os.environ.get("SLORA_ROUTING_DEBUG_FILE")
+        validation_dir = os.environ.get('SLORA_VALIDATION_DIR')
+        self._validation_log = None
+        if validation_dir:
+            from slora.server.router.validation_log import ValidationLog
+            self._validation_log = ValidationLog(validation_dir, 'router')
         if self._routing_debug_file:
             debug_dir = os.path.dirname(self._routing_debug_file)
             if debug_dir:
@@ -1871,6 +1876,17 @@ class DataParallelRouterManager:
                 # 更新路由器状态
                 if isinstance(self.router, AdapterAwareRouter):
                     self.router.update_worker_state(worker_id, state)
+                    recorder = getattr(self, '_validation_log', None)
+                    if recorder is not None:
+                        applied = self.router.worker_states[worker_id]
+                        recorder(
+                            'worker_report', source_worker_id=worker_id,
+                            report_seq=state.report_seq, applied_seq=applied.report_seq,
+                            prefilling_request_count=state.prefilling_request_count,
+                            prefilling_rwpt_tokens=state.prefilling_rwpt_tokens,
+                            applied_prefilling_request_count=applied.prefilling_request_count,
+                            applied_prefilling_rwpt_tokens=applied.prefilling_rwpt_tokens,
+                        )
                 
                 # 更新状态缓存
                 if self.worker_state_cache:

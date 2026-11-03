@@ -44,15 +44,18 @@ class TestGPUWorkerReqQueueIntegration:
             worker = GPUWorker(worker_id=0, gpu_id=0, args=args)
             worker._setup_request_queue()
             
+            worker.resident_adapter_cells = {}
             # Mock ReqQueue.generate_new_batch
             original_generate = worker.req_queue.generate_new_batch
             call_args = []
             
-            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0):
+            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0,
+                              resident_adapter_cells=None):
                 call_args.append({
                     'current_batch': current_batch,
                     'lora_ranks': lora_ranks,
-                    'actual_adapter_size': actual_adapter_size
+                    'actual_adapter_size': actual_adapter_size,
+                    'resident_adapter_cells': resident_adapter_cells,
                 })
                 return None  # 返回 None 表示没有新批次
             
@@ -66,6 +69,7 @@ class TestGPUWorkerReqQueueIntegration:
             
             # 验证 lora_ranks 被正确传递
             assert call_args[0]['lora_ranks'] == worker.lora_ranks
+            assert call_args[0]['resident_adapter_cells'] == {}
             assert "/fake/lora1" in call_args[0]['lora_ranks']
             assert "/fake/lora2" in call_args[0]['lora_ranks']
             assert None in call_args[0]['lora_ranks']
@@ -94,15 +98,18 @@ class TestGPUWorkerReqQueueIntegration:
             
             # 设置 actual_adapter_memory_usage
             worker.actual_adapter_memory_usage = 300
+            worker.resident_adapter_cells = {"/fake/lora1": 300}
             
             # Mock ReqQueue.generate_new_batch
             call_args = []
             
-            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0):
+            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0,
+                              resident_adapter_cells=None):
                 call_args.append({
                     'current_batch': current_batch,
                     'lora_ranks': lora_ranks,
-                    'actual_adapter_size': actual_adapter_size
+                    'actual_adapter_size': actual_adapter_size,
+                    'resident_adapter_cells': resident_adapter_cells,
                 })
                 return None
             
@@ -114,6 +121,7 @@ class TestGPUWorkerReqQueueIntegration:
             # 验证 actual_adapter_size 被正确传递
             assert len(call_args) == 1
             assert call_args[0]['actual_adapter_size'] == 300
+            assert call_args[0]['resident_adapter_cells'] == {"/fake/lora1": 300}
     
     @pytest.mark.asyncio
     async def test_generate_new_batch_with_zero_actual_adapter_size(self):
@@ -139,15 +147,18 @@ class TestGPUWorkerReqQueueIntegration:
             
             # actual_adapter_memory_usage 默认为 0
             assert worker.actual_adapter_memory_usage == 0
+            worker.resident_adapter_cells = {}
             
             # Mock ReqQueue.generate_new_batch
             call_args = []
             
-            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0):
+            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0,
+                              resident_adapter_cells=None):
                 call_args.append({
                     'current_batch': current_batch,
                     'lora_ranks': lora_ranks,
-                    'actual_adapter_size': actual_adapter_size
+                    'actual_adapter_size': actual_adapter_size,
+                    'resident_adapter_cells': resident_adapter_cells,
                 })
                 return None
             
@@ -159,6 +170,7 @@ class TestGPUWorkerReqQueueIntegration:
             # 验证 actual_adapter_size 为 0
             assert len(call_args) == 1
             assert call_args[0]['actual_adapter_size'] == 0
+            assert call_args[0]['resident_adapter_cells'] == {}
     
     @pytest.mark.asyncio
     async def test_generate_new_batch_with_current_batch(self):
@@ -194,15 +206,18 @@ class TestGPUWorkerReqQueueIntegration:
             
             # 设置 actual_adapter_memory_usage
             worker.actual_adapter_memory_usage = 150
+            worker.resident_adapter_cells = {"/fake/lora1": 150}
             
             # Mock ReqQueue.generate_new_batch
             call_args = []
             
-            def mock_generate(current_batch_arg, lora_ranks, actual_adapter_size=0):
+            def mock_generate(current_batch_arg, lora_ranks, actual_adapter_size=0,
+                              resident_adapter_cells=None):
                 call_args.append({
                     'current_batch': current_batch_arg,
                     'lora_ranks': lora_ranks,
-                    'actual_adapter_size': actual_adapter_size
+                    'actual_adapter_size': actual_adapter_size,
+                    'resident_adapter_cells': resident_adapter_cells,
                 })
                 return None
             
@@ -215,6 +230,7 @@ class TestGPUWorkerReqQueueIntegration:
             assert len(call_args) == 1
             assert call_args[0]['current_batch'] == current_batch
             assert call_args[0]['actual_adapter_size'] == 150
+            assert call_args[0]['resident_adapter_cells'] == {"/fake/lora1": 150}
     
     @pytest.mark.asyncio
     async def test_adapter_loading_after_batch_generation(self):
@@ -252,6 +268,7 @@ class TestGPUWorkerReqQueueIntegration:
                 sample_params=SamplingParams()
             )
             new_batch = Batch("batch-1", [req1, req2])
+            worker.resident_adapter_cells = {}
             
             # Mock ReqQueue.generate_new_batch 返回新批次
             worker.req_queue.generate_new_batch = MagicMock(return_value=new_batch)
@@ -341,6 +358,7 @@ class TestGPUWorkerReqQueueIntegration:
             
             # 设置 actual_adapter_memory_usage
             worker.actual_adapter_memory_usage = 500
+            worker.resident_adapter_cells = {"/fake/lora1": 200, "/fake/lora2": 300}
             
             # 验证 lora_ranks 包含所有配置的 adapters
             assert "/fake/lora1" in worker.lora_ranks
@@ -350,10 +368,12 @@ class TestGPUWorkerReqQueueIntegration:
             # Mock ReqQueue.generate_new_batch
             call_args = []
             
-            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0):
+            def mock_generate(current_batch, lora_ranks, actual_adapter_size=0,
+                              resident_adapter_cells=None):
                 call_args.append({
                     'lora_ranks': lora_ranks,
-                    'actual_adapter_size': actual_adapter_size
+                    'actual_adapter_size': actual_adapter_size,
+                    'resident_adapter_cells': resident_adapter_cells,
                 })
                 return None
             
@@ -366,6 +386,7 @@ class TestGPUWorkerReqQueueIntegration:
             assert len(call_args) == 1
             assert call_args[0]['lora_ranks'] == worker.lora_ranks
             assert call_args[0]['actual_adapter_size'] == worker.actual_adapter_memory_usage
+            assert call_args[0]['resident_adapter_cells'] == worker.resident_adapter_cells
 
 
 if __name__ == "__main__":
