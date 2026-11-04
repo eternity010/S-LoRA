@@ -25,6 +25,7 @@ import zmq
 import zmq.asyncio
 import multiprocessing as mp
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Union
 
 from slora.server.router.round_robin_router import RoundRobinRouter
@@ -36,6 +37,7 @@ from slora.server.router.rwpt import (
 )
 from slora.server.router.worker_state_cache import WorkerStateCache
 from slora.server.router.replica_manager import ReplicaManager
+from slora.server.router.dispatch_tracker import DispatchTracker
 from slora.server.io_struct import AbortReq, Req, ReqDetokenizationState
 from slora.server.sampling_params import SamplingParams
 
@@ -146,6 +148,10 @@ class DataParallelRouterManager:
             heartbeat_interval_ms=routing_config.heartbeat_interval_ms,
             heartbeat_timeout_ms=routing_config.heartbeat_timeout_ms
         )
+        self._routing_epoch = uuid.uuid4().hex
+        self._dispatch_tracker = DispatchTracker(self.num_workers, self._routing_epoch)
+        self._dispatch_lock = None
+        self.args.routing_epoch = self._routing_epoch if self.routing_strategy == 'adapter-aware' else None
         
         # ZMQ 通信（将在 _setup_zmq 中初始化）
         self.context = None
@@ -419,59 +425,53 @@ class DataParallelRouterManager:
         logger.info(f"Loaded ranks for {len(adapter_ranks)} adapters")
         return adapter_ranks
 
-    def _optimistically_update_worker_load(self, worker_id: int, request: dict) -> None:
-        """
-        乐观更新 Router 侧缓存的 Worker 负载状态。
-
-        该估计仅用于填补 Worker 状态上报之间的短暂窗口，后续会被真实上报覆盖。
-        """
+    def _optimistically_update_worker_load(self, worker_id: int, request: dict):
+        """Reserve before sending; only a covering Worker snapshot can retire it."""
         if self.routing_strategy != 'adapter-aware' or not hasattr(self.router, 'worker_states'):
             return
-
-        state = self.router.worker_states.get(worker_id)
-        if state is None:
+        if worker_id not in self.router.worker_states:
             return
-
-        state.queue_length += 1
-        state.optimistic_request_count += 1
-
-        routing_config = getattr(self.router, 'config', None)
-        if routing_config is None:
-            return
-
-        prompt_ids = request.get('prompt_ids')
-        if prompt_ids is None:
-            return
-
         try:
-            prompt_len = len(prompt_ids)
+            prompt_len = len(request.get('prompt_ids') or [])
         except TypeError:
-            return
-
-        if prompt_len <= 0:
-            return
-
-        if routing_config.load_metric in ('token_count', 'token_count_active'):
-            state.pending_raw_tokens += prompt_len
-            state.optimistic_raw_tokens += prompt_len
-            return
-
-        if routing_config.load_metric not in ('rwpt', 'rwpt_active'):
-            return
-
+            prompt_len = 0
+        routing_config = self.router.config
         adapter_dir = request.get('adapter_dir')
-        if not adapter_dir:
-            return
-
         default_rank = getattr(routing_config, 'default_lora_rank', 16)
-        adapter_ranks = getattr(self.router, 'adapter_ranks', {})
-        rank = adapter_ranks.get(adapter_dir, default_rank)
-
-        estimated_prefill = rank_weighted_prompt_tokens(
-            prompt_len, rank, routing_config.profiled_rank_beta
+        rank = self.router.adapter_ranks.get(adapter_dir, default_rank)
+        rwpt = rank_weighted_prompt_tokens(prompt_len, rank, routing_config.profiled_rank_beta) if adapter_dir else 0
+        sequence = self._dispatch_tracker.reserve(
+            worker_id, request.get('request_id'), prompt_len, rwpt,
         )
-        state.pending_prefill_tokens += estimated_prefill
-        state.optimistic_prefill_tokens += estimated_prefill
+        self._publish_worker_load(worker_id)
+        self._record_dispatch('dispatch_reserved', worker_id, sequence)
+        return sequence
+
+    def _publish_worker_load(self, worker_id):
+        state = self._dispatch_tracker.effective_state(worker_id, self.router.config.load_metric)
+        self.router.update_worker_state(worker_id, state)
+        cache = getattr(self, 'worker_state_cache', None)
+        if cache is not None:
+            cache.update(worker_id, state)
+        replica_manager = getattr(self, 'replica_manager', None)
+        if replica_manager is not None:
+            replica_manager.update_worker_state(worker_id, state)
+        return state
+
+    def _record_dispatch(self, event, worker_id, sequence):
+        recorder = getattr(self, '_validation_log', None)
+        if recorder is not None:
+            tracker = self._dispatch_tracker
+            entry = tracker.pending[worker_id].get(sequence)
+            try:
+                recorder(event, source_worker_id=worker_id, routing_epoch=self._routing_epoch,
+                         dispatch_seq=sequence, ack_dispatch_seq=tracker.reported[worker_id].ack_dispatch_seq,
+                         request_id=entry.request_id if entry else None,
+                         raw_tokens=entry.raw_tokens if entry else 0,
+                         rwpt_tokens=entry.rwpt_tokens if entry else 0,
+                         pending_sequences=list(tracker.pending[worker_id]))
+            except Exception:
+                logger.exception('Failed to record dispatch evidence')
 
     def _build_routing_debug_record(self, worker_id: int, request: dict) -> Optional[Dict[str, Any]]:
         if self.routing_strategy != 'adapter-aware' or not hasattr(self.router, 'worker_states'):
@@ -537,6 +537,8 @@ class DataParallelRouterManager:
                 'current_batch_size': state.current_batch_size,
                 'current_batch_prompt_tokens': state.current_batch_prompt_tokens,
                 'report_seq': state.report_seq,
+                'routing_epoch': state.routing_epoch,
+                'ack_dispatch_seq': state.ack_dispatch_seq,
                 'worker_report_time': state.worker_report_time,
                 'router_received_time': state.router_received_time,
                 'report_age_ms': (
@@ -1016,6 +1018,10 @@ class DataParallelRouterManager:
         if isinstance(self.router, AdapterAwareRouter):
             for state in self.router.worker_states.values():
                 state.cached_adapters.clear()
+            tracker = getattr(self, '_dispatch_tracker', None)
+            if tracker is not None:
+                for state in tracker.reported.values():
+                    state.cached_adapters.clear()
 
     async def route_request(self, request: dict) -> None:
         """
@@ -1047,97 +1053,64 @@ class DataParallelRouterManager:
             路由决策会在 DEBUG 级别记录日志（Requirement 8.4）。
             发送失败时会重试最多 3 次，每次重试间隔 0.1 秒。
         """
-        worker_id = None
-        max_retries = 3
-        retry_count = 0
-        request_id_short = request.get('request_id', 'unknown')[:8]
+        if self.routing_strategy != 'adapter-aware':
+            return await self._route_request(request)
+        if getattr(self, '_dispatch_lock', None) is None:
+            self._dispatch_lock = asyncio.Lock()
+        # Preserve per-worker send order even when callers route concurrently.
+        async with self._dispatch_lock:
+            return await self._route_request(request)
+
+    async def _route_request(self, request):
+        aware = self.routing_strategy == 'adapter-aware'
         adapter_dir = request.get('adapter_dir', '')
-        
-        while retry_count < max_retries:
+        for attempt in range(3):
+            worker_id = self.router.select_worker(adapter_dir) if aware else self.router.select_worker()
+            if aware and not self.router.worker_states[worker_id].is_healthy:
+                raise RuntimeError('Refusing dispatch to an unhealthy Worker selected by fallback')
+            cache_hit = self._observe_worker_cache(worker_id, adapter_dir) if not aware else False
+            # Record the decision before adding this request's own contribution.
             try:
-                # 根据路由策略选择 Worker
-                if self.routing_strategy == 'adapter-aware':
-                    # 使用 AdapterAwareRouter 选择 Worker
-                    # AdapterAwareRouter.select_worker 需要 adapter_dir 参数
-                    worker_id = self.router.select_worker(adapter_dir)
-                else:
-                    # 使用 Round Robin Router 选择 Worker
-                    worker_id = self.router.select_worker()
-
-                cache_hit = False
-                if self.routing_strategy == 'round-robin':
-                    cache_hit = self._observe_worker_cache(worker_id, adapter_dir)
-                
-                # DEBUG 模式：打印路由日志
-                if os.environ.get('DEBUG', '0') == '1':
-                    if self.routing_strategy == 'adapter-aware':
-                        # 获取更详细的路由信息
-                        cache_hit = False
-                        if hasattr(self.router, 'worker_states'):
-                            state = self.router.worker_states.get(worker_id)
-                            if state:
-                                cache_hit = state.has_adapter(adapter_dir)
-                        print(f"[Router] {request_id_short}... -> Worker {worker_id} "
-                              f"(adapter-aware, cache_hit={cache_hit})")
-                    else:
-                        print(f"[Router] {request_id_short}... -> Worker {worker_id} (round-robin)")
-                
-                # 通过 ZMQ PUSH socket 发送请求到选定的 Worker
-                await self.request_senders[worker_id].send_json(request)
-
                 self._write_routing_debug_record(worker_id, request)
-                
-                # 乐观更新 Router 端的 Worker 状态，缓解状态上报窗口带来的低估
-                if self.routing_strategy == 'adapter-aware':
-                    self._optimistically_update_worker_load(worker_id, request)
-                else:
-                    self._record_round_robin_cache_observation(cache_hit)
-                
-                # 更新统计信息（Requirement 8.2）
-                self.stats['total_requests'] += 1
-                self.stats['successful_requests'] += 1  # Phase 1: 假设成功路由即为成功
-                self.stats['worker_request_counts'][worker_id] += 1
-                
-                # 发送成功，返回
-                return
-                
-            except zmq.Again as e:
-                # ZMQ 超时（SNDTIMEO 触发）
-                retry_count += 1
-                print(f"[DataParallelRouterManager] ZMQ timeout routing request "
-                      f"{request.get('request_id', 'unknown')} to Worker {worker_id} "
-                      f"(attempt {retry_count}/{max_retries})")
-                
-                if retry_count >= max_retries:
-                    # 超过重试次数，更新失败统计并抛出异常
+            except Exception:
+                logger.exception('Failed to record routing decision')
+            sequence = self._optimistically_update_worker_load(worker_id, request) if aware else None
+            message = dict(request, routing_epoch=self._routing_epoch, dispatch_seq=sequence) if aware else request
+            try:
+                await self.request_senders[worker_id].send_json(message)
+            except zmq.Again:
+                if aware:
+                    self._dispatch_tracker.rollback(worker_id, sequence)
+                    self._publish_worker_load(worker_id)
+                    self._record_dispatch('dispatch_rollback', worker_id, sequence)
+                if attempt == 2:
                     self.stats['failed_requests'] += 1
-                    error_msg = (f"Failed to route request {request.get('request_id', 'unknown')} "
-                                f"to Worker {worker_id} after {max_retries} attempts: ZMQ timeout")
-                    print(f"[DataParallelRouterManager] ERROR: {error_msg}")
-                    raise Exception(error_msg)
-                
-                # 等待一段时间后重试
+                    raise RuntimeError(f'Failed to route request {request.get("request_id")} after 3 attempts: ZMQ timeout')
                 await asyncio.sleep(0.1)
-                
-            except Exception as e:
-                # 其他错误，记录日志并抛出
-                retry_count += 1
-                print(f"[DataParallelRouterManager] Error routing request "
-                      f"{request.get('request_id', 'unknown')} to Worker {worker_id} "
-                      f"(attempt {retry_count}/{max_retries}):")
-                print(f"[DataParallelRouterManager]   Error type: {type(e).__name__}")
-                print(f"[DataParallelRouterManager]   Error: {str(e)}")
-                
-                if retry_count >= max_retries:
-                    # 超过重试次数，更新失败统计并抛出异常
+                continue
+            except (Exception, asyncio.CancelledError) as error:
+                if aware:
+                    # Delivery is unknown: retain the reservation and do not replay.
+                    self._dispatch_tracker.mark_uncertain(worker_id, sequence)
+                    self._publish_worker_load(worker_id)
+                    self._record_dispatch('dispatch_uncertain', worker_id, sequence)
                     self.stats['failed_requests'] += 1
-                    error_msg = (f"Failed to route request {request.get('request_id', 'unknown')} "
-                                f"to Worker {worker_id} after {max_retries} attempts: {str(e)}")
-                    print(f"[DataParallelRouterManager] ERROR: {error_msg}")
-                    raise Exception(error_msg)
-                
-                # 等待一段时间后重试
+                    raise
+                if isinstance(error, asyncio.CancelledError):
+                    raise
+                if attempt == 2:
+                    self.stats['failed_requests'] += 1
+                    raise
                 await asyncio.sleep(0.1)
+                continue
+            if aware:
+                self._record_dispatch('dispatch_sent', worker_id, sequence)
+            else:
+                self._record_round_robin_cache_observation(cache_hit)
+            self.stats['total_requests'] += 1
+            self.stats['successful_requests'] += 1
+            self.stats['worker_request_counts'][worker_id] += 1
+            return
     
     async def reset_all_adapter_caches(self) -> dict:
         """
@@ -1334,6 +1307,13 @@ class DataParallelRouterManager:
                 
                 # 检查所有 Worker 进程状态
                 for i, worker in enumerate(self.workers):
+                    tracker = getattr(self, '_dispatch_tracker', None)
+                    if self.routing_strategy == 'adapter-aware' and tracker is not None and tracker.pending[i]:
+                        oldest = min(entry.created_at for entry in tracker.pending[i].values())
+                        age = time.monotonic() - oldest
+                        if age >= 10:
+                            logger.warning('Worker %s has %s unconfirmed dispatches; oldest %.1fs. '
+                                           'Reservations retained, not expired.', i, len(tracker.pending[i]), age)
                     if not worker.is_alive():
                         # Worker 进程已退出
                         exitcode = worker.exitcode
@@ -1482,6 +1462,9 @@ class DataParallelRouterManager:
             
             # 应用配置更新
             result = self.router.update_config(**update)
+            if isinstance(self.router, AdapterAwareRouter):
+                for worker_id in self._dispatch_tracker.reported:
+                    self._publish_worker_load(worker_id)
             self._last_config_update_id = update_id
             print(f"[DataParallelRouterManager] Routing config updated: {result}")
             
@@ -1818,7 +1801,7 @@ class DataParallelRouterManager:
                     queue_length=message.get('queue_length', 0),
                     gpu_memory_free=message.get('gpu_memory_free', 0),
                     last_heartbeat=message.get('timestamp', time.time()),
-                    is_healthy=True,
+                    is_healthy=message.get('is_healthy', True),
                     # RWPT fields
                     pending_prefill_tokens=message.get('pending_prefill_tokens', 0),
                     pending_raw_tokens=message.get('pending_raw_tokens', 0),
@@ -1829,6 +1812,8 @@ class DataParallelRouterManager:
                     active_decode_seqs=message.get('active_decode_seqs', 0),
                     pool_used_ratio=message.get('pool_used_ratio', 0.0),
                     report_seq=message.get('report_seq', 0),
+                    routing_epoch=message.get('routing_epoch'),
+                    ack_dispatch_seq=message.get('ack_dispatch_seq'),
                     worker_report_time=message.get(
                         'worker_report_time', message.get('timestamp', 0.0)
                     ),
@@ -1843,6 +1828,15 @@ class DataParallelRouterManager:
                         tuple(t) for t in message.get('top_k_rwpt_adapters', [])
                     ],
                 )
+
+                if isinstance(self.router, AdapterAwareRouter):
+                    if not self._dispatch_tracker.accept_report(state):
+                        logger.warning('Ignored stale, invalid or incompatible Worker %s report', worker_id)
+                        initial = self._dispatch_tracker.reported[worker_id]
+                        if initial.report_seq == 0 and (state.routing_epoch is None or state.ack_dispatch_seq is None):
+                            initial.is_healthy = False
+                            self._publish_worker_load(worker_id)
+                        continue
                 
                 # 缓存 profiled_alpha（一次性，首次收到后不再更新）
                 profiled_alpha = message.get('profiled_alpha')
@@ -1875,12 +1869,23 @@ class DataParallelRouterManager:
                 
                 # 更新路由器状态
                 if isinstance(self.router, AdapterAwareRouter):
-                    self.router.update_worker_state(worker_id, state)
+                    applied = self._publish_worker_load(worker_id)
                     recorder = getattr(self, '_validation_log', None)
                     if recorder is not None:
-                        applied = self.router.worker_states[worker_id]
                         recorder(
                             'worker_report', source_worker_id=worker_id,
+                            routing_epoch=state.routing_epoch, ack_dispatch_seq=state.ack_dispatch_seq,
+                            load_metric=self.router.config.load_metric,
+                            pending_sequences=list(self._dispatch_tracker.pending[worker_id]),
+                            reported_queue_length=state.queue_length,
+                            effective_queue_length=applied.queue_length,
+                            reported_raw_tokens=state.pending_raw_tokens,
+                            effective_raw_tokens=applied.pending_raw_tokens,
+                            reported_rwpt_tokens=state.pending_prefill_tokens,
+                            effective_rwpt_tokens=applied.pending_prefill_tokens,
+                            optimistic_request_count=applied.optimistic_request_count,
+                            optimistic_raw_tokens=applied.optimistic_raw_tokens,
+                            optimistic_prefill_tokens=applied.optimistic_prefill_tokens,
                             report_seq=state.report_seq, applied_seq=applied.report_seq,
                             prefilling_request_count=state.prefilling_request_count,
                             prefilling_rwpt_tokens=state.prefilling_rwpt_tokens,
@@ -1889,11 +1894,11 @@ class DataParallelRouterManager:
                         )
                 
                 # 更新状态缓存
-                if self.worker_state_cache:
+                elif self.worker_state_cache:
                     self.worker_state_cache.update(worker_id, state)
                 
                 # 同步更新 ReplicaManager（热门 Adapter 主动复制）
-                if self.replica_manager:
+                if not isinstance(self.router, AdapterAwareRouter) and self.replica_manager:
                     self.replica_manager.update_worker_state(worker_id, state)
                 
                 state_report_count += 1

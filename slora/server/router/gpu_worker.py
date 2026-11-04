@@ -63,6 +63,8 @@ class GPUWorker:
         self.worker_id = worker_id
         self.gpu_id = gpu_id
         self.args = args
+        self._routing_epoch = getattr(args, 'routing_epoch', None)
+        self._ack_dispatch_seq = 0
         validation_dir = os.environ.get('SLORA_VALIDATION_DIR')
         self._validation_log = ValidationLog(validation_dir, worker_id) if validation_dir else None
         
@@ -316,6 +318,8 @@ class GPUWorker:
             pool_used_ratio = 0.0
 
         return {
+            'routing_epoch': getattr(self, '_routing_epoch', None),
+            'ack_dispatch_seq': getattr(self, '_ack_dispatch_seq', 0),
             'cached_adapters': cached_adapters,
             'queue_length': queue_length,
             'gpu_memory_free': gpu_memory_free,
@@ -488,6 +492,8 @@ class GPUWorker:
     def _validation_request(self, req):
         rank = self.lora_ranks.get(req.adapter_dir, 0)
         return dict(request_id=req.request_id, adapter_dir=req.adapter_dir,
+                    routing_epoch=getattr(req, 'routing_epoch', None),
+                    dispatch_seq=getattr(req, 'dispatch_seq', None),
                     input_len=req.input_len, prompt_buffer_len=len(req.prompt_ids), rank=rank,
                     beta=self._profiled_rank_beta,
                     rwpt=rank_weighted_prompt_tokens(req.input_len, rank, self._profiled_rank_beta))
@@ -502,6 +508,8 @@ class GPUWorker:
         }
         self._write_validation_event(
             'lifecycle', stage=stage,
+            routing_epoch=getattr(self, '_routing_epoch', None),
+            ack_dispatch_seq=getattr(self, '_ack_dispatch_seq', 0),
             requests={name: [self._validation_request(req) for req in reqs]
                       for name, reqs in groups.items()},
             reported={key: value for key, value in self._get_state_for_reporter().items()
@@ -1771,6 +1779,32 @@ class GPUWorker:
         """
         await self.response_sender.send_json(response)
     
+    def _enqueue_routed_request(self, request):
+        """Enqueue (or explicitly reject) and advance the watermark without yielding."""
+        epoch = getattr(self, '_routing_epoch', None)
+        sequence = request.get('dispatch_seq')
+        if epoch is not None:
+            if (request.get('routing_epoch') != epoch or type(sequence) is not int
+                    or sequence <= self._ack_dispatch_seq):
+                raise ValueError('Invalid routing epoch or non-increasing dispatch sequence')
+        try:
+            req = self._convert_to_req_object(request)
+            self.req_queue.append(req)
+        except Exception:
+            if epoch is not None:
+                self._ack_dispatch_seq = sequence
+            raise
+        if epoch is not None:
+            req.routing_epoch = epoch
+            req.dispatch_seq = sequence
+            self._ack_dispatch_seq = sequence
+        if getattr(self, '_validation_log', None) is not None:
+            try:
+                self._write_validation_event('received', **self._validation_request(req))
+            except Exception as error:
+                print(f'[Worker {self.worker_id}] Failed to record received request: {error}')
+        return req
+
     async def _receive_requests_loop(self) -> None:
         """
         请求接收协程 - 持续接收 ZMQ 消息并存入本地队列
@@ -1837,10 +1871,14 @@ class GPUWorker:
                     sys.stdout.flush()
                 
                 # 转换为 Req 对象并存入队列
-                req_obj = self._convert_to_req_object(request)
-                self.req_queue.append(req_obj)
-                if getattr(self, '_validation_log', None) is not None:
-                    self._write_validation_event('received', **self._validation_request(req_obj))
+                try:
+                    self._enqueue_routed_request(request)
+                except Exception as error:
+                    await self._send_response(dict(
+                        request_id=request_id, worker_id=self.worker_id,
+                        output_ids=[], metadata={'finish_reason': 'error'},
+                        success=False, error=str(error), finished=True,
+                    ))
                 
                 # 未来扩展点：这里可以实现优先级判断，将请求存入不同的队列
                 # 例如：

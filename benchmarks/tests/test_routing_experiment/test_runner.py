@@ -18,6 +18,7 @@ from routing_experiment.runner import ExperimentRunner
 from trace import Request
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.dp_manager import DataParallelRouterManager
+from slora.server.router.dispatch_tracker import DispatchTracker
 from slora.server.router.rwpt import rank_weighted_prompt_tokens
 from slora.server.router.worker_state import RoutingConfig, WorkerState
 from slora.server.router.worker_state_cache import WorkerStateCache
@@ -378,6 +379,8 @@ class TestDataParallelRouterManagerOptimisticLoadUpdate:
         )
         manager.router.adapter_ranks = {"/adapters/a": 64}
         manager.router.worker_states[0] = WorkerState(worker_id=0)
+        manager._routing_epoch = 'test'
+        manager._dispatch_tracker = DispatchTracker(1, 'test')
         return manager
 
     def test_optimistic_update_increments_queue_and_prefill_for_rwpt(self):

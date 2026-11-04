@@ -122,7 +122,7 @@ class TestStateGetter:
         assert state.cached_adapters == set()
         assert state.queue_length == 0
         assert state.gpu_memory_free == 0
-        assert state.is_healthy is True
+        assert state.is_healthy is False  # Missing snapshots cannot acknowledge dispatches.
     
     def test_get_current_state_getter_error(self):
         """Test that getter errors return default state"""

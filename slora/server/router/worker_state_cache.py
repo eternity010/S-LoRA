@@ -126,7 +126,10 @@ class WorkerStateCache:
                 queue_length=message.get('queue_length', 0),
                 gpu_memory_free=message.get('gpu_memory_free', 0),
                 last_heartbeat=message.get('timestamp', time.time()),
-                is_healthy=True,  # 收到消息说明 Worker 健康
+                is_healthy=message.get('is_healthy', True),
+                report_seq=message.get('report_seq', 0),
+                routing_epoch=message.get('routing_epoch'),
+                ack_dispatch_seq=message.get('ack_dispatch_seq'),
                 # Rank distribution fields for Rank-Aware Routing
                 # Use default values (0.0, 0, 0) for backward compatibility with old Workers
                 avg_rank=message.get('avg_rank', 0.0),

@@ -40,7 +40,133 @@ def build_validation_phases(config, base_model, adapter_dirs):
     return phases
 
 
-def analyze_validation(directory, expected_requests, num_workers):
+def analyze_dispatch_evidence(directory, expected_requests, num_workers):
+    directory = Path(directory)
+    errors, missing = [], []
+    pending = {wid: {} for wid in range(num_workers)}
+    issued = dict.fromkeys(pending, 0)
+    confirmed = dict.fromkeys(pending, 0)
+    reports = dict.fromkeys(pending, 0)
+    reserved, sent, received, latest = {}, set(), set(), {}
+    epochs = set()
+    noncovering_reports, accepted_reports = 0, 0
+    path = directory / 'worker_router.jsonl'
+    if path.exists():
+        for line in path.open():
+            row = json.loads(line)
+            event = row['event']
+            if event not in ('dispatch_reserved', 'dispatch_sent', 'dispatch_rollback',
+                             'dispatch_uncertain', 'worker_report'):
+                continue
+            worker = row['source_worker_id']
+            epochs.add(row.get('routing_epoch'))
+            if event == 'worker_report':
+                ack = row.get('ack_dispatch_seq')
+                if (type(ack) is not int or not confirmed[worker] <= ack <= issued[worker]
+                        or row['report_seq'] <= reports[worker]):
+                    errors.append(f'Worker {worker}: invalid dispatch acknowledgement')
+                    continue
+                confirmed[worker], reports[worker] = ack, row['report_seq']
+                accepted_reports += 1
+                pending[worker] = {seq: req for seq, req in pending[worker].items() if seq > ack}
+                entries = list(pending[worker].values())
+                raw = sum(req['raw_tokens'] for req in entries)
+                rwpt = sum(req['rwpt_tokens'] for req in entries)
+                if row.get('load_metric') not in ('token_count', 'token_count_active'):
+                    raw = 0
+                if row.get('load_metric') not in ('rwpt', 'rwpt_active'):
+                    rwpt = 0
+                if (set(row.get('pending_sequences', [])) != set(pending[worker])
+                        or row.get('optimistic_request_count') != len(entries)
+                        or row.get('optimistic_raw_tokens') != raw
+                        or row.get('optimistic_prefill_tokens') != rwpt
+                        or row.get('effective_queue_length') != row.get('reported_queue_length', 0) + len(entries)
+                        or row.get('effective_raw_tokens') != row.get('reported_raw_tokens', 0) + raw
+                        or row.get('effective_rwpt_tokens') != row.get('reported_rwpt_tokens', 0) + rwpt):
+                    errors.append(f'Worker {worker}: dispatch overlay lost or double counted requests')
+                noncovering_reports += bool(entries)
+                latest[worker] = row
+                continue
+            seq = row['dispatch_seq']
+            key = (worker, seq)
+            if event == 'dispatch_reserved':
+                if seq <= issued[worker]:
+                    errors.append(f'Worker {worker}: repeated or reordered dispatch sequence')
+                issued[worker] = seq
+                reserved[key] = row
+                pending[worker][seq] = row
+            elif event == 'dispatch_sent':
+                if key not in reserved or key in sent:
+                    errors.append(f'Worker {worker}: send without unique dispatch reservation')
+                sent.add(key)
+            elif event == 'dispatch_rollback':
+                pending[worker].pop(seq, None)
+            else:
+                errors.append(f'Worker {worker}: uncertain delivery in correctness validation')
+    for path in directory.glob('worker_[0-9]*.jsonl'):
+        previous = 0
+        for line in path.open():
+            row = json.loads(line)
+            if row['event'] == 'received':
+                seq, worker = row.get('dispatch_seq'), row['worker_id']
+                key = (worker, seq)
+                epochs.add(row.get('routing_epoch'))
+                if type(seq) is not int or seq <= previous or key in received:
+                    errors.append(f'{path.name}: invalid receive sequence')
+                    continue
+                previous = seq
+                received.add(key)
+                original = reserved.get(key)
+                if (original is None or original['request_id'] != row['request_id']
+                        or original['raw_tokens'] != row['input_len']
+                        or original['rwpt_tokens'] != row['rwpt']):
+                    errors.append(f'{path.name}: received request differs from dispatch reservation')
+            elif row['event'] == 'lifecycle' and row.get('ack_dispatch_seq') != previous:
+                errors.append(f'{path.name}: snapshot watermark differs from received requests')
+    if not sent:
+        missing.append('dispatch_records')
+    elif sent != received or len(sent) != expected_requests:
+        errors.append('Dispatched and received requests do not match')
+    if len(epochs) != 1 or None in epochs:
+        errors.append('Missing or mixed routing epochs in dispatch evidence')
+    for worker in pending:
+        last = latest.get(worker, {})
+        if pending[worker] or last.get('effective_queue_length') != 0:
+            missing.append(f'dispatch_accounting_drained_worker_{worker}')
+    return dict(errors=errors, missing_coverage=missing, sent_requests=len(sent),
+                received_requests=len(received), accepted_reports=accepted_reports,
+                noncovering_reports_preserved=noncovering_reports)
+
+
+def wait_for_dispatch_drain(directory, expected_requests, num_workers, timeout=5.0):
+    path = Path(directory) / 'worker_router.jsonl'
+    deadline = time.monotonic() + timeout
+    while True:
+        latest, sent = {}, set()
+        try:
+            with path.open() as handle:
+                for line in handle:
+                    row = json.loads(line)
+                    if row['event'] == 'dispatch_sent':
+                        sent.add((row['source_worker_id'], row['dispatch_seq']))
+                    elif row['event'] == 'worker_report':
+                        latest[row['source_worker_id']] = row
+            if len(sent) == expected_requests and all(
+                wid in latest and latest[wid].get('pending_sequences') == []
+                and latest[wid].get('effective_queue_length') == 0
+                and latest[wid].get('ack_dispatch_seq', -1) >= max(
+                    (seq for worker, seq in sent if worker == wid), default=0)
+                for wid in range(num_workers)
+            ):
+                return
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass  # A diagnostic line may still be being written.
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Router did not confirm drained dispatch accounting')
+        time.sleep(.05)
+
+
+def analyze_validation(directory, expected_requests, num_workers, require_dispatch_accounting=False):
     directory = Path(directory)
     errors, missing = [], []
     received_ids, terminal_ids = set(), set()
@@ -172,13 +298,21 @@ def analyze_validation(directory, expected_requests, num_workers):
                     prefilling_reports += row['prefilling_request_count'] > 0 and row['prefilling_rwpt_tokens'] > 0
     if not prefilling_reports:
         missing.append('prefilling_report_received_by_router')
-    return dict(status='failed' if errors else ('incomplete' if missing else 'passed'),
+    dispatch = None
+    if require_dispatch_accounting:
+        dispatch = analyze_dispatch_evidence(directory, expected_requests, num_workers)
+        errors.extend(dispatch['errors'])
+        missing.extend(dispatch['missing_coverage'])
+    summary = dict(status='failed' if errors else ('incomplete' if missing else 'passed'),
                 errors=errors, missing_coverage=missing, received_requests=len(received_ids),
                 terminal_requests=len(terminal_ids), lifecycle_snapshots=snapshots,
                 resident_reuse_checks=reuse, new_reservation_checks=reservations,
                 memory_boundary_rejections=rejections,
                 legacy_false_rejection_witnesses=legacy_false_rejections,
                 router_load_samples=routing_samples, prefilling_reports_received=prefilling_reports)
+    if dispatch is not None:
+        summary['dispatch_accounting'] = dispatch
+    return summary
 
 
 def run_validation_phases(runner, config, base_model, adapter_dirs):
@@ -193,9 +327,12 @@ def run_validation_phases(runner, config, base_model, adapter_dirs):
         'slora/server/router/validation_log.py', 'benchmarks/routing_experiment/runner.py',
         'benchmarks/routing_experiment/gpu_validation.py',
         'slora/server/router/dp_manager.py', 'slora/server/router/rwpt.py',
+        'slora/server/router/dispatch_tracker.py', 'slora/server/router/worker_state.py',
+        'slora/server/router/worker_state_reporter.py', 'slora/server/router/worker_state_cache.py',
         'benchmarks/routing_experiment/suite.py', 'benchmarks/routing_experiment/config.py',
     )]
     manifest = dict(config=asdict(config), performance_result=False,
+                    dispatch_accounting=True,
                     protocol='one startup; drain between phases; retain adapter residency',
                     phase_timeout_seconds=config.duration,
                     source_sha256={str(path.relative_to(source_root)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -221,7 +358,8 @@ def run_validation_phases(runner, config, base_model, adapter_dirs):
             all_records.extend(records)
             if not all(record['success'] for record in records):
                 raise RuntimeError(f'GPU validation phase {name} has failed requests')
-        summary = analyze_validation(directory, len(plan), config.num_workers)
+        wait_for_dispatch_drain(directory, len(plan), config.num_workers)
+        summary = analyze_validation(directory, len(plan), config.num_workers, require_dispatch_accounting=True)
     except Exception as exc:
         summary = dict(status='failed', errors=[f'{type(exc).__name__}: {exc}'])
         (directory / 'validation_summary.json').write_text(json.dumps(summary, indent=2) + '\n')

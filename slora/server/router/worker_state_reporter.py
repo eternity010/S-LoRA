@@ -177,6 +177,8 @@ class WorkerStateReporter:
                     gpu_memory_free=state_dict.get('gpu_memory_free', 0),
                     last_heartbeat=time.time(),
                     is_healthy=True,
+                    routing_epoch=state_dict.get('routing_epoch'),
+                    ack_dispatch_seq=state_dict.get('ack_dispatch_seq'),
                     # Rank distribution fields for Rank-Aware Routing
                     avg_rank=state_dict.get('avg_rank', 0.0),
                     min_rank=state_dict.get('min_rank', 0),
@@ -207,7 +209,7 @@ class WorkerStateReporter:
             queue_length=0,
             gpu_memory_free=0,
             last_heartbeat=time.time(),
-            is_healthy=True,
+            is_healthy=False,
             avg_rank=0.0,
             min_rank=0,
             max_rank=0,
@@ -240,6 +242,9 @@ class WorkerStateReporter:
             'gpu_memory_free': state.gpu_memory_free,
             'timestamp': report_time,
             'report_seq': self._report_sequence,
+            'routing_epoch': state.routing_epoch,
+            'ack_dispatch_seq': state.ack_dispatch_seq,
+            'is_healthy': state.is_healthy,
             'worker_report_time': report_time,
             # Rank distribution fields for Rank-Aware Routing
             'avg_rank': state.avg_rank,

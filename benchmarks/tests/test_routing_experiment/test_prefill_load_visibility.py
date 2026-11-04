@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from slora.server.io_struct import Batch, Req
 from slora.server.router.adapter_aware_router import AdapterAwareRouter
 from slora.server.router.dp_manager import DataParallelRouterManager
+from slora.server.router.dispatch_tracker import DispatchTracker
 from slora.server.router.gpu_worker import GPUWorker
 from slora.server.router.model_infer.infer_batch import InferBatch
 from slora.server.router.req_queue import ReqQueue
@@ -330,6 +331,7 @@ def test_prefill_load_reaches_router_and_diagnostics(worker_factory, metric, pre
     assert restored.prefilling_raw_tokens == 100
     assert restored.prefilling_rwpt_tokens == 113
     message = json.loads(json.dumps(reporter._create_state_message(restored)))
+    message.update(routing_epoch='test', ack_dispatch_seq=0)
     cache = WorkerStateCache(2)
     cache.update_from_message(message)
     assert cache.get(0).prefilling_rwpt_tokens == 113
@@ -338,6 +340,8 @@ def test_prefill_load_reaches_router_and_diagnostics(worker_factory, metric, pre
 
     manager = DataParallelRouterManager.__new__(DataParallelRouterManager)
     manager.num_workers = 2
+    manager._routing_epoch = 'test'
+    manager._dispatch_tracker = DispatchTracker(2, 'test')
     manager.routing_strategy = "adapter-aware"
     manager.router = AdapterAwareRouter(2, RoutingConfig(
         w1=0, w2=0.4, w3=0, load_metric=metric, batch_max_tokens=3072,

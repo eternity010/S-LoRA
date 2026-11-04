@@ -1,4 +1,4 @@
-# FIX-01 / FIX-02 / FIX-03 GPU 验证
+# FIX-01 / FIX-02 / FIX-03 / CHECK-01 GPU 验证
 
 这是正确性验证，不是性能实验。复用现有 Runner、HTTP 发请求、Worker、
 模型 RPC 和真实内存池。服务器只启动一次，阶段之间等待全部请求完成，
@@ -15,15 +15,15 @@ python run_routing_comparison.py \
   --suite dp-gpu-fix-validation --gpu-ids 0,1 --dry-run
 ```
 
-确认两张卡可用后运行。首轮 `run1` 发现 FIX-03，修复后 `run2` 已通过；
-以下为 run2 的实际命令，后续重跑应更换 output-dir，保留已有结果：
+确认两张卡可用后运行。历史 `run1` 发现 FIX-03，修复后的 `run2` 已通过；
+当前代码新增 CHECK-01，对账扩展尚待 GPU 验证，应使用新目录：
 
 ```bash
 SLORA_MODEL_ROOT=/home/hzheng/models \
 python run_routing_comparison.py \
   --suite dp-gpu-fix-validation \
   --gpu-ids 0,1 \
-  --output-dir routing_comparison_results/fix01_fix02_gpu_validation/run2
+  --output-dir routing_comparison_results/check01_gpu_validation/run1
 ```
 
 显式 `--gpu-ids` 覆盖套件并自动推断 worker 数；可额外指定 `--num-workers`，
@@ -47,6 +47,8 @@ adapter、`rwpt_active`、w2=0.4、beta=0.00845，不搜索参数、不启用主
 每阶段最多等待 120 秒，超时立即停止，不会继续压入后续阶段。
 本套件不读取旧 180 秒 trace，`duration` 在这里仅表示每阶段超时。
 小内存池用于触发准入边界，不能与三卡 15000-cell 正式数据比较。
+新增 CHECK-01 后，请求全部完成后最多再等 5 秒确认 Router 账本排空；这不是
+增加第四个请求阶段，也不是固定延长压测。
 
 ## 输出与判定
 
@@ -71,6 +73,26 @@ prompt 缓冲区不被推理修改；完成后清零，Router 保留 prefilling
 
 普通真实 trace 实验可显式加 `--validation-log` 记录同类证据；默认关闭，避免
 把诊断开销带入正式性能对照。`--debug` 与它独立，不再依赖全局 `DEBUG=1`。
+
+## CHECK-01 对账扩展
+
+Worker 及 Router 需要使用配套新代码。请求携带本次启动标识和每 Worker 派发
+编号；Worker 在入队/明确拒绝后推进确认水位，并与负载一起上报。不混用旧
+Worker，也不支持 Worker 独立热重启后的自动恢复。
+
+`worker_router.jsonl` 新增 `dispatch_reserved`、`dispatch_sent`、
+`dispatch_rollback`、`dispatch_uncertain` 事件；已接受的 `worker_report` 增加
+确认水位、原始/合成负载和剩余派发编号。Worker 的 received/lifecycle 记录
+携带对应编号和快照水位。新 manifest 中 `dispatch_accounting=true`，源码
+哈希列表扩展到 17 项。
+
+新 GPU 运行必须检查派发与接收逐请求匹配、编号及确认水位单调、会话一致、
+仅清除已覆盖请求、未覆盖贡献正确叠加、请求结束后两个 Worker 的账本清空。
+未知发送结果或账目损坏不得算作通过；该轮仍不是性能实验。
+summary 的 `dispatch_accounting.noncovering_reports_preserved` 记录未覆盖请求
+被保留的现场次数，零次不能用来声称 GPU 已触发此交错。40 项新增 CPU 测试
+已确定性覆盖关键交错及证据损坏，相关回归为 381 passed、6 个已知历史失败
+排除。此轮没有启动 GPU 实验，旧 run2 不冒充新增协议的验证结果。
 
 ## 首轮失败与复验
 

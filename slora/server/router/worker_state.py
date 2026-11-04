@@ -52,8 +52,10 @@ class WorkerState:
     current_batch_prompt_tokens: int = 0  # 当前 batch 中请求的 prompt token 总数（不含 rank 加权）
     active_decode_seqs: int = 0        # 当前 batch 中 decode 序列数
     pool_used_ratio: float = 0.0       # 内存池使用率 (0.0-1.0)
-    # State-report diagnostics. These fields do not participate in scoring.
+    # Snapshot ordering and dispatch reconciliation metadata.
     report_seq: int = 0
+    routing_epoch: Optional[str] = None
+    ack_dispatch_seq: Optional[int] = None
     worker_report_time: float = 0.0
     router_received_time: float = 0.0
     waiting_request_count: int = 0
@@ -97,6 +99,8 @@ class WorkerState:
             'active_decode_seqs': self.active_decode_seqs,
             'pool_used_ratio': self.pool_used_ratio,
             'report_seq': self.report_seq,
+            'routing_epoch': self.routing_epoch,
+            'ack_dispatch_seq': self.ack_dispatch_seq,
             'worker_report_time': self.worker_report_time,
             'router_received_time': self.router_received_time,
             'waiting_request_count': self.waiting_request_count,
@@ -130,6 +134,8 @@ class WorkerState:
             active_decode_seqs=data.get('active_decode_seqs', 0),
             pool_used_ratio=data.get('pool_used_ratio', 0.0),
             report_seq=data.get('report_seq', 0),
+            routing_epoch=data.get('routing_epoch'),
+            ack_dispatch_seq=data.get('ack_dispatch_seq'),
             worker_report_time=data.get('worker_report_time', 0.0),
             router_received_time=data.get('router_received_time', 0.0),
             waiting_request_count=data.get('waiting_request_count', 0),
